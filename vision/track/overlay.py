@@ -118,7 +118,10 @@ class OverlayWriter:
         self.writer.write(img)
         self.frames += 1
         if self.frames % self.latest_every == 1:
-            cv2.imwrite(str(self.latest_path), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # tmp + replace: the monitor board must never read a half-written file
+            tmp = self.latest_path.with_suffix(".tmp.jpg")
+            cv2.imwrite(str(tmp), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            tmp.replace(self.latest_path)
 
     def _flash(self, img: np.ndarray, t: float) -> None:
         for s in self.shots:
