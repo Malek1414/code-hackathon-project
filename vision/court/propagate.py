@@ -387,12 +387,17 @@ def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Pa
     fps = cap.get(cv2.CAP_PROP_FPS) or 50.0
     w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * scale), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * scale)
     S = np.diag([scale, scale, 1.0])
+    pos = {int(f): i for i, f in enumerate(frames)}
+    index = -1
     with FfmpegWriter(out, w, h, fps / every) as writer:
-        for i, f in enumerate(frames):
-            if i % every:
+        while True:  # sequential grab is 10x faster than seeking every Nth frame in h264
+            if not cap.grab():
+                break
+            index += 1
+            if index not in pos or pos[index] % every:
                 continue
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(f))
-            ok, frame = cap.read()
+            i = pos[index]
+            ok, frame = cap.retrieve()
             if not ok:
                 break
             frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
@@ -400,7 +405,7 @@ def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Pa
                 draw_court(frame, S @ H_m_to_px[i], FIBA, thickness=2)
             else:
                 cv2.putText(frame, "unkalibriert", (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (60, 60, 240), 2, cv2.LINE_AA)
-            cv2.putText(frame, f"frame {int(f)}  t={f / fps:5.1f}s", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, f"frame {index}  t={index / fps:5.1f}s", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
             writer.write(frame)
     cap.release()
 
