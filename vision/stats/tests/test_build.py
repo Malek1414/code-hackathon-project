@@ -147,3 +147,17 @@ def test_stale_identities_are_detected():
     assert not identities_match_tracks(renumbered, frames)
     swapped = {1: Identity("B12", 1, 12), 3: Identity("A7", 0, 7)}  # same ids, other players
     assert not identities_match_tracks(swapped, frames)
+
+
+def test_identities_mtime_stamp(tmp_path):
+    from vision.stats.build import identities_run_matches
+
+    tracks = tmp_path / "tracks.jsonl"
+    tracks.write_text("")
+    ident = tmp_path / "identities.json"
+    ident.write_text(json.dumps({"tracks_mtime": tracks.stat().st_mtime, "players": []}))
+    assert identities_run_matches(ident, tracks) is True
+    ident.write_text(json.dumps({"tracks_mtime": tracks.stat().st_mtime - 600, "players": []}))
+    assert identities_run_matches(ident, tracks) is False
+    ident.write_text(json.dumps({"players": []}))
+    assert identities_run_matches(ident, tracks) is None

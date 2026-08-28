@@ -104,6 +104,19 @@ class Identity:
         self.key, self.team, self.number = key, team, number
 
 
+def identities_run_matches(path: Path, tracks_path: Path) -> bool | None:
+    """NUMBERS stamps identities.json with the mtime of the tracks file it was
+    built from. True/False when the stamp exists, None when it does not."""
+    try:
+        d = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return False
+    stamp = d.get("tracks_mtime")
+    if not isinstance(stamp, (int, float)) or not tracks_path.exists():
+        return None
+    return abs(float(stamp) - tracks_path.stat().st_mtime) < 2.0
+
+
 def load_identities(path: Path) -> dict[int, Identity]:
     """track id -> Identity, from the `players` list (preferred) or `tracks`."""
     d = json.loads(path.read_text())
@@ -361,7 +374,10 @@ def main(argv: list[str] | None = None) -> int:
     if ident_path.exists() and not args.fixture:
         meta_path = Path(args.tracks).parent / "tracks_meta.json"
         candidate = load_identities(ident_path)
-        if meta_path.exists() and ident_path.stat().st_mtime < meta_path.stat().st_mtime:
+        stamped = identities_run_matches(ident_path, Path(args.tracks))
+        if stamped is False:
+            print(f"{ident_path}: tracks_mtime stamp is from another tracks run, ignoring it", file=sys.stderr)
+        elif stamped is None and meta_path.exists() and ident_path.stat().st_mtime < meta_path.stat().st_mtime:
             print(f"{ident_path} is older than {meta_path}: track ids belong to a previous run, ignoring it",
                   file=sys.stderr)
         elif not identities_match_tracks(candidate, frames):
