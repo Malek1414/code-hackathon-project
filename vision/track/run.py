@@ -1,0 +1,157 @@
+"""TRACK batch wrapper: video → out/tracks.jsonl, out/tracks_meta.json, out/overlay.mp4.
+
+    .venv/bin/python vision/track/run.py --video data/clips/dev60.mp4 --stride 2
+
+The per-frame logic is vision/track/tracker.py (Tracker.step); this file only
+decodes the video, samples frames for the kmeans team fit, writes the files
+and the overlay (vision/track/overlay.py) and prints progress.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from vision.track.overlay import OverlayWriter  # noqa: E402
+from vision.track.tracker import TRACKERS, Tracker  # noqa: E402,F401
+
+log = logging.getLogger("track")
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("--video", required=True, type=Path)
+    p.add_argument("--weights", type=Path, default=None,
+                   help="single model with contract classes (LABEL's best.pt); "
+                        "default is the two-model setup below")
+    p.add_argument("--person-weights", type=Path, default=Path("models/yolo11s.pt"))
+    p.add_argument("--ball-weights", type=Path, default=Path("models/ball_hoop_avishah.pt"))
+    p.add_argument("--person-imgsz", type=int, default=960)
+    p.add_argument("--ball-imgsz", type=int, default=1280)
+    p.add_argument("--imgsz", type=int, default=1280, help="imgsz for --weights mode")
+    p.add_argument("--out", type=Path, default=Path("out/tracks.jsonl"))
+    p.add_argument("--overlay", type=Path, default=Path("out/overlay.mp4"))
+    p.add_argument("--no-overlay", action="store_true")
+    p.add_argument("--events", type=Path, default=Path("out/events.json"),
+                   help="STATS output; shot flashes are drawn if it exists")
+    p.add_argument("--device", default="mps")
+    p.add_argument("--conf-player", type=float, default=0.3)
+    p.add_argument("--conf-ball", type=float, default=0.45)
+    p.add_argument("--conf-hoop", type=float, default=0.3)
+    p.add_argument("--ball-max-px", type=int, default=80,
+                   help="ball boxes wider/taller than this are not the ball")
+    p.add_argument("--hoop-hold", type=int, default=50,
+                   help="source frames a hoop is carried forward when not detected")
+    p.add_argument("--tracker", choices=sorted(TRACKERS), default="bytetrack",
+                   help="botsort = camera motion compensation, measured 10x slower "
+                        "and no fewer id switches")
+    p.add_argument("--team-mode", choices=["rules", "kmeans"], default="rules",
+                   help="rules = blue vs black/red vs grey referee (this game); "
+                        "kmeans = generic two-color split")
+    p.add_argument("--team-samples", type=int, default=24,
+                   help="kmeans mode: frames sampled across the clip for the fit")
+    p.add_argument("--stride", type=int, default=1, help="process every Nth frame")
+    p.add_argument("--start-frame", type=int, default=0)
+    p.add_argument("--max-frames", type=int, default=0, help="0 = whole clip")
+    return p.parse_args()
+
+
+def open_video(path: Path) -> tuple[cv2.VideoCapture, float, int, int, int]:
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        raise SystemExit(f"cannot open {path}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 50.0
+    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    return cap, fps, n, w, h
+
+
+def sample_frames(path: Path, first: int, last: int, n: int):
+    cap = cv2.VideoCapture(str(path))
+    for i in np.linspace(first, max(first, last - 1), n).astype(int):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(i))
+        ok, frame = cap.read()
+        if ok:
+            yield frame
+    cap.release()
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        datefmt="%H:%M:%S")
+    a = parse_args()
+    cap, fps, n_frames, width, height = open_video(a.video)
+    first = a.start_frame
+    last = n_frames if a.max_frames == 0 else min(n_frames, first + a.max_frames * a.stride)
+    log.info("%s: %dx%d @ %.2f fps, %d frames, processing %d..%d stride %d",
+             a.video, width, height, fps, n_frames, first, last, a.stride)
+
+    tr = Tracker(a.person_weights, a.ball_weights, a.device, weights=a.weights,
+                 person_imgsz=a.person_imgsz, ball_imgsz=a.ball_imgsz, imgsz=a.imgsz,
+                 conf_player=a.conf_player, conf_ball=a.conf_ball, conf_hoop=a.conf_hoop,
+                 ball_max_px=a.ball_max_px, hoop_hold=a.hoop_hold, tracker=a.tracker,
+                 team_mode=a.team_mode, fps=fps)
+    if a.team_mode == "kmeans":
+        tr.fit_teams(sample_frames(a.video, first, last, a.team_samples))
+        log.info("jersey centroids LAB %s", tr.teams.centroids_lab)
+    else:
+        log.info("team mode: rules (blue → 0, black/red → 1, grey/white → -1)")
+
+    writer = None
+    if not a.no_overlay:
+        writer = OverlayWriter(a.overlay, width=width, height=height,
+                               fps=fps / a.stride, events=a.events)
+
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    meta = {"clip": str(a.video), "source_fps": fps, "stride": a.stride, "fps": fps / a.stride,
+            "width": width, "height": height, "first_frame": first, "last_frame": last,
+            "tracks": str(a.out), "weights": tr.weights_info}
+    (a.out.parent / "tracks_meta.json").write_text(json.dumps(meta, indent=1))
+
+    t0 = time.time()
+    done = 0
+    if first:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, first)
+    with a.out.open("w") as out:
+        idx = first
+        while idx < last:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if (idx - first) % a.stride == 0:
+                record = tr.step(frame, idx, idx / fps)
+                out.write(json.dumps(record) + "\n")
+                if writer:
+                    writer.write(frame, record)
+                done += 1
+                if done % 250 == 0:
+                    s = tr.summary()
+                    log.info("frame %d/%d  %.3f s/frame  players/frame %.1f  ball %.0f%%  "
+                             "hoop %.0f%%  ids %d", idx, last, (time.time() - t0) / done,
+                             s["players_per_frame"], 100 * s["ball_frame_share"],
+                             100 * s["hoop_frame_share"], s["track_ids"])
+            idx += 1
+    cap.release()
+    if writer:
+        writer.close()
+
+    el = time.time() - t0
+    summary = {**meta, **tr.summary(), "seconds": round(el, 1),
+               "s_per_frame": round(el / max(done, 1), 3), "tracker": a.tracker,
+               "overlay": None if a.no_overlay else str(a.overlay)}
+    (a.out.parent / "track_summary.json").write_text(json.dumps(summary, indent=1))
+    log.info("done: %s", json.dumps(summary))
+
+
+if __name__ == "__main__":
+    main()
