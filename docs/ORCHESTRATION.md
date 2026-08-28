@@ -122,11 +122,11 @@ the previous slot reports done to ORCH:
 
 | Slot | Owner | Job |
 |---|---|---|
-| now → ~12:08 | LABEL + TRACK | autolabel finishes the last ~90 frames; dev60 tracking finishes |
-| 12:08 → 12:30 | TRACK | game10, stride 2 (exclusive MPS) |
-| 12:30 → 12:55 | LABEL | YOLO11n fine-tune (exclusive MPS) |
-| 12:55 → 13:15 | TRACK | re-run dev60 with `models/best.pt`, compare ball recall, then game10 again only if clearly better |
-| 13:15 → | STATS/LIVE | live-mode runs from file and phone |
+| → ~12:10 | TRACK | dev60 tracking finishes (LABEL autolabel done 12:06) |
+| 12:10 → ~12:35 | LABEL | YOLO11n fine-tune (exclusive MPS) |
+| 12:35 → 12:40 | TRACK | compare best.pt vs yolo11s+avishah on dev60 frames 900+ |
+| 12:40 → ~13:00 | TRACK | the 10-minute clip (Moabit game10 or Säckingen, ORCH decides by 12:35), once, with the better weights |
+| 13:00 → | STATS/LIVE | live-mode runs from file and phone |
 
 CPU-only jobs (optical-flow propagation, minimap, dashboard, QA sheets, monitor)
 may run any time but at most one heavy one at a time. Before starting any job that
