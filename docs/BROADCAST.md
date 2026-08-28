@@ -15,6 +15,7 @@ phone camera (app, back wide, 1920x1080 30 fps)            phone camera as Conti
         |                         software/pan_bridge.py     ScoreBoard, PanController --serial "A95\n" 115200
         |                                                           |
         |<-- GET http://<mac>:8501/state.json every 1 s -----------+-- writes out/live_state.json every 1 s
+        |    (live.py --bind 0.0.0.0, default 127.0.0.1)             |
         v                                                           |
    overlay widgets (PNG with alpha, broadcast/assets/)             +-- MJPEG http://<mac>:8501/stream
         v                                                           +-- RTMP push (ffmpeg) when FOLLOWCAM_RTMP_URL is set
@@ -27,12 +28,15 @@ per game: either the Mac path or the on-device path, chosen in the start menu, n
 ## 2. State contract `live_state.json`
 
 Written by LIVE atomically (tmp file, then rename) every 1.0 s to `out/live_state.json` and served at
-`http://<mac>:8501/state.json` (`Content-Type: application/json`, `Cache-Control: no-store`). The app polls
-every 1 s and treats a response older than 5 s (`t` unchanged) as "signal lost". All fields are required
-unless marked nullable; numbers are JSON numbers, colors are `#rrggbb` strings.
+`http://<mac>:8501/state.json` (`Content-Type: application/json`, `Cache-Control: no-store`) by the same
+server as the MJPEG stream. The server binds `--bind` (default `127.0.0.1`; `0.0.0.0` for the phone on the
+same Wi-Fi, same `--mjpeg-port`). The app polls every 1 s and treats a response older than 5 s (`t`
+unchanged) as "signal lost". All fields are required unless marked nullable; numbers are JSON numbers,
+colors are `#rrggbb` strings. `schema` is the first field; the app refuses any other value than 1.
 
 | field | type | meaning |
 |---|---|---|
+| `schema` | int | always `1` for this contract; a breaking change bumps it |
 | `brand` | string | always `"Big Ball Baller"` |
 | `clip_or_source` | string | camera index, `auto`, or the video path that feeds LIVE |
 | `t` | number, s | seconds since LIVE started (source time for files) |
@@ -44,8 +48,10 @@ unless marked nullable; numbers are JSON numbers, colors are `#rrggbb` strings.
 | `pan_deg` | int, nullable | last servo angle 40 to 140, null without `--serial` |
 | `camera` | string | `ok` or `no-frame` (LIVE keeps running and reopens the device) |
 
-Team names and colors are copied from the start menu (`--team-a`, `--team-b`, `--color-a`, `--color-b` or
-`broadcast/config.json`), never derived from jersey colors. The app must not add fields it invents.
+Team names and colors are copied from the start menu: live.py flags `--team-a`, `--team-b`, `--color-a`,
+`--color-b`, or the file form `broadcast/config.json` with the same four keys (`team_a`, `team_b`,
+`color_a`, `color_b`; flags win over the file). Never derived from jersey colors. The app must not add
+fields it invents.
 
 ## 3. Widgets
 
@@ -79,8 +85,9 @@ on-device model, or Mac path with the Mac's address and `--source auto` or an in
 (off, or RTMP). The stream key is entered once and stored in the Keychain under `bbb.rtmpURL` with the
 existing Keychain helper (WhoopSync.swift); on the Mac it lives in `.env` as `FOLLOWCAM_RTMP_URL`.
 It is never written to `broadcast/config.json`, never shown after entry (masked as `rtmp://host/app/***`),
-never logged. Everything else is saved to `broadcast/config.json` and sent to the Mac as the
-`--team-a/--team-b/--color-a/--color-b` arguments, so both paths show the same names.
+never logged. Everything else is saved to `broadcast/config.json` (`team_a`, `team_b`, `color_a`,
+`color_b`, `title`, `period_min`, `periods`, `source`), which live.py reads as the file form of
+`--team-a/--team-b/--color-a/--color-b`; the flags override the file, so both paths show the same names.
 Flow: menu, validation (names not empty and different, colors not equal, key present when streaming),
 camera preview with the pan link status (`rig` button turns green when ws://mac:8765 answers), start,
 live view with score bug and the manual buttons, end button or end of file, summary pages, export.
@@ -105,10 +112,3 @@ default; recording stays in Photos on the phone. Show free-text player names; ke
 Write into `out/` contract files (tracks, events, stats, identities); the app reads state, it never
 produces it. Keep streaming when the camera reports `no-frame` for more than 30 s; show the signal
 lost card instead.
-
-## 7. Open points for ORCH (not in the contract yet)
-
-The state and MJPEG server in `vision/live/stream.py` binds `127.0.0.1` and has no `/state.json` route
-(14:40); for the phone path LIVE needs a bind address flag and the route. A `schema` version field in
-`live_state.json` would let the app refuse states it does not understand. Live.py has no
-`--team-a/--color-a` flags yet; the dashboard builder has `--team-a/--team-b`.
