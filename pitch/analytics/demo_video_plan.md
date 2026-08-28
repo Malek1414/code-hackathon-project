@@ -4,7 +4,7 @@ Sources under `out/`, all produced today. First versions exist now for the 60 s
 dev clip (`data/clips/dev60.mp4`); ORCH swaps in the game10 outputs after 14:15
 when they exist under the same names.
 
-| Source | What it is | State at 13:05 |
+| Source | What it is | State at 12:45 |
 |---|---|---|
 | `out/overlay.mp4` | 1920x1080, 25 fps, 60 s, boxes with track ids, team colors, ball trail | exists |
 | `out/minimap.mp4` | 1200x680, 25 fps, 20 s, 2D court with team dots | exists, says "uncalibrated" until COURT's calibration lands |
@@ -37,7 +37,7 @@ mkdir -p out/pitch
 ```
 
 Side by side, overlay 1280x720 left, minimap 640 wide right, on a 1920x1080
-canvas, 20 s from second 40 of the sources (tested 13:00, 74 s render time on
+canvas, 20 s from second 40 of the sources (tested 12:40, 74 s render time on
 the M3; output `out/pitch/analytics_side_by_side.mp4`, 1920x1080, 25 fps):
 
 ```

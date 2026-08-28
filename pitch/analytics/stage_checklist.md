@@ -32,7 +32,7 @@ model: identity comes from jersey number and color, not from faces. The
 export step blurs head regions and everyone outside the court before a video
 leaves the laptop, and raw clips are deleted after a set number of hours
 (`vision/privacy/blur.py` and `retention.py`, PRIVACY role, in progress at
-13:10; say "planned" if they are not merged by 16:00). Youth games: the club
+12:45; say "planned" if they are not merged by 16:00). Youth games: the club
 asks consent as it does for team photos, and the export is the blurred
 overlay, not the raw video.
 
