@@ -43,3 +43,5 @@ ml/.venv/
 ml/data/
 *.xcuserdata/
 xcuserdata/
+viz/manual_assets/
+viz/fx/task-002/pages/
