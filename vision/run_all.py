@@ -39,7 +39,7 @@ STEP_ORDER = ("track", "numbers", "court", "stats", "qa", "frontend")
 # test waits while any of these run; run_all itself only waits with --wait-for-gpu.
 GPU_JOB_PATTERNS = (
     "vision/track/", "vision.track.",  # anything of TRACK (run, compare, experiments), ORCH rule 12:52
-    "vision/label/train.py", "vision.label.train", "vision/label/autolabel.py", "vision.label.autolabel",
+    "vision/label/train", "vision.label.train", "vision/label/autolabel", "vision.label.autolabel",  # train.py, train_ball.py, ...
     "vision/live/live.py", "vision.live.live", "vision/run_all.py", "vision.run_all", "vision.smoke_test", "vision/smoke_test.py",
 )
 
