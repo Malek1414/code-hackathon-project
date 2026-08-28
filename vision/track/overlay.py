@@ -88,12 +88,13 @@ class OverlayWriter:
                  events: Path | None = None, identities: Path | None = None,
                  calib: Path | None = None, cuts: Path | None = None,
                  source_fps: float = 50.0, court_lines: bool = False,
-                 latest_path: Path | None = None) -> None:
+                 latest_path: Path | None = None, threads: int | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.raw_path = path.with_name(path.stem + "_raw.mp4")
         self.latest_path = latest_path or path.with_name("overlay_latest.jpg")
         self.latest_path.parent.mkdir(parents=True, exist_ok=True)
+        self.threads = threads  # ffmpeg threads for the transcode (None = all)
         self.latest_every = 100
         self.writer = cv2.VideoWriter(
             str(self.raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
@@ -239,7 +240,7 @@ class OverlayWriter:
         tmp = self.path.with_name(self.path.stem + "_h264.tmp.mp4")
         cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(self.raw_path), "-c:v", "libx264",
                "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-               "-an", str(tmp)]
+               "-an"] + (["-threads", str(self.threads)] if self.threads else []) + [str(tmp)]
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0 or not tmp.exists():
             log.warning("transcode failed: %s; keeping mp4v overlay", res.stderr.strip()[:300])
@@ -253,10 +254,14 @@ class OverlayWriter:
 # ----- standalone re-render ---------------------------------------------------
 def render(video: Path, tracks: Path, out: Path, *, identities: Path | None, calib: Path | None,
            events: Path | None, cuts: Path | None, max_frames: int = 0,
-           court_lines: bool = False) -> int:
+           court_lines: bool = False, start_frame: int = 0, end_frame: int = 0,
+           threads: int | None = None) -> int:
     records = [json.loads(l) for l in tracks.read_text().splitlines() if l.strip()]
+    if start_frame or end_frame:
+        records = [r for r in records if r["frame"] >= start_frame
+                   and (not end_frame or r["frame"] < end_frame)]
     if not records:
-        raise SystemExit(f"{tracks} is empty")
+        raise SystemExit(f"{tracks} has no lines in the requested range")
     meta = load_json(tracks.with_name("tracks_meta.json"))
     cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
@@ -269,7 +274,8 @@ def render(video: Path, tracks: Path, out: Path, *, identities: Path | None, cal
     calib = default_calib(video, calib)
     w = OverlayWriter(out, width=width, height=height, fps=source_fps / stride, events=events,
                       identities=identities, calib=calib, cuts=cuts, source_fps=source_fps,
-                      court_lines=court_lines)
+                      court_lines=court_lines, latest_path=out.with_suffix(".latest.jpg"),
+                      threads=threads)
     by_frame = {r["frame"]: r for r in records}
     first, last = records[0]["frame"], records[-1]["frame"]
     if first:
@@ -306,9 +312,13 @@ def main() -> None:
     p.add_argument("--cuts", type=Path, default=None, help="default out/cuts_<clip>.json")
     p.add_argument("--max-frames", type=int, default=0)
     p.add_argument("--court-lines", action="store_true", help="draw COURT's calibrated lines")
+    p.add_argument("--start-frame", type=int, default=0, help="first source frame to render")
+    p.add_argument("--end-frame", type=int, default=0, help="render up to (excl.) this source frame")
+    p.add_argument("--threads", type=int, default=None, help="ffmpeg threads for the transcode")
     a = p.parse_args()
     render(a.video, a.tracks, a.out, identities=a.identities, calib=a.calib, events=a.events,
-           cuts=a.cuts, max_frames=a.max_frames, court_lines=a.court_lines)
+           cuts=a.cuts, max_frames=a.max_frames, court_lines=a.court_lines,
+           start_frame=a.start_frame, end_frame=a.end_frame, threads=a.threads)
 
 
 if __name__ == "__main__":
