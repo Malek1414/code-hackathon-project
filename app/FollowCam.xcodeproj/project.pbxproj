@@ -12,6 +12,7 @@
 		3C460C1250B13AD3561A4FD4 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2479A6A0DD2BA09BED009DD3 /* CameraManager.swift */; };
 		4688E63E58AAB22B8645D923 /* SubjectTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27AF71E7F3F13A47A666EAE /* SubjectTracker.swift */; };
 		4CBB1126A1B5D1648FC5D3A7 /* FollowCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */; };
+		823722707F1FD7AEABF6B588 /* MotionLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30232EE2CBCA59A33067643 /* MotionLevel.swift */; };
 		9E4BA78F2467D3487193885A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C980E0C1BBE497EE5CEF2 /* ContentView.swift */; };
 		BDCA9733E84E270680CB54AD /* HeartRateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */; };
 /* End PBXBuildFile section */
@@ -22,6 +23,7 @@
 		49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowCamApp.swift; sourceTree = "<group>"; };
 		512C980E0C1BBE497EE5CEF2 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		632C5AA127A15B6E1A51E3FC /* WhoopSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopSync.swift; sourceTree = "<group>"; };
+		B30232EE2CBCA59A33067643 /* MotionLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionLevel.swift; sourceTree = "<group>"; };
 		CBAD033B44B0D81E19DEF423 /* PanController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanController.swift; sourceTree = "<group>"; };
 		D27AF71E7F3F13A47A666EAE /* SubjectTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectTracker.swift; sourceTree = "<group>"; };
 		ED27DB56697DF2DCFAE1D0E2 /* FollowCam.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FollowCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -43,6 +45,7 @@
 				512C980E0C1BBE497EE5CEF2 /* ContentView.swift */,
 				49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */,
 				2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */,
+				B30232EE2CBCA59A33067643 /* MotionLevel.swift */,
 				CBAD033B44B0D81E19DEF423 /* PanController.swift */,
 				D27AF71E7F3F13A47A666EAE /* SubjectTracker.swift */,
 				632C5AA127A15B6E1A51E3FC /* WhoopSync.swift */,
@@ -120,6 +123,7 @@
 				9E4BA78F2467D3487193885A /* ContentView.swift in Sources */,
 				4CBB1126A1B5D1648FC5D3A7 /* FollowCamApp.swift in Sources */,
 				BDCA9733E84E270680CB54AD /* HeartRateMonitor.swift in Sources */,
+				823722707F1FD7AEABF6B588 /* MotionLevel.swift in Sources */,
 				1F334A9711C4BF1BB2AE7291 /* PanController.swift in Sources */,
 				4688E63E58AAB22B8645D923 /* SubjectTracker.swift in Sources */,
 				31060A37FB973E1996461024 /* WhoopSync.swift in Sources */,

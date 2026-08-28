@@ -16,11 +16,14 @@ struct ContentView: View {
     @StateObject private var pan = PanController()
     @StateObject private var heart = HeartRateMonitor()
     @StateObject private var whoop = WhoopAuthCoordinator.shared
+    @StateObject private var level = MotionLevel()
     @State private var tracker = SubjectTracker()
     @State private var subjectBox: CGRect?
     @State private var bridgeHost = "192.168.1.10"
     @State private var showSettings = false
     @State private var recordingStarted: Date?
+    @State private var lostFlashUntil: Date?
+    @State private var sweptRange: ClosedRange<Double> = 90...90
 
     var body: some View {
         ZStack {
@@ -28,6 +31,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .onTapGesture { location in
                     tracker.select(roi: camera.normalizedRect(aroundLayerPoint: location))
+                    lostFlashUntil = nil
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
 
             if let box = subjectBox {
@@ -39,7 +44,24 @@ struct ContentView: View {
                 PanScale(angle: pan.angle)
                     .frame(height: 44)
                     .padding(.horizontal, 24)
+                LevelLine(roll: level.rollDegrees, isLevel: level.isLevel)
+                    .frame(height: 16)
                 Spacer()
+                HStack(alignment: .bottom) {
+                    if let until = lostFlashUntil, until > Date() {
+                        Text("TARGET LOST — TAP TO REACQUIRE")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Color.red)
+                    }
+                    Spacer()
+                    CoverageWedge(angle: pan.angle, swept: sweptRange)
+                        .frame(width: 92, height: 58)
+                        .padding(.trailing, 20)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
                 bottomBar
             }
         }
@@ -48,15 +70,23 @@ struct ContentView: View {
         .onAppear {
             camera.onFrame = { pixelBuffer in
                 guard let box = tracker.track(in: pixelBuffer) else {
-                    DispatchQueue.main.async { subjectBox = nil }
+                    DispatchQueue.main.async {
+                        if subjectBox != nil {   // just lost the target
+                            lostFlashUntil = Date().addingTimeInterval(2.5)
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                        }
+                        subjectBox = nil
+                    }
                     return
                 }
                 DispatchQueue.main.async {
                     subjectBox = box
                     pan.update(centerX: box.midX)
+                    sweptRange = min(sweptRange.lowerBound, pan.angle)...max(sweptRange.upperBound, pan.angle)
                 }
             }
             camera.start()
+            level.start()
         }
     }
 
@@ -108,6 +138,8 @@ struct ContentView: View {
                     Button {
                         tracker.clear()
                         subjectBox = nil
+                        lostFlashUntil = nil
+                        sweptRange = 90...90
                         pan.recenter()
                     } label: {
                         Text("CLEAR TARGET")
@@ -205,6 +237,65 @@ struct PanScale: View {
         }
         .padding(.top, 6)
         .background(.black.opacity(0.55))
+    }
+}
+
+// MARK: - bubble level under the pan scale (green = tripod level)
+
+struct LevelLine: View {
+    let roll: Double
+    let isLevel: Bool
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color(white: 0.25)).frame(width: 72, height: 1)
+            Rectangle()
+                .fill(isLevel ? Color.green : Color.chrome)
+                .frame(width: 60, height: 2)
+                .rotationEffect(.degrees(-roll))
+                .animation(.linear(duration: 0.1), value: roll)
+        }
+        .frame(maxWidth: .infinity)
+        .background(.black.opacity(0.55))
+    }
+}
+
+// MARK: - court-coverage wedge: what the sweep has covered this play
+
+struct CoverageWedge: View {
+    let angle: Double       // current servo angle
+    let swept: ClosedRange<Double>
+
+    private func rad(_ servoDeg: Double) -> Double {
+        // servo 40..140 -> screen angle: 90 points up, ends spread ±50
+        (270 + (servoDeg - 90)) * .pi / 180
+    }
+
+    var body: some View {
+        Canvas { ctx, size in
+            let c = CGPoint(x: size.width / 2, y: size.height - 6)
+            let r = size.height - 12
+            var lim = Path()
+            lim.addArc(center: c, radius: r, startAngle: .radians(rad(40)),
+                       endAngle: .radians(rad(140)), clockwise: false)
+            ctx.stroke(lim, with: .color(.init(white: 0.35)), lineWidth: 1)
+            if swept.upperBound - swept.lowerBound > 0.5 {
+                var fill = Path()
+                fill.move(to: c)
+                fill.addArc(center: c, radius: r, startAngle: .radians(rad(swept.lowerBound)),
+                            endAngle: .radians(rad(swept.upperBound)), clockwise: false)
+                fill.closeSubpath()
+                ctx.fill(fill, with: .color(.servo.opacity(0.28)))
+            }
+            var needle = Path()
+            needle.move(to: c)
+            needle.addLine(to: CGPoint(x: c.x + r * cos(rad(angle)),
+                                       y: c.y + r * sin(rad(angle))))
+            ctx.stroke(needle, with: .color(.pla), lineWidth: 2)
+            ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)),
+                     with: .color(.pla))
+        }
+        .background(.black.opacity(0.45))
     }
 }
 

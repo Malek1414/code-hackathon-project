@@ -6,7 +6,7 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>E0C55088-5D8B-46CF-9856-C86F2A7E6115</key>
+		<key>324239A3-949F-4CFE-8CD5-1992520CCCEE</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -15,13 +15,13 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>E0C55088-5D8B-46CF-9856-C86F2A7E6115.xcactivitylog</string>
+			<string>324239A3-949F-4CFE-8CD5-1992520CCCEE.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
-				<string>S</string>
+				<string>W</string>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
@@ -29,7 +29,7 @@
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
-				<integer>0</integer>
+				<integer>2</integer>
 			</dict>
 			<key>schemeIdentifier-containerName</key>
 			<string>FollowCam project</string>
@@ -40,13 +40,13 @@
 			<key>signature</key>
 			<string>Building project FollowCam with scheme FollowCam</string>
 			<key>timeStartedRecording</key>
-			<real>809605971.05899298</real>
+			<real>809608903.01681304</real>
 			<key>timeStoppedRecording</key>
-			<real>809605976.27774203</real>
+			<real>809608913.39435506</real>
 			<key>title</key>
 			<string>Building project FollowCam with scheme FollowCam</string>
 			<key>uniqueIdentifier</key>
-			<string>E0C55088-5D8B-46CF-9856-C86F2A7E6115</string>
+			<string>324239A3-949F-4CFE-8CD5-1992520CCCEE</string>
 		</dict>
 	</dict>
 </dict>
