@@ -68,7 +68,7 @@ function bbbLayout(s){
   var pre=document.createElement('pre');pre.id='bbb-layout';pre.style.display='none';pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
 }
 (function(){var s=bbbState();
-var ev=s.last_event||{};var p=(ev.player_key&&findPlayer(s,ev.player_key))||topScorer(s,0)||s.players[0]||{key:'A?',team:0,pts:0,fga:0,fgm:0};
+var ev=s.last_event||{};var p=(ev.player_key&&findPlayer(s,ev.player_key))||topScorer(s,ev.team!=null?ev.team:0)||s.players[0]||{key:'A?',team:(ev.team!=null?ev.team:0),pts:0,fga:0,fgm:0};if(ev.team!=null&&p.team!==ev.team)p=Object.assign({},p,{team:ev.team});
 var T=teamOf(s,p.team||0);document.getElementById('acc').style.background=T.color;
 document.getElementById('no').textContent=label(p);document.getElementById('team').textContent=(p.name?p.name+', ':'')+T.name+(p.number==null?', no number read':'');
 document.getElementById('pts').textContent=p.pts!=null?p.pts:(2*(p.fgm||0));
