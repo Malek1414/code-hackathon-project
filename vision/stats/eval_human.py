@@ -70,6 +70,16 @@ def evaluate(events: dict, verdicts: dict) -> dict:
             }
         )
     unconfirmed_flips = sum(1 for f in flips if f["unconfirmed_counted_as_miss"])
+    # verdict on the CURRENT events: truth = the human's correction of the reviewed verdict
+    current_right = 0
+    current_judged = 0
+    for v, s in real:
+        if s is None:
+            continue
+        true_made = v["made"] if v["shot"] == "ok" else not v["made"]
+        current_judged += 1
+        current_right += int(bool(s.get("made")) == true_made)
+    unverified = len(shots) - len([1 for v, s in pairs if s is not None])
 
     def pct(a: int, b: int) -> float | None:
         return round(a / b, 3) if b else None
@@ -85,6 +95,10 @@ def evaluate(events: dict, verdicts: dict) -> dict:
             "right": len(verdict_ok),
             "flipped": len(flipped),
             "accuracy": pct(len(verdict_ok), len(real)),
+            "current_right": current_right,
+            "current_judged": current_judged,
+            "current_accuracy": pct(current_right, current_judged),
+            "system_shots_without_verdict": unverified,
             "flips_where_unconfirmed_was_counted_as_miss": unconfirmed_flips,
             "accuracy_if_unconfirmed_makes_were_asked": pct(len(verdict_ok) + unconfirmed_flips, len(real)),
         },
@@ -116,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
     Path(args.out).write_text(json.dumps(result, indent=1, ensure_ascii=False))
     a, m, s = result["attempts"], result["made_miss"], result["shooter"]
     print(f"attempts: {a['real']} real of {result['verdicts_answered']} answered (precision {a['precision']}), {a['no_shot']} no-shot")
-    print(f"made/miss: {m['right']}/{a['real']} right ({m['accuracy']}), {m['flipped']} flipped, "
+    print(f"made/miss now: {m['current_right']}/{m['current_judged']} right ({m['current_accuracy']}); "
+          f"{m['system_shots_without_verdict']} system attempts have no verdict yet")
+    print(f"made/miss at review: {m['right']}/{a['real']} right ({m['accuracy']}), {m['flipped']} flipped, "
           f"{m['flips_where_unconfirmed_was_counted_as_miss']} of them unconfirmed-counted-as-miss "
           f"-> {m['accuracy_if_unconfirmed_makes_were_asked']} if those were asked")
     print(f"shooter: {s['right']}/{s['judged_on_current_shooter']} right on the shooter the human saw ({s['accuracy']}), "

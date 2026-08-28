@@ -13,6 +13,7 @@ end_summary + heat_map on hotkey e or at the end of the file.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import cv2
@@ -36,28 +37,55 @@ TEXT = (240, 240, 240)
 DIM = (170, 170, 170)
 
 
-class Assets:
-    """FRONTEND renders every widget as a full 1920x1080 BGRA canvas with the
-    live numbers already in it (broadcast/render_widgets.py reads
-    out/live_state.json), so a present PNG is composited as is and no text is
-    drawn over it; a missing PNG gets a placeholder panel with text."""
+STATIC_WIDGETS = {"lower_third", "end_summary", "heat_map_frame", "heat_map"}
+DYNAMIC_WIDGETS = {"score_bug", "made_flash", "player_card", "team_overview"}
 
-    def __init__(self, folder: str | Path = "broadcast/assets", refresh_s: float = 1.0) -> None:
+
+class Assets:
+    """FRONTEND's PNGs are full 1920x1080 BGRA canvases. Static widgets
+    (lower_third, end_summary, heat_map_frame) are composited as rendered.
+    Dynamic widgets carry numbers baked in by a 5 s Chrome render, which is too
+    slow for a live score, so they are used only as `<id>_template.png` (chrome
+    with empty text areas) plus broadcast/widgets/layout.json text boxes into
+    which live.py writes the numbers every frame; without a template the
+    placeholder panel is drawn. (ORCH decision 14:52.)"""
+
+    def __init__(self, folder: str | Path = "broadcast/assets", refresh_s: float = 1.0,
+                 layout_path: str | Path = "broadcast/widgets/layout.json") -> None:
         self.folder = Path(folder)
+        self.layout_path = Path(layout_path)
         self._cache: dict[str, np.ndarray | None] = {}
         self._mtime: dict[str, float] = {}
         self._checked: dict[str, float] = {}
+        self._layout: dict = {}
+        self._layout_mtime = -1.0
         self.refresh_s = refresh_s  # FRONTEND drops PNGs while the show runs: re-check the folder now and then
 
+    def layout(self, wid: str) -> list[dict]:
+        """Text boxes for a dynamic widget from layout.json (re-read on change)."""
+        mtime = self.layout_path.stat().st_mtime if self.layout_path.exists() else -1.0
+        if mtime != self._layout_mtime:
+            self._layout_mtime = mtime
+            try:
+                self._layout = json.loads(self.layout_path.read_text()) if mtime >= 0 else {}
+            except json.JSONDecodeError:
+                self._layout = {}
+        boxes = self._layout.get(wid)
+        if isinstance(boxes, dict):
+            boxes = [{"id": k, **v} for k, v in boxes.items() if isinstance(v, dict)]
+        return boxes if isinstance(boxes, list) else []
+
     def get(self, wid: str) -> np.ndarray | None:
-        """BGRA image for the widget, resized to its geometry, or None (placeholder)."""
+        """Sprite for the widget: the rendered PNG (static widgets) or the
+        template PNG (dynamic widgets), or None (placeholder)."""
         import time as _time
 
         now = _time.monotonic()
         if wid in self._cache and now - self._checked.get(wid, 0.0) < self.refresh_s:
             return self._cache[wid]
         self._checked[wid] = now
-        path = self.folder / f"{wid}.png"
+        name = f"{wid}_template.png" if wid in DYNAMIC_WIDGETS else f"{wid}.png"
+        path = self.folder / name
         mtime = path.stat().st_mtime if path.exists() else -1.0
         if wid in self._cache and self._mtime.get(wid) == mtime:
             return self._cache[wid]
@@ -152,6 +180,40 @@ def _geom(frame: np.ndarray, wid: str) -> tuple[int, int, int, int]:
     return int(x * k), int(y * k), int(w * k), int(h * k)
 
 
+ROLE_COLORS = {"white": TEXT, "muted": DIM, "text": TEXT}
+
+
+def draw_boxes(frame: np.ndarray, boxes: list[dict], fields: dict, teams: list[dict]) -> None:
+    """Live text into FRONTEND's layout boxes (canvas px: x, y, w, h, font_px,
+    align left|center|right, color_role team_a|team_b|white|muted, field)."""
+    k = _scale(frame)
+    for b in boxes:
+        val = fields.get(b.get("field", b.get("id")))
+        if val is None:
+            continue
+        s = str(val)
+        size = float(b.get("font_px", 32)) / 32.0 * k  # Hershey 1.0 ~ 32 px cap height
+        thick = max(1, int(round(size * 2)))
+        role = b.get("color_role", "white")
+        if role == "team_a":
+            color = hex_to_bgr(teams[0]["color"])
+        elif role == "team_b":
+            color = hex_to_bgr(teams[1]["color"])
+        else:
+            color = ROLE_COLORS.get(role, TEXT)
+        (tw, th), _ = cv2.getTextSize(s, cv2.FONT_HERSHEY_DUPLEX, size, thick)
+        x, y, w, h = (float(b.get("x", 0)) * k, float(b.get("y", 0)) * k, float(b.get("w", 0)) * k, float(b.get("h", 0)) * k)
+        align = b.get("align", "left")
+        if align == "center":
+            x = x + (w - tw) / 2
+        elif align == "right":
+            x = x + w - tw
+        baseline = y + h if h else y  # boxes give the top-left and size; a bare y is the baseline
+        if h:
+            baseline = y + (h + th) / 2
+        cv2.putText(frame, s, (int(x), int(baseline)), cv2.FONT_HERSHEY_DUPLEX, size, color, thick, cv2.LINE_AA)
+
+
 def composite(frame: np.ndarray, sprite, alpha_scale: float = 1.0) -> None:
     """A widget sprite (canvas coordinates) onto the frame, scaled if the frame is not 1080p."""
     if sprite is None:
@@ -170,12 +232,16 @@ def composite(frame: np.ndarray, sprite, alpha_scale: float = 1.0) -> None:
     blend(frame, img, int(sprite.x * k), int(sprite.y * k))
 
 
-def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None) -> tuple[int, int, int, int, float] | None:
-    """Composite FRONTEND's rendered widget (returns None: nothing more to draw)
-    or draw the placeholder panel and return its geometry for the text."""
+def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None, fields: dict | None = None,
+           teams: list[dict] | None = None) -> tuple[int, int, int, int, float] | None:
+    """Composite FRONTEND's widget (static: as rendered; dynamic: template +
+    live text from layout.json) and return None, or draw the placeholder
+    panel and return its geometry for the built-in text."""
     img = assets.get(wid)
     if img is not None:
         composite(frame, img)
+        if wid in DYNAMIC_WIDGETS and fields is not None:
+            draw_boxes(frame, assets.layout(wid), fields, teams or [])
         return None
     x, y, w, h = _geom(frame, wid)
     glass(frame, x, y, w, h, accent=accent)
@@ -186,7 +252,9 @@ def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None) -> tuple[in
 
 
 def draw_score_bug(frame, assets: Assets, teams: list[dict], clock: str) -> None:
-    placed = _place(frame, assets, "score_bug")
+    fields = {"team_a_name": teams[0]["name"], "team_b_name": teams[1]["name"], "score_a": teams[0]["score"],
+              "score_b": teams[1]["score"], "clock": clock, "period": "P1"}
+    placed = _place(frame, assets, "score_bug", fields=fields, teams=teams)
     if placed is None:
         return
     x, y, w, h, k = placed
@@ -210,6 +278,7 @@ def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s:
     img = assets.get("made_flash")
     if img is not None:
         composite(frame, img, alpha_scale=fade)
+        draw_boxes(frame, assets.layout("made_flash"), {"label": label}, [team or {"color": "#3cc83c"}] * 2)
         return
     else:
         overlay = frame.copy()
@@ -220,7 +289,12 @@ def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s:
 
 
 def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
-    placed = _place(frame, assets, "player_card", accent=hex_to_bgr(team["color"]))
+    pct = f"{int(round(100 * player['fg_pct']))}%" if player.get("fg_pct") is not None else "-"
+    fields = {"number": f"#{player['number']}" if player.get("number") else player["key"], "key": player["key"],
+              "team_name": team["name"], "pts": player["pts"], "fg": f"{player['fgm']}/{player['fga']}", "fg_pct": pct,
+              "line": f"{player['fgm']}/{player['fga']} FG, {pct}"}
+    placed = _place(frame, assets, "player_card", accent=hex_to_bgr(team["color"]), fields=fields,
+                    teams=[team, team] if team["id"] == 0 else [team, team])
     if placed is None:
         return
     x, y, w, h, k = placed
@@ -233,7 +307,16 @@ def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
 
 
 def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[dict]) -> None:
-    placed = _place(frame, assets, "team_overview")
+    fields = {}
+    for i, suf in enumerate(("a", "b")):
+        t = teams[i]
+        top = next((p for p in players if p["team"] == t["id"] and p["pts"] > 0), None)
+        pct = f"{int(round(100 * t['fg_pct']))}%" if t.get("fg_pct") is not None else "-"
+        fields.update({f"team_{suf}_name": t["name"], f"score_{suf}": t["score"], f"fg_{suf}": f"{t['fgm']}/{t['fga']}",
+                       f"fg_pct_{suf}": pct, f"poss_{suf}": t["possessions"],
+                       f"top_{suf}": (f"#{top['number']}" if top and top.get("number") else (top["key"] if top else "-")),
+                       f"top_pts_{suf}": top["pts"] if top else 0})
+    placed = _place(frame, assets, "team_overview", fields=fields, teams=teams)
     if placed is None:
         return
     x, y, w, h, k = placed
