@@ -22,3 +22,6 @@ models/*.pt
 *.pt
 out/
 runs/
+
+# third-party reference code without license, local only
+reference/thirdparty/
