@@ -22,7 +22,21 @@ GAIN = 12.0          # deg per full frame of normalized error (matches app)
 SLEW = 2.0           # deg per tick, firmware-matched (15 ms tick ~ frame at 30fps)
 
 
-def target_cx(objects, width):
+def target_cx(rec, width):
+    """Ball-first target from either tracks schema:
+    vision/track (Sammy): {"players": [...], "ball": {...}} per line
+    ml/analyze_video legacy: {"objects": [{"cls", "conf", "xyxy"}]}"""
+    if "players" in rec or "ball" in rec:
+        ball = rec.get("ball")
+        if ball:
+            return ball["center"][0] / width
+        players = rec.get("players") or []
+        if not players:
+            return None
+        box = max(players, key=lambda p: (p["bbox"][2] - p["bbox"][0]) *
+                  (p["bbox"][3] - p["bbox"][1]))["bbox"]
+        return (box[0] + box[2]) / 2 / width
+    objects = rec.get("objects", [])
     balls = [o for o in objects if o["cls"] == "sports ball"]
     if balls:
         box = max(balls, key=lambda o: o["conf"])["xyxy"]
@@ -66,7 +80,7 @@ def main():
     with open(a.tracks) as f:
         for line in f:
             rec = json.loads(line)
-            cx = target_cx(rec["objects"], width)
+            cx = target_cx(rec, width)
             if cx is not None:
                 desired = angle + GAIN * (cx - 0.5)
                 step = max(-SLEW, min(SLEW, desired - angle))

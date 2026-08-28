@@ -20,7 +20,6 @@ final class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         previewLayer = AVCaptureVideoPreviewLayer(session: session)
         previewLayer.videoGravity = .resizeAspectFill
         super.init()
-        configure()
     }
 
     private func configure() {
@@ -43,7 +42,13 @@ final class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     }
 
     func start() {
-        queue.async { self.session.startRunning() }
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            guard granted else { return }
+            self.queue.async {
+                if self.session.inputs.isEmpty { self.configure() }
+                self.session.startRunning()
+            }
+        }
     }
 
     /// Convert a tap in preview-layer coordinates to a normalized ROI for Vision.
