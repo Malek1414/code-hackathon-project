@@ -37,7 +37,8 @@ class BallGate:
     def __init__(self, *, base_px: float = 120.0, per_frame_px: float = 80.0,
                  max_gate_px: float = 900.0, static_px: float = 6.0, static_frames: int = 75,
                  blacklist_px: float = 25.0, rel_px: float = 8.0, rel_min: int = 4,
-                 rel_window: int = 150, rel_span: int = 75) -> None:
+                 rel_window: int = 150, rel_span: int = 75,
+                 blacklist_rel: list[np.ndarray] | None = None) -> None:
         self.base_px = base_px
         self.per_frame_px = per_frame_px
         self.max_gate_px = max_gate_px
@@ -54,7 +55,7 @@ class BallGate:
         self.last_step: int = -10**9
         self.history: deque[np.ndarray] = deque(maxlen=static_frames)
         self.blacklist_abs: list[np.ndarray] = []
-        self.blacklist_rel: list[np.ndarray] = []
+        self.blacklist_rel: list[np.ndarray] = list(blacklist_rel or [])
         self.rel_seen: deque[tuple[int, np.ndarray]] = deque()  # (step, offset) of all candidates
         self.rejected_gate = 0
         self.rejected_static = 0

@@ -1,12 +1,18 @@
 """Annotated video: id + team-colored boxes, ball trail, hoops, shot flashes.
 
-Written with cv2.VideoWriter (mp4v) at the source fps divided by the frame
-stride, so the overlay plays in real time next to the original.
+Written with cv2.VideoWriter (mp4v) to a temp file at the source fps divided
+by the frame stride, then transcoded to H.264 (yuv420p, faststart) on close so
+the dashboard can embed it in a browser. Every `latest_every` frames the
+current annotated frame is saved as <overlay dir>/overlay_latest.jpg for the
+monitor board while the mp4 is still open.
 """
 
 from __future__ import annotations
 
 import json
+import logging
+import shutil
+import subprocess
 from collections import deque
 from pathlib import Path
 
@@ -23,6 +29,7 @@ BALL_COLOR = (0, 220, 255)
 HOOP_COLOR = (0, 255, 120)
 TRAIL_LEN = 25
 FLASH_S = 1.0
+log = logging.getLogger("track")
 
 
 def _palette(team_bgr: dict[int, tuple[int, int, int]]) -> sv.ColorPalette:
@@ -44,11 +51,15 @@ class OverlayWriter:
         team_bgr: dict[int, tuple[int, int, int]] | None = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        self.raw_path = path.with_name(path.stem + "_raw.mp4")
+        self.latest_path = path.with_name("overlay_latest.jpg")
+        self.latest_every = 100
         self.writer = cv2.VideoWriter(
-            str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+            str(self.raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
         )
         if not self.writer.isOpened():
-            raise RuntimeError(f"cannot open VideoWriter for {path}")
+            raise RuntimeError(f"cannot open VideoWriter for {self.raw_path}")
         self.fps = fps
         self.trail: deque[tuple[int, int]] = deque(maxlen=TRAIL_LEN)
         self.frames = 0
@@ -106,6 +117,8 @@ class OverlayWriter:
         self._hud(img, record)
         self.writer.write(img)
         self.frames += 1
+        if self.frames % self.latest_every == 1:
+            cv2.imwrite(str(self.latest_path), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
     def _flash(self, img: np.ndarray, t: float) -> None:
         for s in self.shots:
@@ -126,6 +139,30 @@ class OverlayWriter:
 
     def close(self) -> None:
         self.writer.release()
+        self._transcode()
+
+    def _transcode(self) -> None:
+        """mp4v → H.264 for the browser. Falls back to the raw file on failure."""
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as e:  # noqa: BLE001
+            log.warning("no ffmpeg (%s), keeping mp4v overlay", e)
+            shutil.move(self.raw_path, self.path)
+            return
+        tmp = self.path.with_name(self.path.stem + "_h264.tmp.mp4")
+        cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(self.raw_path), "-c:v", "libx264",
+               "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+               "-an", str(tmp)]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0 or not tmp.exists():
+            log.warning("transcode failed: %s; keeping mp4v overlay", res.stderr.strip()[:300])
+            shutil.move(self.raw_path, self.path)
+            return
+        tmp.replace(self.path)
+        self.raw_path.unlink(missing_ok=True)
+        log.info("overlay H.264 written: %s", self.path)
 
 
 def _load_shots(path: Path | None) -> list[dict]:

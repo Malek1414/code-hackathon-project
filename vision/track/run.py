@@ -59,6 +59,9 @@ def parse_args() -> argparse.Namespace:
                         "kmeans = generic two-color split")
     p.add_argument("--team-samples", type=int, default=24,
                    help="kmeans mode: frames sampled across the clip for the fit")
+    p.add_argument("--cuts", type=Path, default=None,
+                   help="COURT's cut list (default out/cuts_<clip>.json if present); "
+                        "tracker state is reset at every cut frame")
     p.add_argument("--stride", type=int, default=1, help="process every Nth frame")
     p.add_argument("--start-frame", type=int, default=0)
     p.add_argument("--max-frames", type=int, default=0, help="0 = whole clip")
@@ -84,6 +87,28 @@ def sample_frames(path: Path, first: int, last: int, n: int):
         if ok:
             yield frame
     cap.release()
+
+
+def load_cuts(path: Path | None, clip: Path) -> list[int]:
+    """Cut frames from COURT's file. Accepts [f, ...], [{"frame": f}, ...],
+    {"cuts": [...]} or {"segments": [{"start": f}, ...]}."""
+    if path is None:
+        path = Path("out") / f"cuts_{clip.stem}.json"
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text())
+    if isinstance(data, dict):
+        data = data.get("cuts") or data.get("segments") or []
+    frames = []
+    for c in data:
+        if isinstance(c, dict):
+            v = c.get("frame", c.get("start"))
+        else:
+            v = c
+        if v is not None:
+            frames.append(int(v))
+    log.info("%d cuts from %s", len(frames), path)
+    return sorted(set(frames))
 
 
 def main() -> None:
@@ -115,9 +140,11 @@ def main() -> None:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {"clip": str(a.video), "source_fps": fps, "stride": a.stride, "fps": fps / a.stride,
             "width": width, "height": height, "first_frame": first, "last_frame": last,
-            "tracks": str(a.out), "weights": tr.weights_info}
+            "tracks": str(a.out), "weights": tr.weights_info,
+            "cuts": load_cuts(a.cuts, a.video)}
     (a.out.parent / "tracks_meta.json").write_text(json.dumps(meta, indent=1))
 
+    cuts = load_cuts(a.cuts, a.video)
     t0 = time.time()
     done = 0
     if first:
@@ -129,6 +156,10 @@ def main() -> None:
             if not ok:
                 break
             if (idx - first) % a.stride == 0:
+                if cuts and cuts[0] <= idx:
+                    while cuts and cuts[0] <= idx:
+                        cuts.pop(0)
+                    tr.reset()
                 record = tr.step(frame, idx, idx / fps)
                 out.write(json.dumps(record) + "\n")
                 if writer:

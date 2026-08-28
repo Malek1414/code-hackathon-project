@@ -18,6 +18,14 @@ Detectors (measured on MPS, 1080p50 game footage, see docs/ORCHESTRATION.md):
   * `weights=` (LABEL's best.pt with contract classes 0 player, 1 ball,
     2 hoop, 3 referee) switches to a single model for everything.
 Teams: vision/track/teams.py (rules by default, kmeans optional).
+
+The footage is an edited production (close-ups, inserts, dissolves): call
+`reset()` at every cut (COURT writes out/cuts_<clip>.json) so ByteTrack does
+not glue a close-up face to a wide-shot player. Track ids stay unique across
+resets (offset), so a player after a cut is a new id, never a reused one.
+A hoop box must sit in the upper `hoop_max_y` of the frame and above the feet
+of every player it overlaps (a false hoop was found on the floor between
+players).
 """
 
 from __future__ import annotations
@@ -59,14 +67,14 @@ class Tracker:
                  device: str = "mps", *, weights: str | Path | None = None,
                  person_imgsz: int = 960, ball_imgsz: int = 1280, imgsz: int = 1280,
                  conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.3,
-                 ball_max_px: int = 80, hoop_hold: int = 50, tracker: str = "bytetrack",
-                 team_mode: str = "rules", fps: float = 50.0) -> None:
+                 ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
+                 tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
         self.device = device
         self.person_imgsz, self.ball_imgsz, self.imgsz = person_imgsz, ball_imgsz, imgsz
         self.conf_player, self.conf_ball, self.conf_hoop = conf_player, conf_ball, conf_hoop
-        self.ball_max_px, self.hoop_hold = ball_max_px, hoop_hold
+        self.ball_max_px, self.hoop_hold, self.hoop_max_y = ball_max_px, hoop_hold, hoop_max_y
         self.tracker_yaml = str(TRACKERS[tracker])
         self.fps = fps
 
@@ -99,8 +107,24 @@ class Tracker:
         self.last_hoop: list[float] | None = None
         self.last_hoop_frame = -10**9
         self._auto_index = 0
+        self.id_offset = 0
+        self.max_raw_id = 0
+        self.resets = 0
         self.stats = {"frames": 0, "ball_frames": 0, "hoop_frames": 0, "hoop_fresh": 0,
-                      "player_dets": 0, "ids": set()}
+                      "hoop_rejected": 0, "player_dets": 0, "ids": set()}
+
+    def reset(self) -> None:
+        """Cut in the footage: forget tracks, ball history and the hoop."""
+        self.resets += 1
+        self.id_offset += self.max_raw_id
+        self.max_raw_id = 0
+        for m in {id(self.person_model): self.person_model}.values():
+            pred = getattr(m, "predictor", None)
+            if pred is not None and getattr(pred, "trackers", None):
+                for t in pred.trackers:
+                    t.reset()
+        self.gate = BallGate(blacklist_rel=self.gate.blacklist_rel)
+        self.last_hoop, self.last_hoop_frame = None, -10**9
 
     # ----- detection ---------------------------------------------------------
     def person_boxes(self, frame: np.ndarray) -> np.ndarray:
@@ -166,12 +190,31 @@ class Tracker:
 
         players = []
         for box, conf, tid, is_ref in persons:
+            self.max_raw_id = max(self.max_raw_id, tid)
+            tid += self.id_offset
             b = _round(box)
             team = -1 if is_ref else self.teams.assign(tid, torso_color(frame, box))
             players.append({"id": tid, "bbox": b, "foot": [round((b[0] + b[2]) / 2, 1), b[3]],
                             "team": team, "conf": round(conf, 3)})
 
         # Largest hoop box = the game hoop; the folded wall hoop is smaller.
+        # Sanity: upper part of the frame, above the feet of overlapping players.
+        max_y = frame.shape[0] * self.hoop_max_y
+        ok_hoops = []
+        for c, hb in hoops:
+            cx, cy = (hb[0] + hb[2]) / 2, (hb[1] + hb[3]) / 2
+            if cy > max_y:
+                continue
+            # Hoop bottom inside the lowest quarter of an overlapping player box =
+            # it sits at someone's feet. A real rim is above a jumper's box top.
+            below_feet = any(p["bbox"][0] < hb[2] and p["bbox"][2] > hb[0]
+                             and p["bbox"][1] < hb[3] and p["bbox"][3] > hb[1]
+                             and hb[3] > p["bbox"][3] - 0.25 * (p["bbox"][3] - p["bbox"][1])
+                             for p in players)
+            if not below_feet:
+                ok_hoops.append((c, hb))
+        self.stats["hoop_rejected"] += len(hoops) - len(ok_hoops)
+        hoops = ok_hoops
         if hoops:
             _c, hb = max(hoops, key=lambda x: (x[1][2] - x[1][0]) * (x[1][3] - x[1][1]))
             self.last_hoop, self.last_hoop_frame = _round(hb), frame_index
@@ -206,5 +249,6 @@ class Tracker:
                 "ball_frame_share": round(st["ball_frames"] / n, 4),
                 "hoop_frame_share": round(st["hoop_frames"] / n, 4),
                 "hoop_detected_share": round(st["hoop_fresh"] / n, 4),
+                "hoop_rejected": st["hoop_rejected"], "resets": self.resets,
                 "track_ids": len(st["ids"]), "team_mode": self.teams.mode,
                 "team_centroids_lab": self.teams.centroids_lab, **self.gate.summary()}
