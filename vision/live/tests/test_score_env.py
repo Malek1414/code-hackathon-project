@@ -190,3 +190,23 @@ def test_team_config_flags_win_over_menu(tmp_path):
     assert t[1]["name"] == "Gäste" and t[0]["color"] == "#ffffff" and t[0]["name"] == "Lions"
     t = load_team_config(tmp_path / "missing.json")
     assert [x["name"] for x in t] == ["Team A", "Team B"]
+
+
+def test_celebrate_classification_and_manual_events():
+    from vision.live.celebrate import classify, parse_manual
+
+    hoop = [100.0, 100.0, 160.0, 140.0]  # w 60, h 40, rim y 100
+    frames = [0, 10, 20]
+    recs = {
+        0: {"frame": 0, "ball": {"center": [130.0, 90.0]}, "players": [{"id": 1, "bbox": [110, 60, 150, 200]}]},
+        10: {"frame": 10, "ball": {"center": [500.0, 300.0]}, "players": [{"id": 1, "bbox": [480, 220, 520, 380]}]},
+        20: {"frame": 20, "ball": {"center": [130.0, 95.0]}, "players": []},
+    }
+    dunk = {"hoop_bbox": hoop, "release_frame": 0, "frame": 20, "player_id": 1}
+    assert classify(dunk, frames, recs) == "DUNK"  # release at the rim, box top above the rim line
+    three = {"hoop_bbox": hoop, "release_frame": 10, "frame": 20, "player_id": 1}
+    assert classify(three, frames, recs) == "THREE"  # release 370 px = 6 hoop widths away
+    plain = {"hoop_bbox": hoop, "release_frame": None, "frame": 20, "player_id": None}
+    assert classify(plain, frames, recs) == "BASKET"
+    ev = parse_manual("36.8:three, 44.0:dunk", 60.0)
+    assert [(e["kind"], e["frame"]) for e in ev] == [("THREE", 2208), ("DUNK", 2640)]
