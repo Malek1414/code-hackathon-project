@@ -66,8 +66,9 @@ class Tracker:
                  weights_ballhoop: str | Path = "models/ball_hoop_avishah.pt",
                  device: str = "mps", *, weights: str | Path | None = None,
                  person_imgsz: int = 960, ball_imgsz: int = 1280, imgsz: int = 1280,
-                 conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.3,
+                 conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.5,
                  ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
+                 hoop_min_streak: int = 3,
                  tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
@@ -75,6 +76,9 @@ class Tracker:
         self.person_imgsz, self.ball_imgsz, self.imgsz = person_imgsz, ball_imgsz, imgsz
         self.conf_player, self.conf_ball, self.conf_hoop = conf_player, conf_ball, conf_hoop
         self.ball_max_px, self.hoop_hold, self.hoop_max_y = ball_max_px, hoop_hold, hoop_max_y
+        self.hoop_min_streak = hoop_min_streak
+        self.hoop_streak = 0
+        self.hoop_pending: list[float] | None = None
         self.tracker_yaml = str(TRACKERS[tracker])
         self.fps = fps
 
@@ -125,6 +129,8 @@ class Tracker:
                     t.reset()
         self.gate = BallGate(blacklist_rel=self.gate.blacklist_rel)
         self.last_hoop, self.last_hoop_frame = None, -10**9
+        self.hoop_streak, self.hoop_pending = 0, None
+        self.teams.reset_votes()
 
     # ----- detection ---------------------------------------------------------
     def person_boxes(self, frame: np.ndarray) -> np.ndarray:
@@ -216,10 +222,20 @@ class Tracker:
                 ok_hoops.append((c, hb))
         self.stats["hoop_rejected"] += len(hoops) - len(ok_hoops)
         hoops = ok_hoops
+        # A hoop counts only after `hoop_min_streak` consecutive detections near
+        # the same spot (wall items flash up for a frame or two, a hoop stays).
         if hoops:
             _c, hb = max(hoops, key=lambda x: (x[1][2] - x[1][0]) * (x[1][3] - x[1][1]))
-            self.last_hoop, self.last_hoop_frame = _round(hb), frame_index
-            self.stats["hoop_fresh"] += 1
+            hb = _round(hb)
+            near_prev = self.hoop_pending is not None and abs(hb[0] - self.hoop_pending[0]) < 60 \
+                and abs(hb[1] - self.hoop_pending[1]) < 60
+            self.hoop_streak = self.hoop_streak + 1 if near_prev else 1
+            self.hoop_pending = hb
+            if self.hoop_streak >= self.hoop_min_streak:
+                self.last_hoop, self.last_hoop_frame = hb, frame_index
+                self.stats["hoop_fresh"] += 1
+        else:
+            self.hoop_streak, self.hoop_pending = 0, None
         if self.last_hoop is not None and frame_index - self.last_hoop_frame > self.hoop_hold:
             self.last_hoop = None
         hoop_list = [{"bbox": self.last_hoop}] if self.last_hoop else []
@@ -227,7 +243,7 @@ class Tracker:
         ball = None
         balls = [(c, b) for c, b in balls
                  if b[2] - b[0] <= self.ball_max_px and b[3] - b[1] <= self.ball_max_px]
-        picked = self.gate.pick(balls, self.last_hoop)
+        picked = self.gate.pick(balls, self.last_hoop, [p["bbox"] for p in players])
         if picked:
             bconf, b = picked
             b = _round(b)

@@ -20,6 +20,11 @@ separate them. What separates them is time and motion:
   candidates outside it, whatever their confidence: measured on dev60 57.0 s,
   a 0.75 fixture 320 px away must not outscore a 0.5 ball on the rim. Inside a
   tier, confidence minus a distance penalty decides.
+* radius consistency: the ball does not change size between frames. A
+  candidate whose radius is off by more than `radius_tol` (40 %) from the
+  running median of the last accepted radii is a head, a hand or a sign.
+* heads: a candidate whose center lies in the top 20 % of any player box is a
+  head, unless the previous ball was already there (a ball held overhead).
 * gate: a candidate must lie within `base + per_frame * gap` px of the last
   accepted ball; the gate grows with the gap, so a lost ball (out of frame,
   occluded) is re-acquired anywhere, but a wall object while the ball is in
@@ -44,11 +49,14 @@ class BallGate:
                  max_gate_px: float = 900.0, near_px: float = 120.0, near_grow_px: float = 40.0,
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
                  rel_px: float = 8.0, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
+                 radius_tol: float = 0.4, radius_min_samples: int = 5, head_frac: float = 0.2,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
         self.base_px, self.per_frame_px, self.max_gate_px = base_px, per_frame_px, max_gate_px
         self.near_px, self.near_grow_px = near_px, near_grow_px
         self.static_px, self.static_frames, self.blacklist_px = static_px, static_frames, blacklist_px
         self.rel_px, self.rel_min, self.rel_window, self.rel_span = rel_px, rel_min, rel_window, rel_span
+        self.radius_tol, self.radius_min_samples, self.head_frac = radius_tol, radius_min_samples, head_frac
+        self.radii: deque[float] = deque(maxlen=25)
 
         self.step_no = 0
         self.last: np.ndarray | None = None
@@ -61,6 +69,23 @@ class BallGate:
         self.rel_seen: deque[tuple[int, np.ndarray]] = deque()  # (step, offset) of all candidates
         self.rejected_gate = 0
         self.rejected_static = 0
+        self.rejected_radius = 0
+        self.rejected_head = 0
+
+    def _bad_radius(self, box) -> bool:
+        if len(self.radii) < self.radius_min_samples:
+            return False
+        r = max(box[2] - box[0], box[3] - box[1]) / 2
+        med = float(np.median(self.radii))
+        return abs(r - med) > self.radius_tol * med
+
+    def _is_head(self, c: np.ndarray, players) -> bool:
+        if self.last is not None and float(np.linalg.norm(c - self.last)) < 60:
+            return False  # ball was already there (held overhead)
+        for b in players:
+            if b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[1] + self.head_frac * (b[3] - b[1]):
+                return True
+        return False
 
     def _is_static_rel(self, off: np.ndarray) -> bool:
         if any(np.linalg.norm(off - b) < self.rel_px * 2 for b in self.blacklist_rel):
@@ -82,8 +107,9 @@ class BallGate:
         return self.last + v * min(gap, 4) * 0.7
 
     def pick(self, candidates: list[tuple[float, list[float]]],
-             hoop: list[float] | None = None) -> tuple[float, list[float]] | None:
-        """candidates = [(conf, [x1,y1,x2,y2])]; returns the accepted one or None."""
+             hoop: list[float] | None = None, players=()) -> tuple[float, list[float]] | None:
+        """candidates = [(conf, [x1,y1,x2,y2])], players = player boxes;
+        returns the accepted candidate or None."""
         self.step_no += 1
         while self.rel_seen and self.step_no - self.rel_seen[0][0] > self.rel_window:
             self.rel_seen.popleft()
@@ -105,6 +131,12 @@ class BallGate:
                     continue
             if any(np.linalg.norm(c - b) < self.blacklist_px for b in self.blacklist_abs):
                 self.rejected_static += 1
+                continue
+            if self._bad_radius(box):
+                self.rejected_radius += 1
+                continue
+            if self._is_head(c, players):
+                self.rejected_head += 1
                 continue
             if pred is None:
                 tier2.append((conf, conf, box, c))
@@ -132,10 +164,13 @@ class BallGate:
                 return None
         self.prev, self.prev_step = self.last, self.last_step
         self.last, self.last_step = c, self.step_no
+        self.radii.append(max(box[2] - box[0], box[3] - box[1]) / 2)
         return conf, box
 
     def summary(self) -> dict:
         return {"ball_rejected_gate": self.rejected_gate,
                 "ball_rejected_static": self.rejected_static,
+                "ball_rejected_radius": self.rejected_radius,
+                "ball_rejected_head": self.rejected_head,
                 "ball_blacklist_abs": [b.round(1).tolist() for b in self.blacklist_abs],
                 "ball_blacklist_rel": [b.round(1).tolist() for b in self.blacklist_rel]}

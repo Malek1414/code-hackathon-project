@@ -36,7 +36,7 @@ BLUE_B_MAX = 118.0  # OpenCV LAB b channel (b* + 128); blue jerseys measured 99-
 RED_A_MIN = 150.0  # a channel; red panels measured 160+
 DARK_L_MAX = 60.0  # black jerseys measured L 12-40, grey referee 107, white 198
 BLUE_SHARE, RED_SHARE, DARK_SHARE = 0.15, 0.2, 0.4  # black jerseys measured blue share 0.00-0.01
-VOTE_WINDOW = 30  # labels per track kept for the majority vote (~1.2 s at 25 fps)
+VOTE_WINDOW = 50  # labels per track kept for the majority vote (2 s at 25 fps)
 
 
 def torso_color(frame_bgr: np.ndarray, bbox) -> np.ndarray | None:
@@ -77,6 +77,10 @@ class TeamClassifier:
         self.referee_dist: float = float("inf")
         self.votes: dict[int, deque] = defaultdict(lambda: deque(maxlen=VOTE_WINDOW))
         self.centroids_lab: list[list[float]] = []
+
+    def reset_votes(self) -> None:
+        """Cut in the footage: track histories are meaningless afterwards."""
+        self.votes.clear()
 
     @property
     def fitted(self) -> bool:
