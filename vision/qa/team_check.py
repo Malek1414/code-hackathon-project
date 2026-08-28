@@ -43,6 +43,7 @@ TEAM_ORDER = (0, 1, -1)
 JERSEY_HINT = {0: "blue jerseys", 1: "black or red jerseys", -1: "grey/white or unsure"}
 OFF = "off"  # pseudo band: off court per COURT's calibration (bench, spectators, referees at the table)
 OFF_COLOR = (60, 60, 255)
+ON_COURT_TOL_M = 0.5  # COURT's default 1.5 m keeps most of the bench "on court" (dev60: 4 % off at 1.5 m, 17 % at 0.5 m, 20 % at 0 m)
 
 
 def load_court(clip: Path):
@@ -66,7 +67,7 @@ def on_court_flags(cal, frame: int, feet: list[list[float]]) -> list[bool | None
     pts = cal.project(frame, feet)
     if not np.isfinite(pts).all():
         return [None] * len(feet)
-    return [bool(v) for v in cal.on_court(pts)]
+    return [bool(v) for v in cal.on_court(pts, tolerance_m=ON_COURT_TOL_M)]
 
 
 def crop_player(img: np.ndarray, p: dict, frame: int) -> np.ndarray:
@@ -166,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             head_txt = (
                 f"off court per {calib_path.name}   {len(crops[OFF])} crops here, {off_all} of {total_all - uncal_all} calibrated detections "
-                f"({100 * off_all / max(1, total_all - uncal_all):.0f}%) stand off the court: bench, spectators, table"
+                f"({100 * off_all / max(1, total_all - uncal_all):.0f}%) stand more than {ON_COURT_TOL_M:g} m outside the lines: bench, spectators, table"
             )
         else:
             head_txt = f"{TEAM_NAMES[t]}   {JERSEY_HINT[t]}   {len(crops[t])} crops here, {counts_all[t]} detections in tracks"
