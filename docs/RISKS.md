@@ -1,84 +1,74 @@
-# Demo risks, 16:00 stage path (RISK role, pass 1 at 12:55, pass 2 due 13:40)
+# Demo risks, 16:00 stage path (RISK role, pass 2 at 13:45; pass 1 was 12:55)
 
 Scope: live.py from the phone on the rig, score overlay, dashboard on the projector,
-video pitch playback. Ranked by damage. Every fact below was checked on this laptop
-at 12:50, read-only (nothing in out/ was written by the checks).
+video pitch playback, and the 14:30 freeze command. Ranked by damage. Every fact was
+checked on this laptop at 13:40 to 13:45, read-only for other roles' files (the only
+code change is in vision/run_all.py, PIPELINE's own file, see item 1).
 
-## Checks run and what they showed
+## Checks run and what they showed (pass 2, changes vs pass 1 marked)
 
-| Check | Result |
+| Check | Result at 13:42 |
 |---|---|
-| `.venv/bin/python -m vision.live.live --help` | works. `python vision/live/live.py --help` fails with ModuleNotFoundError: No module named 'vision' (the form written in docs/ORCHERSTRATION.md LIVE section) |
-| `cv2.VideoCapture(i)` for i in 0..3, one frame each | 0 = FaceTime HD 1920x1080 @ 30 fps, frame ok. 1 = the iPhone (Continuity Camera, "iPhone von Sami", listed by system_profiler) opens but returns no frame, fps 1.0. 2 and 3 do not exist. `live.py --list-sources` therefore lists only `--source 0` |
-| two processes on camera 0 at once | both get frames (macOS shares the camera), so rig tracker plus live.py on the same camera is fine |
-| `out/dashboard.html` self-contained | yes except two relative files next to it: `overlay.mp4` (43 MB) and `minimap.mp4`; the only http string is the SVG namespace. Videos have controls, muted, preload=metadata, no autoplay. Both mp4 are H.264 (avc1, yuv420p), so Safari and Chrome play them |
-| `vision/dashboard/build.py` duration | 0.23 s (built to a scratch path) |
-| ball not seen for 10 s | no crash: possession returns None (possession.py:77), shots need a ball chain within 0.5 s (shots.py), score simply freezes; hotkeys keep working |
-| live render path without models | `--source data/clips/dev60.mp4 --realtime --replay out/dev60/tracks.jsonl --max-seconds 6`: 174 frames rendered in 6 s, events file written |
-| live.py on a camera that stops delivering | `cap.read()` false ends the loop (live.py, `if not ok: break`), the window closes and the process exits with "done: rendered N" |
-| MJPEG / RTMP | MJPEG binds 127.0.0.1:8501 (no host flag), so a phone or second laptop cannot reach it. No `.env`, so RTMP is off |
-| GPU sharing | ORCHESTRATION measurement: TRACK 0.08 s/frame alone, 1.7 s/frame with three model jobs. Seen today: the smoke TRACK step slowed to 0.28 s/frame next to one other run.py |
-| laptop | AC power, 60 % charging, sleep blocked by caffeinate, disk 18 GB free (91 % used), camera permission granted to Terminal.app only (TCC), 3 commits not yet pushed |
-| pitch assets | out/pitch/analytics_side_by_side.mp4 (11 MB), overlay_12s.mp4, results_sheet_10s.mp4 exist; pitch/deck/index.html not yet (DECK in progress); Malek's 60 to 90 s pitch video is filmed 14:30 to 15:15 and is not in the repo |
+| live.py command forms | fixed: `.venv/bin/python vision/live/live.py --help` and `-m vision.live.live --help` both work (sys.path shim, line 37); docs/ORCHESTRATION.md LIVE section now shows the `-m` form |
+| cv2 indices 0..3, one frame each | 0 = FaceTime HD 1920x1080@30 ok. 1 = iPhone: opened, first read returned no frame in my probe, but `live.py --list-sources` (2 s read timeout) got 1920x1080@30 from it seconds later: the phone delivers intermittently, depending on whether it is awake. 2, 3 do not exist |
+| live.py on a silent camera | changed: reads run in a thread with timeout, the score bar shows "Kamera: kein Bild", the device is reopened, `--source auto` picks the first index that delivers. At start it retries 20 x 0.25 s, then exits "no frames from source" |
+| replay fallback | pitch/analytics/stage_checklist.md line 23 still says `--replay out/dev60/tracks.jsonl`; that file no longer exists (TRACK archives to out/dev60_v2, _v3, _v4). FileNotFoundError verified. vision/live/README.md uses out/dev60_v2/tracks.jsonl, which exists; `--replay out/dev60_v4/tracks.jsonl` verified working |
+| live render rate, replay, CPU only, 6 s realtime | `--minimap off`: 144 frames rendered (24 fps). `--minimap panel` with the per-frame calibration: 57 frames (9.5 fps), frames are dropped to keep pace |
+| `out/dashboard.html` | 312 kB, game10 (events 24 shots, 23 active players), only http string is the SVG namespace, references `overlay.mp4` next to it (471 MB, 10 min, H.264 avc1, controls, muted, no autoplay). No minimap: the builder leaves it out because out/minimap.mp4 is 60 s (dev60) and the overlay is 10 min. Jersey numbers: 0, because out/identities.json is still the dev60 file (builder logs "identities.json is for dev60, events are game10, jersey numbers ignored") |
+| `vision/dashboard/build.py` duration | 0.57 s to a scratch path |
+| ball not seen for 10 s | unchanged: possession None, no shots, score freezes, no crash. New: an unconfirmed basket flashes "looked in, press 1 or 2" and adds nothing |
+| GPU jobs at 13:42 | `vision/label/train_ball.py` (LABEL) on the GPU, NUMBERS watch on game10 (CPU OCR, 563 crops to go at 13:02), pytest of STATS. RIG's ball_tracker_yolo.py now defaults to `--device cpu` |
+| freeze command `make demo CLIP=data/clips/game10.mp4` | would have failed: TRACK's run.py writes archives only since 13:2x and touches the contract paths only with `--publish`, so run_all's TRACK step would end with "Ausgabe fehlt"; and a clean run would recompute TRACK on 10 min of video plus OCR. Fixed in vision/run_all.py at 13:44 (see item 1). Dry run now: TRACK, COURT, STATS, FRONTEND adopted, NUMBERS runs (identities is dev60), QA runs |
+| pitch assets | pitch/deck/index.html exists (13:20), references ../../out/pitch/analytics_side_by_side.mp4 (20 s, dev60, H.264) and ../../viz/followcam_assembled_poster.png by relative path. No game10 side-by-side yet (freeze table: 14:00 to 14:15). Malek's pitch video not in the repo |
+| laptop | AC, 77 % charging, disk 17 GB free (was 18 at 12:50; a game10 overlay is 471 MB, each dev60 archive ~150 MB), camera permission Terminal.app only, 4 commits not pushed, 2 files modified by other roles |
+| MJPEG / RTMP | unchanged: 127.0.0.1:8501 only, no .env so RTMP off |
 
 ## Ranked risks
 
-### 1. The phone camera delivers no frames and live.py quits
-What breaks: `--source 1` opens but yields no frame right now. live.py then exits after the first failed read (or at start with "cannot open source"), the live window disappears on stage.
-Likelihood: high. Continuity Camera drops when the phone locks, is too far from the Mac, gets a call or notification, or Wi-Fi/Bluetooth toggles.
-How we notice: `--list-sources` shows only `--source 0`; the terminal prints "done: rendered 0" within a second.
-30 s fallback: `.venv/bin/python -m vision.live.live --source 0 --minimap panel` (laptop camera, verified) or the file replay `--source data/clips/dev60.mp4 --realtime --replay out/dev60/tracks.jsonl --minimap panel`. Pre-stage: unlock the phone, landscape on the rig, Do Not Disturb on, run `--list-sources` 5 min before and only then choose the index.
+### 1. The 14:30 freeze command and the projector dashboard do not match the pitch material
+What breaks: `make demo CLIP=data/clips/game10.mp4` must pass from a clean state at 14:30. Until 13:44 it would have failed on TRACK (archive-only default, no `--publish`) and then recomputed everything on the GPU for 30+ min. run_all now passes `--publish`, adopts outputs that already exist for the clip and checks the `clip` field of every json output. What is still open: NUMBERS on game10 is not finished, so the dashboard shows track ids instead of jersey numbers, and it has no minimap (60 s dev60 minimap versus 10 min overlay).
+Likelihood: high for the numbers, medium for the minimap (COURT is on minimap_game10 in the freeze table).
+How we notice: `make plan CLIP=data/clips/game10.mp4` lists what would still run; dashboard header says which clip each input comes from.
+30 s fallback: ship the dashboard without numbers (it already ignores the mismatched identities.json) and show the 2D court from out/pitch/analytics_side_by_side.mp4 in QuickTime. Do not start NUMBERS on game10 after 15:00, it will not finish.
 
-### 2. Two model jobs on the GPU during the demo, both crawl
-What breaks: live.py runs two YOLO models at 10 fps target. If the rig's `ball_tracker_yolo.py` (RIG brief: device mps) or a leftover TRACK job runs at the same time, detection drops toward 1 fps, the boxes lag seconds behind the players and shots are missed.
-Likelihood: medium to high, the rig demo and the analytics demo are back to back or simultaneous.
-How we notice: the score bar prints `det x fps`; below 5 the demo is lagging.
-30 s fallback: rig on HSV (`software/ball_tracker.py`, no model) or `--device cpu`; live.py with the single nano model `--weights models/best.pt`; and before 15:50 `ps -axo command | grep .venv/bin/python`, kill every track/label/run_all process (monitor, numbers.watch, qa.watch are CPU only).
+### 2. The phone camera is asleep when live.py starts
+What breaks: index 1 opens and delivers nothing until the iPhone wakes up; at start live.py gives up after 5 s ("no frames from source"). Mid-run silence is handled now (score bar "Kamera: kein Bild", reopen).
+Likelihood: medium (was high; the code is robust now, the phone is not).
+How we notice: `--list-sources` says `no-frame` for the phone; the start message.
+30 s fallback: wake the phone, `--source auto` (first camera that delivers), else `--source 0` (laptop camera, verified), else the file replay in item 4. Do Not Disturb on the phone, landscape on the rig, Continuity toggle on.
 
-### 3. Wrong command form under stress
-What breaks: docs/ORCHESTRATION.md shows `vision/live/live.py --source ...`; typed that way it dies with ModuleNotFoundError. Only `.venv/bin/python -m vision.live.live` works. Same for numbers, stats, qa modules.
+### 3. The live window stutters with the court panel
+What breaks: with `--minimap panel` and a per-frame calibration the render loop manages 9.5 fps in replay on CPU; with the models running in the worker thread on MPS the main thread gets less, so the projector shows a slideshow and the boxes lag.
+Likelihood: medium to high.
+How we notice: `det x fps` in the score bar is fine but the video itself is choppy.
+30 s fallback: restart with `--minimap off` (24 fps in replay) or `--minimap window` and drag the small window onto the projector only when talking about the court.
+
+### 4. The documented replay fallback points to a deleted file
+What breaks: stage_checklist.md line 23 uses `--replay out/dev60/tracks.jsonl`, which TRACK's archive change removed; the command dies with FileNotFoundError exactly when it is needed.
+Likelihood: high if the checklist is followed verbatim.
+How we notice: traceback at start.
+30 s fallback: `--replay out/dev60_v2/tracks.jsonl` (vision/live/README.md) or out/dev60_v4/tracks.jsonl (newest, verified). PITCH should update the line; TRACK should not delete out/dev60_v2 to v4 before 17:00.
+
+### 5. A model job is still on the GPU at 16:00
+What breaks: LABEL's train_ball.py was on the GPU at 13:42 and NUMBERS OCR eats CPU; anything left over at 16:00 drops live.py from 10 to 1 detection fps. Good news: RIG's yolo tracker defaults to cpu now.
 Likelihood: medium.
-How we notice: traceback immediately.
-30 s fallback: pitch/analytics/stage_checklist.md has the correct `-m` form, read the command from there or from shell history. STATS could add the two-line sys.path shim run_all.py uses; that is their file.
+How we notice: `ps -axo pid,command | grep .venv/bin/python`; `det` fps below 5.
+30 s fallback: at 15:50 kill every vision/track, vision/label, vision/numbers, run_all process (monitor and qa.watch are harmless), then start live.py alone.
 
-### 4. The documented replay fallback mixes two videos
-What breaks: stage_checklist.md says `--source data/clips/dev60.mp4 --realtime --replay out/tracks.jsonl`. out/tracks.jsonl is whatever TRACK ran last (game10 is scheduled), so boxes of another game get drawn on dev60.
-Likelihood: high if the fallback is used as written.
-How we notice: boxes float beside the players from the first second.
-30 s fallback: `--replay out/dev60/tracks.jsonl` (exists since 12:08, matches dev60). PITCH should change the line.
-
-### 5. Dashboard or deck opened without their neighbours
-What breaks: dashboard.html needs overlay.mp4 and minimap.mp4 in the same folder; the deck will reference out/pitch/... by relative path. A copy of the html alone (AirDrop, USB, other laptop, or opening out/smoke_pipeline/dashboard.html) shows empty video boxes. The videos also wait for a click (controls, no autoplay) and minimap.mp4 is 20 s next to a 60 s overlay.
+### 6. Dashboard or deck opened away from the repo
+What breaks: dashboard.html needs overlay.mp4 (471 MB) beside it, the deck needs ../../out/pitch/ and ../../viz/. A copy of the html alone (AirDrop, USB, other laptop) shows empty boxes; the overlay needs a click (no autoplay).
 Likelihood: medium.
-How we notice: black video frames on the projector.
-30 s fallback: open from this laptop, `open out/dashboard.html`, click play once before going on; if a video stays black play out/pitch/analytics_side_by_side.mp4 in QuickTime. Rebuild costs 0.23 s (`vision/dashboard/build.py`).
-
-### 6. The ball is not detected on stage
-What breaks: phone at 5 m, room light, a ball of 20 to 40 px: the ball model misses it for seconds. Nothing crashes, but possession and shots stay empty and the score never moves by itself.
-Likelihood: high (the models were trained on 1080p gym footage, not a hall with a phone).
-How we notice: no ball box and no possession ring in the live window.
-30 s fallback: the auto-with-veto story: keys 1/2 (+2) and 3/4 (+3) put the score on the bar, say "the system calls, the human corrects". Use a bright ball, walk the ball closer to the phone.
+How we notice: black video frames.
+30 s fallback: `open out/dashboard.html` and `open pitch/deck/index.html` from this laptop, click play once before going on; QuickTime with out/pitch/analytics_side_by_side.mp4 as the backup picture.
 
 ### 7. Hotkeys land in the wrong window
-What breaks: OpenCV only sees keys while the live window is focused. After clicking the deck or the browser, 1 to 4 and z do nothing, arrow keys flip slides instead.
-Likelihood: medium.
-How we notice: score does not change after the key.
-30 s fallback: click the live window title bar, press again. One person owns the keyboard, the other talks.
+Unchanged: 1 to 4 and z only work while the OpenCV window is focused; after clicking the deck, arrow keys flip slides and the score does not move. Fallback: click the live window title bar, press again; one person owns the keyboard.
 
-### 8. Camera permission dialog or black frames from another terminal
-What breaks: macOS grants camera access per app; today only Terminal.app is allowed. Starting live.py from VS Code, iTerm or Warp triggers a permission dialog on stage or returns black frames.
-Likelihood: low to medium.
-How we notice: dialog, or `--list-sources` finds nothing.
-30 s fallback: run from Terminal.app; if the dialog appears, click OK and restart the command.
+### 8. The ball is not detected on stage
+Unchanged: nothing crashes, possession and shots stay empty, the score never moves by itself. An unconfirmed basket now flashes "looked in, press 1 or 2". Fallback: keys 1/2 (+2), 3/4 (+3), bright ball, walk it closer to the phone, and say "the system calls, the human corrects".
 
-### 9. Leftover jobs, disk and sleep at 16:00
-What breaks: background loops from the day (numbers.watch, qa.watch, monitor, any TRACK run) keep CPU and GPU busy; the disk has 18 GB left while every overlay render is 40 to 100 MB; caffeinate processes hold the Mac awake now but not on stage.
-Likelihood: medium.
-How we notice: fans, `det` fps low, "no space left" in a log.
-30 s fallback: at 15:50 kill the watchers and any TRACK process, `caffeinate -d &`, plug in AC, close the monitor tab; delete out/smoke_pipeline if space is needed (regenerable).
+### 9. Wrong terminal, permission dialog, disk
+Unchanged plus disk: camera access is granted to Terminal.app only (VS Code, iTerm, Warp would prompt on stage). Disk went 18 to 17 GB in 50 min; every game10 TRACK run adds 471 MB, every dev60 archive 150 MB. Fallback: Terminal.app; delete out/smoke_pipeline and out/dev60_v3 if space runs out (regenerable, v2 and v4 are the replay files).
 
-### 10. Promised outputs that do not exist yet
-What breaks: MJPEG is reachable only on this laptop (127.0.0.1), RTMP is off without .env, the pitch video and the deck are not in the repo at 12:55.
-Likelihood: certain for MJPEG-on-phone, medium for the rest.
-How we notice: a phone browser cannot open http://<mac-ip>:8501.
-30 s fallback: do not promise a phone view; mirror the live window to the projector. Keep the pitch video as a local file in the repo (pitch/ or out/pitch/) by 15:15, not only on a phone.
+### 10. Promised outputs that do not exist
+Unchanged: MJPEG reachable only on this laptop, RTMP off without .env, Malek's pitch video not in the repo, no game10 side-by-side yet. Fallback: do not promise a phone view; keep the pitch video as a local file in the repo by 15:15.
