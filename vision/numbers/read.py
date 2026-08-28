@@ -299,7 +299,7 @@ def track_seconds(rows: list[dict]) -> float:
 
 
 def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = True,
-        min_track_s: float = 0.0, max_crops: int = MAX_CROPS) -> dict:
+        min_track_s: float = 0.0, max_crops: int = MAX_CROPS, only_ids: set[int] | None = None) -> dict:
     """OCR + vote. Tracks shorter than min_track_s get no crops (they stay in the
     output without a number) unless the cache already holds reads for them."""
     t0 = time.time()
@@ -313,7 +313,7 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
     plan: dict[int, list[dict]] = {}
     for tid, rows in tracks.items():
         samples = pick_samples(rows, max_crops)
-        if track_seconds(rows) < min_track_s:
+        if track_seconds(rows) < min_track_s or (only_ids is not None and tid not in only_ids):
             samples = [r for r in samples if crop_key(clip, r["frame"], r["bbox"]) in cache]
         plan[tid] = samples
     wanted_frames: set[int] = set()
@@ -429,10 +429,12 @@ def main(argv=None) -> int:
     ap.add_argument("--no-preview", action="store_true")
     ap.add_argument("--min-s", type=float, default=0.0, help="only OCR tracks at least this long (s)")
     ap.add_argument("--max-crops", type=int, default=MAX_CROPS)
+    ap.add_argument("--ids", type=int, nargs="*", default=None, help="OCR only these track ids (others from cache)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
                         stream=sys.stdout)
-    run(a.tracks, a.video, preview=not a.no_preview, min_track_s=a.min_s, max_crops=a.max_crops)
+    run(a.tracks, a.video, preview=not a.no_preview, min_track_s=a.min_s, max_crops=a.max_crops,
+        only_ids=set(a.ids) if a.ids else None)
     return 0
 
 
