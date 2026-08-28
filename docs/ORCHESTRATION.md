@@ -174,6 +174,13 @@ Panning camera → calibrate on 2–3 keyframes and interpolate H by time.
 | 14:15 | DOCS (LABEL) | refresh VISION.md, README section, PR body with game10 numbers |
 | 14:30 | ORCH | **FREEZE**: `make demo CLIP=data/clips/game10.mp4` must pass from a clean state, PR body final, all model jobs killed at 15:50 for the live demo |
 
+## Session directory (28.08., for SendMessage)
+
+ORCH samimagdouli-61 · LABEL/PITCH/PRIVACY/DOCS/RIG samimagdouli-14 · TRACK samimagdouli-ac ·
+STATS/LIVE samimagdouli-94 · COURT samimagdouli-25 · MONITOR/PIPELINE/RISK samimagdouli-aa ·
+FRONTEND/DECK samimagdouli-6b · QA samimagdouli-52 · NUMBERS samimagdouli-6d.
+Contract paths in `out/` = game10 from 13:38 on; dev60 runs live in `out/dev60_vN/` only.
+
 ## Reporting
 On every milestone, and on any blocker >10 min:
 `SendMessage(to: "samimagdouli-61", message: "<ROLE> <milestone> done|blocked: <one line> — <path to artifact>")`.
