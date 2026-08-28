@@ -349,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
     ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
     ap.add_argument("--no-court-filter", action="store_true", help="keep bench players and spectators")
+    ap.add_argument("--note", default=None, help="free text stored as events.json 'note' (e.g. which tracks run)")
     ap.add_argument("--bench-line-frac", type=float, default=0.0,
                     help="interim without calibration: feet above this share of the image height are off court "
                          "(COURT for dev60 segment 853-1562: 505/1080 = 0.47)")
@@ -356,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--min-hold", type=float, default=PossessionParams.min_hold_s, help="seconds")
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
     args = ap.parse_args(argv)
+    note = args.note
 
     image_height = 1080.0
     if args.fixture:
@@ -415,6 +417,8 @@ def main(argv: list[str] | None = None) -> int:
         possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
     out.mkdir(parents=True, exist_ok=True)
+    if note:
+        events["note"] = note
     (out / "events.json").write_text(json.dumps(events, indent=1))
     (out / "stats.json").write_text(json.dumps(stats, indent=1))
     print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'} "
