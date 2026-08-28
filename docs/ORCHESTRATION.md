@@ -120,6 +120,11 @@ a one-time Grounding DINO hoop box.
 - overlay: score bar (team A : team B, running clock), shot flash on a made basket,
   per-team FGA/FGM after a configurable interval; hotkeys `1`/`2` = +2 for team A/B,
   `3`/`4` = +3, `z` = undo (auto-with-veto: the system calls baskets, the human corrects).
+- **servo link (added 14:30, Sami):** `--serial <port>` sends Malek's `A<angle>\n` protocol
+  (115200, 40..140, centre 90) to the Arduino running `software/servo_pan/servo_pan.ino`,
+  control law from `software/pan_control.py` (KP 0.06 deg/px, deadband 25 px, EMA 0.35,
+  `--invert-pan`), max 20 commands/s, steer on Kalman prediction while coasting, hold then
+  return to 90 after 3 s lost; `--dry-serial` prints the commands. Port: `ls /dev/cu.usb*`.
 - outputs: OpenCV preview window + MJPEG at `http://127.0.0.1:8501/stream` (for OBS or
   a phone), and if env `FOLLOWCAM_RTMP_URL` is set (from `.env`, never in code or git)
   an ffmpeg subprocess (`imageio_ffmpeg`) pushes the rendered frames as H.264/FLV to
