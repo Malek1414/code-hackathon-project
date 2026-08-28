@@ -3,9 +3,11 @@
 Rule (docs/ORCHESTRATION.md, STATS milestone 12:00): the holder is the player
 whose bbox is nearest to the ball center, but only if the ball center lies
 within `max_dist_heights` bbox heights of that player's bbox center. A change
-of holder has to persist for `min_frames` processed frames before it counts
-(hysteresis against flicker); once confirmed it is backdated to the first
-frame of the streak. Frames without a ball detection carry the previous state.
+of holder has to persist for `min_hold_s` (10 frames at 50 fps; tracks come
+at 10-25 fps, so it is measured in seconds) before it counts (hysteresis
+against flicker), a loose ball for `min_loose_s`; once confirmed it is
+backdated to the first frame of the streak. Frames without a ball detection
+carry the previous state.
 
 Everything is measured inside one frame (ball vs. player in the same image),
 so a panning camera does not disturb it.
@@ -26,7 +28,17 @@ _NO_PENDING = object()  # distinct from None, which is a valid candidate (loose 
 @dataclass
 class PossessionParams:
     max_dist_heights: float = 1.5
-    min_frames: int = 10
+    min_hold_s: float = 0.2  # a new holder must be nearest for this long (10 frames at 50 fps)
+    min_loose_s: float = 0.5  # "nobody" needs more evidence: stray ball boxes are common
+    min_frames: int | None = None  # override: count processed frames instead of seconds
+
+    def frames_for(self, dt: float, loose: bool) -> int:
+        if self.min_frames is not None:
+            return self.min_frames
+        if dt <= 0:
+            return 1
+        secs = self.min_loose_s if loose else self.min_hold_s
+        return max(2, int(round(secs / dt)))
 
 
 @dataclass
@@ -78,6 +90,9 @@ def track_possession(frames: list[Frame], params: PossessionParams = PossessionP
     pending: object = _NO_PENDING  # candidate (id or None) that differs from `current`
     pending_start = 0
     pending_len = 0
+    dt = median_dt(frames)
+    need_hold = params.frames_for(dt, loose=False)
+    need_loose = params.frames_for(dt, loose=True)
 
     for i, fr in enumerate(frames):
         if fr.ball is None:
@@ -96,7 +111,7 @@ def track_possession(frames: list[Frame], params: PossessionParams = PossessionP
         else:
             pending, pending_start, pending_len = cand_id, i, 1
 
-        if pending_len >= params.min_frames:
+        if pending_len >= (need_loose if pending is None else need_hold):
             current = pending
             for j in range(pending_start, i):  # backdate to the start of the streak
                 holder[j] = current

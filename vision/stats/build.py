@@ -19,7 +19,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .io import Frame, infer_fps, median_dt, read_tracks, synthetic_scenario
+from .io import Frame, clean_ball, infer_fps, median_dt, read_tracks, synthetic_scenario
 from .possession import PossessionParams, PossessionResult, possession_seconds, track_possession
 from .shots import ShotEvent, ShotParams, detect_shots
 
@@ -33,9 +33,12 @@ def build(
     fps: float,
     clip: str,
     calib: dict | None = None,
+    distances: dict[int, float] | None = None,
     possession_params: PossessionParams = PossessionParams(),
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
+    """`distances` (player id -> metres) wins over `calib` (own projection)."""
+    clean_ball(frames)
     possession = track_possession(frames, possession_params)
     shots = detect_shots(frames, possession, shot_params)
     events = {
@@ -54,7 +57,7 @@ def build(
             for s in possession.segments
         ],
     }
-    stats = player_stats(frames, possession, shots, calib=calib)
+    stats = player_stats(frames, possession, shots, calib=calib, distances=distances)
     return events, stats
 
 
@@ -64,6 +67,7 @@ def player_stats(
     shots: list[ShotEvent],
     *,
     calib: dict | None = None,
+    distances: dict[int, float] | None = None,
 ) -> dict:
     dt = median_dt(frames)
     seen: Counter[int] = Counter()
@@ -81,7 +85,7 @@ def player_stats(
             fga[s.player_id] += 1
             fgm[s.player_id] += int(s.made)
     poss_s = possession_seconds(frames, possession)
-    distance = distances_m(frames, calib) if calib else {}
+    distance = distances if distances is not None else (distances_m(frames, calib) if calib else {})
 
     players = []
     for pid, n in seen.items():
@@ -152,6 +156,33 @@ def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
     return dict(total)
 
 
+def court_distances(calib_path: Path, tracks_path: Path) -> dict[int, float] | None:
+    """COURT's projection helper (vision/court/project.py), if it is importable."""
+    try:
+        from vision.court.project import load_calibration  # owned by COURT
+
+        cal = load_calibration(str(calib_path))
+        return {int(k): float(v) for k, v in cal.player_distances(str(tracks_path)).items()}
+    except Exception as exc:  # noqa: BLE001 - any failure there must not block stats
+        print(f"court projection unavailable ({exc}); using own projection", file=sys.stderr)
+        return None
+
+
+def meta_fps(tracks_path: Path) -> float | None:
+    """Video fps from TRACK's out/tracks_meta.json next to the tracks, if present."""
+    meta = tracks_path.parent / "tracks_meta.json"
+    if not meta.exists():
+        return None
+    try:
+        d = json.loads(meta.read_text())
+    except json.JSONDecodeError:
+        return None
+    for key in ("fps", "video_fps", "source_fps"):
+        if isinstance(d.get(key), (int, float)) and d[key] > 0:
+            return float(d[key])
+    return None
+
+
 # --- CLI ------------------------------------------------------------------------
 
 
@@ -179,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--calib", default="out/court_calib.json", help="used if the file exists")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--fixture", choices=["made", "miss", "pass"], help="run on a synthetic scenario")
-    ap.add_argument("--min-frames", type=int, default=PossessionParams.min_frames)
+    ap.add_argument("--min-hold", type=float, default=PossessionParams.min_hold_s, help="seconds")
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
     args = ap.parse_args(argv)
 
@@ -188,24 +219,29 @@ def main(argv: list[str] | None = None) -> int:
         frames = synthetic_scenario(args.fixture, fps=fps)
         clip = f"fixture:{args.fixture}"
     else:
-        frames = read_tracks(args.tracks, fps=args.fps)
+        fps = args.fps or meta_fps(Path(args.tracks))
+        frames = read_tracks(args.tracks, fps=fps)
         if not frames:
             print(f"no frames in {args.tracks}", file=sys.stderr)
             return 1
-        fps = args.fps or infer_fps(frames) or 50.0
+        fps = fps or infer_fps(frames) or 50.0
         clip = args.clip
 
     calib = None
+    distances = None
     calib_path = Path(args.calib)
     if calib_path.exists():
         calib = json.loads(calib_path.read_text())
+        if not args.fixture:
+            distances = court_distances(calib_path, Path(args.tracks))
 
     events, stats = build(
         frames,
         fps=fps,
         clip=clip,
         calib=calib,
-        possession_params=PossessionParams(max_dist_heights=args.max_dist, min_frames=args.min_frames),
+        distances=distances,
+        possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)

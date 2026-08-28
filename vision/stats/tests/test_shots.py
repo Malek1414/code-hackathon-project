@@ -2,7 +2,7 @@ import pytest
 
 from vision.stats.io import FIXTURE_HOOP, FIXTURE_SHOOTER_ID, Ball, Frame, synthetic_scenario
 from vision.stats.possession import track_possession
-from vision.stats.shots import ShotParams, detect_shots, in_zone
+from vision.stats.shots import ShotParams, crosses_rim, detect_shots, in_up_zone
 
 
 def _run(kind, **kw):
@@ -37,6 +37,21 @@ def test_pass_only_has_no_shot():
 def test_robust_to_dropouts_and_jitter(kind, made, seed):
     _, shots = _run(kind, ball_dropout=0.3, hoop_dropout=0.3, jitter_px=3.0, seed=seed)
     assert [(s.player_id, s.made) for s in shots] == [(FIXTURE_SHOOTER_ID, made)]
+
+
+@pytest.mark.parametrize("stride", [2, 5])  # 25 fps and 10 fps tracks
+def test_sparse_tracks(stride):
+    """TRACK delivers 25 fps (dev60) and 10 fps (game10): windows are in seconds."""
+    for kind, made in (("made", True), ("miss", False)):
+        hits = 0
+        for seed in range(10):
+            frames = synthetic_scenario(kind, ball_dropout=0.3, jitter_px=3.0, seed=seed)[::stride]
+            shots = detect_shots(frames, track_possession(frames))
+            assert all(s.player_id == FIXTURE_SHOOTER_ID and s.made == made for s in shots), kind
+            hits += len(shots) == 1
+        assert hits >= (8 if stride == 2 else 7), f"{kind} @ stride {stride}: {hits}/10"  # 10 fps + 30 % dropout: the ball is sometimes never seen at the rim
+    frames = synthetic_scenario("pass")[::stride]
+    assert detect_shots(frames, track_possession(frames)) == []
 
 
 def test_no_hoop_in_frame_means_no_shot():
@@ -75,12 +90,20 @@ def test_rim_rattle_counts_once():
 
 
 def test_zone_geometry():
-    p = ShotParams()
+    p = ShotParams(zone_width_scale=2.0, zone_above_scale=1.5)
     hoop = (100.0, 100.0, 160.0, 140.0)  # w 60, h 40, rim y 100
-    assert in_zone((130, 50), hoop, p)  # above the rim, inside 1.5 h
-    assert not in_zone((130, 30), hoop, p)  # too high
-    assert in_zone((72, 120), hoop, p) and not in_zone((68, 120), hoop, p)  # 2x width
-    assert not in_zone((130, 150), hoop, p)  # below the bbox
+    assert in_up_zone((130, 50), hoop, p)  # above the rim, inside 1.5 h
+    assert not in_up_zone((130, 30), hoop, p)  # too high
+    assert in_up_zone((72, 80), hoop, p) and not in_up_zone((68, 80), hoop, p)  # 2x width
+    assert not in_up_zone((130, 120), hoop, p)  # below the rim line
+
+
+def test_rim_crossing_is_interpolated():
+    p = ShotParams()
+    hoop = (0.0, 0.0, 60.0, 40.0)
+    assert crosses_rim((20, -20), (40, 20), hoop, p)  # crosses at x 30 = center
+    assert not crosses_rim((-40, -20), (0, 20), hoop, p)  # crosses at x -20, in front of the rim
+    assert not crosses_rim((30, 20), (30, -20), hoop, p)  # moving up
 
 
 def test_unknown_shooter_is_flagged():

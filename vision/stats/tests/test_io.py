@@ -1,6 +1,6 @@
 import json
 
-from vision.stats.io import Frame, frame_from_dict, infer_fps, read_tracks, synthetic_scenario, write_tracks
+from vision.stats.io import Ball, Frame, clean_ball, frame_from_dict, infer_fps, read_tracks, synthetic_scenario, write_tracks
 
 
 def test_roundtrip(tmp_path):
@@ -48,3 +48,23 @@ def test_contract_example_and_defaults():
 def test_infer_fps_on_subsampled_tracks():
     frames = [Frame(frame=n * 2, t=n * 2 / 50) for n in range(20)]
     assert abs(infer_fps(frames) - 50.0) < 1e-6
+
+
+def test_only_the_largest_hoop_is_kept():
+    d = {"frame": 1, "t": 0.02, "players": [], "ball": None,
+         "hoops": [{"bbox": [10, 10, 20, 20]}, {"bbox": [500, 100, 560, 140]}]}
+    assert frame_from_dict(d).hoops == [(500.0, 100.0, 560.0, 140.0)]
+
+
+def test_clean_ball_drops_strays_but_keeps_confirmed_jumps():
+    frames = [Frame(frame=n, t=n / 10, ball=Ball(center=(100 + 5 * n, 300), bbox=(0, 0, 20, 20))) for n in range(20)]
+    frames[5].ball = Ball(center=(1500, 50), bbox=(0, 0, 20, 20))  # exit sign for one frame
+    frames[9].ball = Ball(center=(300, 300), bbox=(0, 0, 40, 12))  # not round
+    dropped = clean_ball(frames)
+    assert dropped == 2 and frames[5].ball is None and frames[9].ball is None
+    assert sum(1 for f in frames if f.ball) == 18
+
+    # a jump confirmed by the next detection is real (ball re-appears elsewhere)
+    frames = [Frame(frame=n, t=n / 10, ball=Ball(center=(100, 300), bbox=(0, 0, 20, 20))) for n in range(5)]
+    frames += [Frame(frame=n, t=n / 10, ball=Ball(center=(1500, 300), bbox=(0, 0, 20, 20))) for n in range(5, 10)]
+    assert clean_ball(frames) == 0
