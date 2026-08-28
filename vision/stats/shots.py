@@ -46,7 +46,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from .io import BBox, Frame, Point
+from .io import BBox, Frame, Player, Point
 from .possession import Possession, PossessionResult, PossessionTracker
 
 
@@ -472,19 +472,35 @@ class ShotDetector:
                 best, best_rank = pl, rank
         if best is None:
             return None
-        return best.id, self._team_of(best.id, fr.t), best.foot, fr.frame, True
+        team = self._team_of(best.id)
+        if team < 0:
+            team = self._team_around(fr, best)
+        return best.id, team, best.foot, fr.frame, True
 
-    def _team_of(self, pid: int, t: float) -> int:
-        """Majority team of a track over the last shooter_lookback_s (TRACK's
-        per-frame value can be -1 for a few frames)."""
+    def _team_of(self, pid: int) -> int:
+        """Majority team of a track over everything seen so far (TRACK's
+        per-frame value can be -1 for stretches). build.py overrides with
+        identities.json when NUMBERS knows the track."""
         votes: dict[int, int] = {}
-        for fr in reversed(self.frames):
-            if t - fr.t > self.p.shooter_lookback_s:
-                break
+        for fr in self.frames:
             pl = fr.player(pid)
             if pl is not None and pl.team >= 0:
                 votes[pl.team] = votes.get(pl.team, 0) + 1
         return max(votes, key=votes.get) if votes else -1
+
+    def _team_around(self, fr: Frame, shooter: Player) -> int:
+        """Last resort for a track that never got a colour: the majority team
+        of the players standing nearest to the shooter at release (a free-throw
+        line-up has both teams, an open shooter has teammates around)."""
+        others = [pl for pl in fr.players if pl.id != shooter.id and pl.team >= 0]
+        if not others:
+            return -1
+        sx, sy = shooter.center
+        others.sort(key=lambda pl: math.hypot(pl.center[0] - sx, pl.center[1] - sy))
+        votes: dict[int, int] = {}
+        for pl in others[:3]:
+            votes[pl.team] = votes.get(pl.team, 0) + 1
+        return max(votes, key=votes.get)
 
     def _shooter(self, up_index: int) -> tuple[Possession | None, Point | None, int | None, bool]:
         p = self.p

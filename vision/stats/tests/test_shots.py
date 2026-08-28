@@ -184,3 +184,15 @@ def test_release_point_in_nobodys_box_falls_back_unconfirmed():
         ]
     shots = detect_shots(frames, track_possession(frames))
     assert len(shots) == 1 and shots[0].shooter_confirmed is False
+
+
+def test_shooter_team_never_unknown_when_shooter_is_known():
+    from vision.stats.io import Player
+
+    frames = synthetic_scenario("made")
+    for fr in frames:  # the shooter's track never gets a colour from TRACK
+        fr.players = [type(p)(id=p.id, bbox=p.bbox, foot=p.foot, team=-1 if p.id == FIXTURE_SHOOTER_ID else p.team)
+                      for p in fr.players]
+        fr.players.append(Player(id=8, bbox=(940.0, 600.0, 1020.0, 800.0), foot=(980.0, 800.0), team=0))
+    shots = detect_shots(frames, track_possession(frames))
+    assert shots[0].player_id == FIXTURE_SHOOTER_ID and shots[0].team == 0  # from the players around him
