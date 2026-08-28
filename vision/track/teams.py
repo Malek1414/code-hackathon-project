@@ -17,13 +17,15 @@ Two modes:
   k=2 on (L/2, a, b), fitted on crops sampled across the clip, team 0 = the
   bluer centroid, far-from-both = -1.
 
-Per track id the label is a majority vote over the track's history, so a
-player does not flip team when he crosses a shadow.
+Per track id the label is a majority vote over the track's last `vote_window`
+labels, so a player does not flip team when he crosses a shadow, but a track
+that started occluded (someone else's shirt in the crop) recovers within a
+second instead of keeping the wrong team for its whole life.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import cv2
 import numpy as np
@@ -34,6 +36,7 @@ BLUE_B_MAX = 118.0  # OpenCV LAB b channel (b* + 128); blue jerseys measured 99-
 RED_A_MIN = 150.0  # a channel; red panels measured 160+
 DARK_L_MAX = 60.0  # black jerseys measured L 12-40, grey referee 107, white 198
 BLUE_SHARE, RED_SHARE, DARK_SHARE = 0.15, 0.2, 0.4  # black jerseys measured blue share 0.00-0.01
+VOTE_WINDOW = 30  # labels per track kept for the majority vote (~1.2 s at 25 fps)
 
 
 def torso_color(frame_bgr: np.ndarray, bbox) -> np.ndarray | None:
@@ -72,7 +75,7 @@ class TeamClassifier:
         self.samples: list[np.ndarray] = []
         self.kmeans: KMeans | None = None
         self.referee_dist: float = float("inf")
-        self.votes: dict[int, np.ndarray] = defaultdict(lambda: np.zeros(3, np.int32))
+        self.votes: dict[int, deque] = defaultdict(lambda: deque(maxlen=VOTE_WINDOW))
         self.centroids_lab: list[list[float]] = []
 
     @property
@@ -122,12 +125,12 @@ class TeamClassifier:
     def assign(self, track_id: int, feat: np.ndarray | None) -> int:
         """Vote-smoothed team for this track: 0, 1 or -1."""
         label = self.raw_label(feat)
-        v = self.votes[track_id]
-        v[label + 1] += 1
-        team_votes = v[1:]
-        if team_votes.max() == 0:
+        hist = self.votes[track_id]
+        hist.append(label)
+        n0, n1, nu = hist.count(0), hist.count(1), hist.count(-1)
+        if n0 == 0 and n1 == 0:
             return -1
-        # Unknown wins only if it clearly dominates the track's history.
-        if v[0] > 2 * team_votes.max() and v[0] >= 5:
+        # Unknown wins only if it clearly dominates the recent history.
+        if nu > 2 * max(n0, n1) and nu >= 5:
             return -1
-        return int(np.argmax(team_votes))
+        return 0 if n0 >= n1 else 1
