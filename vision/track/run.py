@@ -8,9 +8,11 @@ and the overlay (vision/track/overlay.py) and prints progress.
 
 Consumers (STATS, NUMBERS, COURT, the dashboard) watch the contract paths in
 out/, so a 20-minute run must not truncate them in place: everything is
-written to out/<clip>/ (kept as an archive) and copied onto the contract
-paths atomically (os.replace) only when the run is complete, meta last. Live
-progress for the monitor board is out/overlay_latest.jpg plus the log.
+written to out/<clip>_vN/ (kept as an archive, never overwritten) and only
+with --publish copied onto the contract paths atomically (os.replace) when
+the run is complete, meta last. The contract paths hold the pitch material
+(game10); dev60 runs are read from their archives. Live progress for the
+monitor board is out/overlay_latest.jpg plus the log.
 """
 
 from __future__ import annotations
@@ -55,8 +57,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--work-dir", type=Path, default=None,
                    help="where the run writes while running (default out/<clip>_vN/, N = next "
                         "free number; older runs are never overwritten)")
-    p.add_argument("--no-publish", action="store_true",
-                   help="leave the results in the work dir, do not touch the contract paths")
+    p.add_argument("--publish", action="store_true",
+                   help="copy the results onto the contract paths (out/tracks.jsonl etc.) when "
+                        "complete; default is archive only, the contract paths are the pitch "
+                        "material (game10) and are replaced on purpose only")
     p.add_argument("--no-overlay", action="store_true")
     p.add_argument("--events", type=Path, default=Path("out/events.json"),
                    help="STATS output; shot flashes + off_court ids are used if it exists")
@@ -246,7 +250,7 @@ def main() -> None:
                "stopped_early_at": idx if (stop["flag"] or stop_file.exists()) else None,
                "overlay": None if a.no_overlay else str(a.overlay)}
     w_summary.write_text(json.dumps(summary, indent=1))
-    if not a.no_publish:
+    if a.publish:
         publish(w_tracks, a.out)
         publish(w_summary, a.out.parent / "track_summary.json")
         if writer:
