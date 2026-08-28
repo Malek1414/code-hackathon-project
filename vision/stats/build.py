@@ -173,7 +173,9 @@ def court_distances(calib_path: Path, tracks_path: Path) -> dict[int, float] | N
 
 
 def meta_fps(tracks_path: Path) -> float | None:
-    """Video fps from TRACK's out/tracks_meta.json next to the tracks, if present."""
+    """Video fps from TRACK's out/tracks_meta.json next to the tracks, if present.
+    Frame numbers in the tracks index the *video*, so the source rate wins over
+    the (strided) track rate `fps`."""
     meta = tracks_path.parent / "tracks_meta.json"
     if not meta.exists():
         return None
@@ -181,7 +183,7 @@ def meta_fps(tracks_path: Path) -> float | None:
         d = json.loads(meta.read_text())
     except json.JSONDecodeError:
         return None
-    for key in ("fps", "video_fps", "source_fps"):
+    for key in ("source_fps", "video_fps", "fps"):
         if isinstance(d.get(key), (int, float)) and d[key] > 0:
             return float(d[key])
     return None

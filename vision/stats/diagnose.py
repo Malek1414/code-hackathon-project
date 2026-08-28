@@ -13,7 +13,7 @@ import sys
 from collections import Counter
 
 from .io import Frame, infer_fps, median_dt, read_tracks
-from .shots import ShotParams, in_zone
+from .shots import ShotParams, in_up_zone
 
 
 def _mmss(t: float) -> str:
@@ -56,7 +56,7 @@ def report(frames: list[Frame]) -> str:
     for f in frames:
         if not f.ball or not f.hoops:
             continue
-        if any(in_zone(f.ball.center, h, p) for h in f.hoops):
+        if any(in_up_zone(f.ball.center, h, p) for h in f.hoops):
             if episodes and f.t - episodes[-1][1] < 1.0:
                 episodes[-1][1] = f.t
             else:

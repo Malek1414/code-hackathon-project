@@ -51,3 +51,11 @@ def test_cli_writes_both_files(tmp_path):
     stats = json.loads((tmp_path / "out" / "stats.json").read_text())
     assert events["fps"] == 50 and len(events["shots"]) == 1
     assert stats["players"][0]["id"] == 2
+
+
+def test_meta_fps_prefers_source_rate(tmp_path):
+    from vision.stats.build import meta_fps
+
+    (tmp_path / "tracks_meta.json").write_text(json.dumps({"source_fps": 50.0, "stride": 2, "fps": 25.0}))
+    assert meta_fps(tmp_path / "tracks.jsonl") == 50.0
+    assert meta_fps(tmp_path / "elsewhere" / "tracks.jsonl") is None
