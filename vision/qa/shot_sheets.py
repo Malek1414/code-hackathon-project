@@ -366,6 +366,7 @@ PAGE = r"""<!doctype html>
   h3.sub { font-size: 16px; color: #ffd23f; margin: 24px 0 4px; }
   .badge { display: inline-block; font-size: 12px; font-weight: 600; color: #111; background: #ffd23f; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
   .shot.new { border-left: 3px solid #ffd23f; padding-left: 10px; }
+  .badge.flip { background: #ff8a5c; }
   .ball video { display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }
   .ball .links { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
   .ball a { color: #ffd23f; }
@@ -438,7 +439,12 @@ function summary() {
   try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
 }
 function applyShot(s, v) {
-  if (v.shot) setRadio("s" + s.n, v.shot);
+  const flipped = typeof v.made === "boolean" && typeof s.made === "boolean" && v.made !== s.made;
+  if (flipped) {  // the system call changed since this verdict: shooter, number and note carry over, the shot answer does not
+    const h = document.querySelector('#shot-' + s.n + ' h2');
+    if (h && !h.querySelector(".flip")) { const b = document.createElement("span"); b.className = "badge flip"; b.textContent = "Wertung geaendert, bitte neu pruefen"; h.appendChild(b); }
+  }
+  if (v.shot && !flipped) setRadio("s" + s.n, v.shot);
   else if (v.verdict) { // legacy correct / wrong / missed_shooter
     if (v.verdict === "correct") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "yes"); }
     if (v.verdict === "missed_shooter") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "no"); }
