@@ -25,5 +25,5 @@ echo
 echo "LIVE (phone = --source 1 on this Mac, servo = --serial <port>):"
 echo "  .venv/bin/python -m vision.live.live --source 1 --team-a 'Team A' --team-b 'Team B' --serial /dev/cu.usbXXXX"
 echo "REPLAY fallback (no GPU):"
-echo "  .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --loop --replay out/dev60_v2/tracks.jsonl"
+echo "  .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --loop --replay out/dev60_v5/tracks.jsonl"
 echo "first action: click the window, press 1 (Team A +2), then z."
