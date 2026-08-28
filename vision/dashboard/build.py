@@ -30,13 +30,13 @@ from vision.court.project import Calibration, load_calibration  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# Team ids follow the tracks.jsonl contract: 0 = blue jerseys, 1 = dark jerseys
-# (black with red panels), -1 = unknown. Which club wears which colour is not
+# Team ids follow the tracks.jsonl contract: 0 = blue jerseys, 1 = black jerseys
+# with red panels, -1 = unknown. Which club wears which colour is not
 # known to the pipeline, so the default names stay neutral; --team-a/--team-b
 # set the club names once confirmed.
 TEAMS = {
     0: {"id": 0, "name": "Team A (blue)", "short": "Team A", "color": "#4C8DFF"},
-    1: {"id": 1, "name": "Team B (dark)", "short": "Team B", "color": "#E5484D"},
+    1: {"id": 1, "name": "Team B (black/red)", "short": "Team B", "color": "#E5484D"},
     -1: {"id": -1, "name": "Unassigned", "short": "Unassigned", "color": "#8A93A6"},
 }
 TEAM_LETTER = {0: "A", 1: "B"}
@@ -522,7 +522,7 @@ def main(argv=None) -> int:
     ap.add_argument("--overlay", default="overlay.mp4", help="relative to the html, empty to omit")
     ap.add_argument("--identities", type=Path, default=ROOT / "out" / "identities.json", help="track id to jersey number (NUMBERS)")
     ap.add_argument("--team-a", default=None, help="club name for team 0 (blue jerseys), default stays neutral")
-    ap.add_argument("--team-b", default=None, help="club name for team 1 (dark jerseys), default stays neutral")
+    ap.add_argument("--team-b", default=None, help="club name for team 1 (black/red jerseys), default stays neutral")
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "dashboard.html")
     args = ap.parse_args(argv)
     set_team_names(args.team_a, args.team_b)
