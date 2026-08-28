@@ -605,6 +605,27 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 """
 
 
+def pick_calibration(default: Path, events: dict | None):
+    """COURT writes one calibration per clip (out/court_calib_<clip>.json) and a
+    contract copy out/court_calib.json that may belong to a different clip.
+    Prefer the per-clip file for the events clip, fall back to the contract copy
+    only when its clip matches (or the clip is unknown)."""
+    clip = Path(str((events or {}).get("clip") or "")).stem
+    candidates = ([default.parent / f"court_calib_{clip}.json"] if clip else []) + [default]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            cal = load_calibration(path)
+        except Exception as exc:  # noqa: BLE001, a broken file must not take the page down
+            print(f"calibration {path.name} unreadable: {exc}", file=sys.stderr)
+            continue
+        cal_clip = Path(str(cal.meta.get("clip") or "")).stem
+        if not clip or not cal_clip or cal_clip == clip:
+            return cal, path
+    return None, None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--events", type=Path, default=ROOT / "out" / "events.json")
@@ -623,8 +644,10 @@ def main(argv=None) -> int:
     ids = Identities(load_json(args.identities))
 
     events, stats, meta = load_json(args.events), load_json(args.stats), load_json(args.tracks_meta)
-    cal = load_calibration(args.calib) if args.calib.exists() else None
+    cal, calib_path = pick_calibration(args.calib, events)
     calib_note = ""
+    if cal is None and args.calib.exists():
+        calib_note = "Court calibration on disk belongs to another clip, not used."
     if cal is not None:
         calib_note = {"per_frame": "Court calibration per frame, the camera pan is tracked.",
                       "keyframes": f"Court calibration from {len(cal.keyframes)} keyframes, blended by time.",
@@ -657,7 +680,7 @@ def main(argv=None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page)
     print(f"saved: {args.out} ({len(page) // 1024} kB, events={'yes' if events else 'no'} shots={len(shots)} placed={sum(1 for s in shots if s.get('court_m'))}, "
-          f"stats={'yes' if stats else 'no'} players={len(players)} active={sum(1 for p in players if p['active'])} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode if cal else 'no'}, "
+          f"stats={'yes' if stats else 'no'} players={len(players)} active={sum(1 for p in players if p['active'])} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode + ' ' + calib_path.name if cal else 'no'}, "
           f"minimap={'yes' if minimap else 'no'}, overlay={'yes' if overlay else 'no'}, seek_offset={video_offset_s})")
     return 0
 
