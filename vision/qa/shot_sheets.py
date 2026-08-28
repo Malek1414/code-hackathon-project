@@ -109,15 +109,41 @@ def render_shot(n: int, shot: dict, grab: FrameGrabber, index: TrackIndex) -> tu
         "made": bool(shot.get("made")),
         "player_id": pid,
         "shooter_confirmed": shot.get("shooter_confirmed"),
+        "player_key": shot.get("player_key"),
+        "made_hint": shot.get("made_hint"),
         "ball_tiles": seen_ball,
         "shooter_tiles": seen_shooter,
     }
     return with_header(body, head), meta
 
 
+def _local(iso: str | None) -> str:
+    """ISO-8601 UTC stamp from the browser -> local wall clock."""
+    if not iso:
+        return "?"
+    try:
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
+        return dt.strftime("%H:%M")
+    except ValueError:
+        return iso
+
+
+def verdicts_file(out: Path, clip: str) -> Path:
+    return out / f"verdicts_{Path(clip).stem}.json"
+
+
 def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     made = sum(1 for s in sheets if s["made"])
+    stored = read_json(verdicts_file(out, clip)) or {}
+    stored_line = (
+        f"Stored verdicts from {verdicts_file(out, clip).name} (reviewed {_local(stored.get('reviewed'))}) are pre-selected; "
+        f"shots are matched by time, so they survive a rebuild."
+        if stored.get("shots")
+        else "No stored verdicts yet. Verdicts are kept in this browser until you download them."
+    )
     rows = []
     for s in sheets:
         n = s["n"]
@@ -125,6 +151,7 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
             f"shot {n}  {s['t_label']}  {TEAM_NAMES.get(s['team'], s['team'])}  "
             f"{'MADE' if s['made'] else 'MISS'}  "
             + (f"shooter #{s['player_id']}" if s["player_id"] is not None else "shooter unknown")
+            + (f" ({s['player_key']})" if s.get("player_key") else "")
         )
         if s.get("video_half"):
             video = f"""
@@ -154,6 +181,7 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
     manifest = json.dumps(
         {"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets}
     )
+    stored_js = json.dumps({"reviewed": stored.get("reviewed"), "uncalled": stored.get("uncalled_shots", 0), "shots": stored.get("shots", [])})
     page = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -191,7 +219,7 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
 </head>
 <body>
 <h1>Shot QA: {html.escape(Path(clip).name)}</h1>
-<div class="meta">{len(sheets)} shots called by the system ({made} made, {len(sheets) - made} missed), {tracks_n} tracked frames, sheets generated {stamp}. Verdicts are kept in this browser until you download them.</div>
+<div class="meta">{len(sheets)} shots called by the system ({made} made, {len(sheets) - made} missed), {tracks_n} tracked frames, sheets generated {stamp}. {html.escape(stored_line)}</div>
 <div class="howto">Per sheet: <b>correct</b> = shot and made/miss are right. <b>wrong</b> = no shot here or made/miss is flipped. <b>missed shooter</b> = the shot is right but the shooter id is wrong or unknown. Click a sheet to open it full size. Below the list: how many real shots the system did not call at all.</div>
 {''.join(rows) if rows else '<div class="empty">No shots in events.json yet.</div>'}
 <div class="extra">
@@ -204,20 +232,26 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
 </div>
 <script>
 const MANIFEST = {manifest};
-const KEY = "followcam-qa-verdicts:" + MANIFEST.clip + ":" + MANIFEST.generated;
+const STORED = {stored_js};
+const KEY = "followcam-qa-verdicts:" + MANIFEST.clip;
+const MATCH_S = 0.5;
 function state() {{
-  const v = {{}};
-  for (const s of MANIFEST.shots) {{
+  const shots = MANIFEST.shots.map(s => {{
     const r = document.querySelector('input[name="v' + s.n + '"]:checked');
     const note = document.querySelector('input[name="n' + s.n + '"]');
-    v[s.n] = {{ verdict: r ? r.value : null, note: note && note.value ? note.value : "" }};
-  }}
-  return {{ verdicts: v, uncalled: Number(document.getElementById("uncalled").value || 0) }};
+    return {{ n: s.n, t: s.t, frame: s.frame, team: s.team, made: s.made, player_id: s.player_id,
+      verdict: r ? r.value : null, note: note && note.value ? note.value : "" }};
+  }});
+  return {{ shots, uncalled: Number(document.getElementById("uncalled").value || 0), saved: new Date().toISOString() }};
+}}
+function counts(shots) {{
+  const c = {{ correct: 0, wrong: 0, missed_shooter: 0, open: 0 }};
+  for (const s of shots) {{ if (s.verdict) c[s.verdict]++; else c.open++; }}
+  return c;
 }}
 function summary() {{
   const st = state();
-  const c = {{ correct: 0, wrong: 0, missed_shooter: 0, open: 0 }};
-  for (const k in st.verdicts) {{ const x = st.verdicts[k].verdict; if (x) c[x]++; else c.open++; }}
+  const c = counts(st.shots);
   const rated = c.correct + c.wrong + c.missed_shooter;
   const prec = rated ? Math.round(100 * (c.correct + c.missed_shooter) / rated) : 0;
   document.getElementById("summary").textContent =
@@ -226,16 +260,28 @@ function summary() {{
     (st.uncalled ? "   " + st.uncalled + " uncalled" : "");
   try {{ localStorage.setItem(KEY, JSON.stringify(st)); }} catch (e) {{}}
 }}
-function restore() {{
-  let st = null;
-  try {{ st = JSON.parse(localStorage.getItem(KEY) || "null"); }} catch (e) {{}}
-  if (!st) return;
-  for (const n in st.verdicts) {{
-    const v = st.verdicts[n];
-    if (v.verdict) {{ const r = document.querySelector('input[name="v' + n + '"][value="' + v.verdict + '"]'); if (r) r.checked = true; }}
-    const note = document.querySelector('input[name="n' + n + '"]'); if (note) note.value = v.note || "";
+function apply(src) {{
+  if (!src || !src.shots) return false;
+  let hit = 0;
+  for (const s of MANIFEST.shots) {{
+    let best = null;
+    for (const v of src.shots) {{
+      const d = Math.abs((v.t || 0) - s.t);
+      if (d <= MATCH_S && (!best || d < Math.abs(best.t - s.t))) best = v;
+    }}
+    if (!best) continue;
+    if (best.verdict) {{ const r = document.querySelector('input[name="v' + s.n + '"][value="' + best.verdict + '"]'); if (r) {{ r.checked = true; hit++; }} }}
+    const note = document.querySelector('input[name="n' + s.n + '"]'); if (note && best.note) note.value = best.note;
   }}
-  document.getElementById("uncalled").value = st.uncalled || 0;
+  document.getElementById("uncalled").value = src.uncalled || 0;
+  return hit > 0;
+}}
+function restore() {{
+  let local = null;
+  try {{ local = JSON.parse(localStorage.getItem(KEY) || "null"); }} catch (e) {{}}
+  const fileNewer = STORED.reviewed && (!local || !local.saved || STORED.reviewed > local.saved);
+  if (fileNewer) {{ if (!apply(STORED)) apply(local); }}
+  else {{ if (!apply(local)) apply(STORED); }}
 }}
 document.addEventListener("change", summary);
 document.addEventListener("input", summary);
@@ -249,16 +295,12 @@ document.getElementById("reset").onclick = () => {{
 }};
 document.getElementById("download").onclick = () => {{
   const st = state();
-  const shots = MANIFEST.shots.map(s => ({{ n: s.n, t: s.t, frame: s.frame, team: s.team, made: s.made, player_id: s.player_id,
-    verdict: st.verdicts[s.n].verdict, note: st.verdicts[s.n].note }}));
-  const c = {{ correct: 0, wrong: 0, missed_shooter: 0, open: 0 }};
-  for (const s of shots) {{ if (s.verdict) c[s.verdict]++; else c.open++; }}
   const doc = {{ clip: MANIFEST.clip, events: MANIFEST.events, sheets_generated: MANIFEST.generated,
-    reviewed: new Date().toISOString(), counts: c, uncalled_shots: st.uncalled, shots }};
+    reviewed: st.saved, counts: counts(st.shots), uncalled_shots: st.uncalled, shots: st.shots }};
   const blob = new Blob([JSON.stringify(doc, null, 1)], {{ type: "application/json" }});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "verdicts_" + MANIFEST.clip.split("/").pop().replace(/\\.[^.]+$/, "") + ".json";
+  a.download = "verdicts_" + MANIFEST.clip.split("/").pop().replace(/\.[^.]+$/, "") + ".json";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }};
