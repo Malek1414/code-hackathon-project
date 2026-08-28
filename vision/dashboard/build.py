@@ -157,6 +157,7 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
     """Shots with `court_m` (metres, None without calibration) and `points`."""
     if not events:
         return []
+    unc = uncertain_ranges(cal)
     shots = []
     for raw in events.get("shots", []):
         s = {
@@ -178,6 +179,12 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             if np.isfinite(xy).all() and cal.on_court(xy)[0]:
                 s["court_m"] = [round(float(xy[0]), 2), round(float(xy[1]), 2)]
         s["estimated"] = False
+        s["uncertain"] = False
+        if s["court_m"] is not None and raw.get("frame") is not None:
+            fr = int(raw["frame"])
+            if any(a <= fr <= b for a, b in unc):
+                s["uncertain"] = True
+                s["flags"].append("position uncertain, camera drift")
         s["no_shooter"] = not foot
         if s["court_m"] is None:
             est = estimate_court_m(foot, raw.get("hoop_bbox"), s["team"])
@@ -217,6 +224,19 @@ def estimate_court_m(foot, hoop_bbox, team: int) -> list[float] | None:
     x = min(max(x, 0.2), FIBA.length_m - 0.2)
     y = min(max(y, 0.2), FIBA.width_m - 0.2)
     return [round(x, 2), round(y, 2)]
+
+
+def uncertain_ranges(cal: Calibration | None) -> list[tuple[int, int]]:
+    """Frame ranges where COURT flags camera-tracking drift (court_calib.json
+    "uncertain_frames": [[start, end], ...] or [{"start": .., "end": ..}, ...])."""
+    out = []
+    for r in ((cal.meta if cal else {}) or {}).get("uncertain_frames") or []:
+        try:
+            a, b = (r["start"], r["end"]) if isinstance(r, dict) else (r[0], r[1])
+            out.append((int(a), int(b)))
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return out
 
 
 def score(shots: list[dict]) -> dict[int, int]:
@@ -480,7 +500,7 @@ JS = r"""
     C.lines.forEach(function(poly){el('polyline',{points:poly.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)}).join(' '),'class':'mark'},svg)});
     C.hoops.forEach(function(h){var bx=h[0]<C.length/2?h[0]-0.375:h[0]+0.375;el('line',{x1:X(bx),x2:X(bx),y1:Y(h[1]-0.9),y2:Y(h[1]+0.9),'class':'board'},svg);el('circle',{cx:X(h[0]),cy:Y(h[1]),r:(0.225*S).toFixed(1),'class':'rim'},svg)});
     D.shots.forEach(function(s){if(!s.court_m)return;var tm=team(s.team);
-      if(s.estimated)el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:14,'class':'shot-est','stroke':tm.color,'data-team':s.team},svg);
+      if(s.estimated||s.uncertain)el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:14,'class':'shot-est','stroke':tm.color,'data-team':s.team},svg);
       var c=el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:s.made?9.5:8.5,'class':'shot '+(s.made?'made':'miss')+(s.unconfirmed?' unconfirmed':''),'data-team':s.team},svg);
       if(s.made)c.setAttribute('fill',tm.color);else c.setAttribute('stroke',tm.color);
       bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
@@ -549,7 +569,10 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
                else "calibration pending" if not n_noshooter else f"{n_noshooter} without an identified shooter, the rest waits for calibration")
         chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position, {why}:</p><div class="pending">{"".join(items)}</div>'
     estimated = sum(1 for s in shots if s.get("estimated"))
+    uncertain = sum(1 for s in shots if s.get("uncertain"))
     notes = []
+    if uncertain:
+        notes.append(f"{uncertain} of {len(shots)} shot positions uncertain (dashed ring): the camera tracking drifted around that moment.")
     if estimated:
         notes.append(f"{estimated} of {len(shots)} shot positions estimated from the image (dashed ring): distance from the basket is roughly right, side is not. Team A is drawn at the left basket, Team B at the right one.")
     if not has_events:
@@ -566,7 +589,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <section><h2>Shot chart</h2>
 <div class="toolbar"><button class="f on" data-filter="all">Both teams</button><button class="f" data-filter="0"><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</button><button class="f" data-filter="1"><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</button><span class="spacer"></span><span id="chart-count" class="muted small"></span></div>
 <svg id="court" class="court" role="img" aria-label="Shot chart on a top-down court"></svg>
-<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span>{f'<span><svg width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{T0["color"]}" stroke-width="1.5" stroke-dasharray="3 2"/></svg>position estimated from image, no calibration</span>' if estimated else ''}<span class="faint">hover a shot for time and player</span></div>
+<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span>{f'<span><svg width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{T0["color"]}" stroke-width="1.5" stroke-dasharray="3 2"/></svg>{"position estimated from image, no calibration" if estimated and not uncertain else "position uncertain, camera drift" if uncertain and not estimated else "position estimated or uncertain, see note"}</span>' if estimated or uncertain else ''}<span class="faint">hover a shot for time and player</span></div>
 {chips}
 {f'<p class="muted small" style="margin:12px 0 0">{" ".join(html.escape(n) for n in notes)}</p>' if notes else ''}
 </section>"""
