@@ -5,6 +5,12 @@
 The per-frame logic is vision/track/tracker.py (Tracker.step); this file only
 decodes the video, samples frames for the kmeans team fit, writes the files
 and the overlay (vision/track/overlay.py) and prints progress.
+
+Consumers (STATS, NUMBERS, COURT, the dashboard) watch the contract paths in
+out/, so a 20-minute run must not truncate them in place: everything is
+written to out/<clip>/ (kept as an archive) and copied onto the contract
+paths atomically (os.replace) only when the run is complete, meta last. Live
+progress for the monitor board is out/overlay_latest.jpg plus the log.
 """
 
 from __future__ import annotations
@@ -12,6 +18,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -38,8 +46,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--person-imgsz", type=int, default=960)
     p.add_argument("--ball-imgsz", type=int, default=1280)
     p.add_argument("--imgsz", type=int, default=1280, help="imgsz for --weights mode")
-    p.add_argument("--out", type=Path, default=Path("out/tracks.jsonl"))
-    p.add_argument("--overlay", type=Path, default=Path("out/overlay.mp4"))
+    p.add_argument("--out", type=Path, default=Path("out/tracks.jsonl"),
+                   help="contract path, written atomically at the end")
+    p.add_argument("--overlay", type=Path, default=Path("out/overlay.mp4"),
+                   help="contract path, written atomically at the end")
+    p.add_argument("--work-dir", type=Path, default=None,
+                   help="where the run writes while running (default out/<clip>/)")
+    p.add_argument("--no-publish", action="store_true",
+                   help="leave the results in the work dir, do not touch the contract paths")
     p.add_argument("--no-overlay", action="store_true")
     p.add_argument("--events", type=Path, default=Path("out/events.json"),
                    help="STATS output; shot flashes + off_court ids are used if it exists")
@@ -115,10 +129,22 @@ def load_cuts(path: Path | None, clip: Path) -> list[int]:
     return sorted(set(frames))
 
 
+def publish(src: Path, dst: Path) -> None:
+    """Copy src next to dst, then rename over dst: readers never see a partial file."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + ".tmp")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
     a = parse_args()
+    work = a.work_dir or Path("out") / a.video.stem
+    work.mkdir(parents=True, exist_ok=True)
+    w_tracks, w_meta = work / "tracks.jsonl", work / "tracks_meta.json"
+    w_summary, w_overlay = work / "track_summary.json", work / "overlay.mp4"
     cap, fps, n_frames, width, height = open_video(a.video)
     first = a.start_frame
     last = n_frames if a.max_frames == 0 else min(n_frames, first + a.max_frames * a.stride)
@@ -138,24 +164,24 @@ def main() -> None:
 
     writer = None
     if not a.no_overlay:
-        writer = OverlayWriter(a.overlay, width=width, height=height, fps=fps / a.stride,
+        writer = OverlayWriter(w_overlay, width=width, height=height, fps=fps / a.stride,
                                events=a.events, identities=a.identities, calib=a.calib,
                                cuts=a.cuts or Path("out") / f"cuts_{a.video.stem}.json",
-                               source_fps=fps)
+                               source_fps=fps, latest_path=a.overlay.with_name("overlay_latest.jpg"))
 
-    a.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {"clip": str(a.video), "source_fps": fps, "stride": a.stride, "fps": fps / a.stride,
             "width": width, "height": height, "first_frame": first, "last_frame": last,
             "tracks": str(a.out), "weights": tr.weights_info,
-            "cuts": load_cuts(a.cuts, a.video)}
-    (a.out.parent / "tracks_meta.json").write_text(json.dumps(meta, indent=1))
+            "cuts": load_cuts(a.cuts, a.video), "work_dir": str(work)}
+    w_meta.write_text(json.dumps(meta, indent=1))
+    log.info("writing to %s, publishing to %s when complete", work, a.out.parent)
 
     cuts = load_cuts(a.cuts, a.video)
     t0 = time.time()
     done = 0
     if first:
         cap.set(cv2.CAP_PROP_POS_FRAMES, first)
-    with a.out.open("w") as out:
+    with w_tracks.open("w") as out:
         idx = first
         while idx < last:
             ok, frame = cap.read()
@@ -188,7 +214,14 @@ def main() -> None:
     summary = {**meta, **tr.summary(), "seconds": round(el, 1),
                "s_per_frame": round(el / max(done, 1), 3), "tracker": a.tracker,
                "overlay": None if a.no_overlay else str(a.overlay)}
-    (a.out.parent / "track_summary.json").write_text(json.dumps(summary, indent=1))
+    w_summary.write_text(json.dumps(summary, indent=1))
+    if not a.no_publish:
+        publish(w_tracks, a.out)
+        publish(w_summary, a.out.parent / "track_summary.json")
+        if writer:
+            publish(w_overlay, a.overlay)
+        publish(w_meta, a.out.parent / "tracks_meta.json")  # meta last = "complete"
+        log.info("published %s, %s, %s", a.out, a.overlay, a.out.parent / "tracks_meta.json")
     log.info("done: %s", json.dumps(summary))
 
 

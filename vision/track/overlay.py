@@ -79,11 +79,12 @@ class OverlayWriter:
     def __init__(self, path: Path, *, width: int, height: int, fps: float,
                  events: Path | None = None, identities: Path | None = None,
                  calib: Path | None = None, cuts: Path | None = None,
-                 source_fps: float = 50.0, court_lines: bool = False) -> None:
+                 source_fps: float = 50.0, court_lines: bool = False,
+                 latest_path: Path | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.raw_path = path.with_name(path.stem + "_raw.mp4")
-        self.latest_path = path.with_name("overlay_latest.jpg")
+        self.latest_path = latest_path or path.with_name("overlay_latest.jpg")
         self.latest_every = 100
         self.writer = cv2.VideoWriter(
             str(self.raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
