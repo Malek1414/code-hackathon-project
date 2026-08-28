@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     board = ScoreBoard()
 
     frame = None
-    for _ in range(20):  # a camera may need a moment; a file must deliver at once
+    for _ in range(60 if is_cam else 20):  # the iPhone needs up to ~15 s for its first frame; a file delivers at once
         frame = cap.read()
         if frame is not None:
             break
