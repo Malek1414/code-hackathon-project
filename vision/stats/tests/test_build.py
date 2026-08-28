@@ -1,6 +1,8 @@
 import json
 
-from vision.stats.build import build, distances_m, load_cuts, load_identities, main
+from vision.stats.build import build, load_cuts, load_identities, main
+from vision.stats.court import distances_m, on_court
+from vision.stats.io import Player
 from vision.stats.io import synthetic_scenario, write_tracks
 
 CONTRACT_SHOT_KEYS = {"t", "frame", "player_id", "team", "made", "shooter_foot", "hoop_bbox"}
@@ -108,3 +110,29 @@ def test_load_cuts_formats(tmp_path):
     assert load_cuts(tmp_path / "a.json") == [5, 900]
     assert load_cuts(tmp_path / "b.json") == [700, 2800]
     assert load_cuts(tmp_path / "c.txt") == [650, 2800]
+
+
+def test_on_court_filter_heuristic_drops_small_high_tracks():
+    """A seated spectator: small box near the top of the image, never on court."""
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        fr.players.append(Player(id=99, bbox=(1500.0, 200.0, 1540.0, 280.0), foot=(1520.0, 280.0), team=0))
+    events, stats = build(frames, fps=50, clip="x")
+    assert events["off_court_track_ids"] == [99]
+    assert all(p["id"] != 99 for p in stats["players"])
+    assert events["shots"][0]["player_id"] == 2  # real players untouched
+    events2, stats2 = build(synthetic_scenario("made"), fps=50, clip="x")
+    assert events2["off_court_track_ids"] == [] and len(stats2["players"]) == 3
+
+
+def test_on_court_filter_with_calibration():
+    calib = {"H_px_to_m": [[0.015, 0, 0], [0, 0.015, 0], [0, 0, 1]], "court_m": {"length": 28.0, "width": 15.0}}
+    assert on_court(calib, 0, (700.0, 400.0)) is True  # 10.5 m, 6 m
+    assert on_court(calib, 0, (2000.0, 400.0)) is False  # 30 m: outside + margin
+    assert on_court({"frames": {}}, 0, (1.0, 1.0)) is None
+    frames = synthetic_scenario("made")
+    for fr in frames:  # a big box outside the court must go too (x = 29.9 m)
+        fr.players.append(Player(id=77, bbox=(1950.0, 500.0, 2030.0, 700.0), foot=(1990.0, 700.0), team=1))
+    events, stats = build(frames, fps=50, clip="x", calib=calib)
+    assert events["off_court_track_ids"] == [77]
+    assert {p["id"] for p in stats["players"]} == {1, 2, 3}

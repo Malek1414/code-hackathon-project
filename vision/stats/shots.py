@@ -18,6 +18,10 @@ Rule (docs/ORCHESTRATION.md, STATS milestone 12:45), adapted to sparse tracks
   below it crosses the rim line inside the central 80 % of the rim
   (reference `score()`). Otherwise miss. (a) means an event is final at most
   `made_window_s` after the ball dropped.
+* vanished: the ball was last seen near the rim (`near_rim_*`) and then not
+  at all for `vanish_window_s` (typical on dev60: the detector loses the ball
+  at the ring). Attempt counts; made = the last two samples extrapolated to
+  the rim line cross it inside the rim; `made_confirmed` is False.
 * shooter: holder of the last possession before the "up" sighting; release =
   first frame in which the ball is more than one bbox width from his bbox.
 
@@ -48,6 +52,9 @@ class ShotParams:
     min_move_widths: float = 0.5  # hoop-relative extent over the window; static "balls" never count
     attempt_window_s: float = 1.5  # "down" must follow "up" within this
     made_window_s: float = 0.5  # net samples are accepted until this long after "down"
+    vanish_window_s: float = 0.6  # ball unseen this long after being near the rim: attempt, verdict extrapolated
+    near_rim_widths: float = 1.5  # "near the rim" = within this many hoop widths of the hoop center ...
+    near_rim_heights: float = 2.5  # ... and at most this many hoop heights above the rim
     cooldown_s: float = 1.5  # one attempt per ... (rim rattles)
     shooter_lookback_s: float = 4.0
     release_width_scale: float = 1.0
@@ -66,6 +73,7 @@ class ShotEvent:
     shooter_confirmed: bool
     release_frame: int | None = None
     decided_t: float | None = None  # when the made/miss verdict became final (live latency)
+    made_confirmed: bool = True  # False: ball vanished at the rim, verdict extrapolated from the arc
 
     def to_dict(self) -> dict:
         return {
@@ -77,6 +85,7 @@ class ShotEvent:
             "shooter_foot": [round(v, 1) for v in self.shooter_foot] if self.shooter_foot else None,
             "hoop_bbox": [round(v, 1) for v in self.hoop_bbox],
             "shooter_confirmed": self.shooter_confirmed,
+            "made_confirmed": self.made_confirmed,
             "release_frame": self.release_frame,
         }
 
@@ -183,13 +192,15 @@ class ShotDetector:
 
     def push(self, index: int) -> list[ShotEvent]:
         fr = self.frames[index]
+        vanished = self._check_vanished(fr.t)
         if fr.ball is None:
-            return []
+            return vanished
         self._ball_idx.append(index)
         k = len(self._ball_idx) - 1
         p = self.p
         done: list[ShotEvent] = []
 
+        done += vanished
         if self._pending is not None:
             done += self._check_pending(fr)
 
@@ -246,12 +257,66 @@ class ShotDetector:
         return done
 
     def finish(self) -> list[ShotEvent]:
-        """End of stream: a pending verdict becomes a miss."""
-        if self._pending is None:
+        """End of stream: a pending verdict becomes a miss; a ball that was
+        near the rim when the stream ended counts as a vanished attempt."""
+        done: list[ShotEvent] = []
+        if self._up_k is not None and self._last_above_k is not None:
+            done += self._vanished_attempt(self.frames[-1].t)
+        if self._pending is not None:
+            ev = self._pending.event
+            ev.decided_t = self.frames[-1].t if self.frames else ev.t
+            self._pending = None
+            self.shots.append(ev)
+            done.append(ev)
+        return done
+
+    def _check_vanished(self, t_now: float) -> list[ShotEvent]:
+        if self._up_k is None or self._last_above_k is None:
             return []
-        ev = self._pending.event
-        ev.decided_t = self.frames[-1].t if self.frames else ev.t
-        self._pending = None
+        la = self.frames[self._ball_idx[self._last_above_k]]
+        if t_now - la.t <= self.p.vanish_window_s:
+            return []
+        return self._vanished_attempt(t_now)
+
+    def _vanished_attempt(self, t_now: float) -> list[ShotEvent]:
+        """The ball has not been seen since `last_above`: attempt if it was
+        near the rim, verdict by extrapolating the last two samples."""
+        p = self.p
+        la_k = self._last_above_k
+        la = self.frames[self._ball_idx[la_k]]
+        hoop = la.hoops[0]
+        w, hh = hoop[2] - hoop[0], hoop[3] - hoop[1]
+        cx = (hoop[0] + hoop[2]) / 2
+        bx, by = la.ball.center
+        near = abs(bx - cx) <= p.near_rim_widths * w and rim_y(hoop, p) - by <= p.near_rim_heights * hh
+        if not near:
+            self._up_k = self._last_above_k = None
+            return []
+        made = False
+        if la_k - 1 >= self._floor_k:
+            prev = self.frames[self._ball_idx[la_k - 1]]
+            prev_hoop = match_hoop(prev, hoop, p)
+            if prev_hoop is not None and la.t - prev.t <= p.vanish_window_s:
+                local = (0.0, 0.0, w, hh)
+                a, b = _rel(prev, prev_hoop), _rel(la, hoop)
+                if b[1] > a[1]:  # descending: extend the segment to the rim line
+                    made = crosses_rim(a, b, local, p)
+        shooter, foot, release, confirmed = self._shooter(self._ball_idx[self._up_k])
+        ev = ShotEvent(
+            frame=la.frame,
+            t=la.t,
+            player_id=shooter.player_id if shooter else None,
+            team=shooter.team if shooter else -1,
+            made=made,
+            shooter_foot=foot,
+            hoop_bbox=hoop,
+            shooter_confirmed=confirmed,
+            release_frame=release,
+            decided_t=t_now,
+            made_confirmed=False,
+        )
+        self._last_event_t = t_now
+        self._up_k = self._last_above_k = None
         self.shots.append(ev)
         return [ev]
 

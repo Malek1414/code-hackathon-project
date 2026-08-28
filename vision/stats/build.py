@@ -19,13 +19,13 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .court import distances_m
 from .engine import StatsEngine
 from .io import Frame, infer_fps, median_dt, read_tracks, synthetic_scenario
 from .possession import PossessionParams, PossessionResult, possession_seconds
 from .shots import ShotEvent, ShotParams
 
 MIN_SEEN_S = 2.0  # players seen shorter than this (and without a shot) are tracker fragments
-MAX_PLAYER_SPEED_MS = 12.0  # steps faster than this are id swaps, not running
 
 
 def build(
@@ -37,14 +37,18 @@ def build(
     distances: dict[int, float] | None = None,
     cuts: list[int] | None = None,
     identities: dict[int, "Identity"] | None = None,
+    image_height: float = 1080.0,
+    on_court_filter: bool = True,
     possession_params: PossessionParams = PossessionParams(),
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
     """`distances` (player id -> metres) wins over `calib` (own projection).
     `cuts` = frame numbers where the footage jumps (engine state is reset).
-    `identities` = track id -> real player (NUMBERS); stats are per player key."""
+    `identities` = track id -> real player (NUMBERS); stats are per player key.
+    Bench players / spectators are removed per frame (OnCourtFilter)."""
     engine = StatsEngine(
-        dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params, cuts=cuts
+        dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params, cuts=cuts,
+        calib=calib, image_height=image_height, on_court_filter=on_court_filter,
     )
     for fr in frames:
         engine.push(fr)
@@ -64,6 +68,7 @@ def build(
         "fps": fps,
         "clip": clip,
         "cuts": sorted(set(int(c) for c in (cuts or []))),
+        "off_court_track_ids": sorted(engine.removed_ids),
         "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team)} for s in shots],
         "possessions": [
             {
@@ -218,47 +223,6 @@ def player_stats(
     return {"players": players, "teams": team_rows}
 
 
-# --- distance via court calibration --------------------------------------------
-
-
-def _homography_for(calib: dict, frame_no: int) -> list[list[float]] | None:
-    per_frame = calib.get("frames")
-    if per_frame:
-        nearest = min(per_frame, key=lambda k: abs(int(k) - frame_no))
-        return per_frame[nearest]
-    return calib.get("H_px_to_m")
-
-
-def project(H: list[list[float]], p: tuple[float, float]) -> tuple[float, float]:
-    x, y = p
-    w = H[2][0] * x + H[2][1] * y + H[2][2]
-    if abs(w) < 1e-9:
-        return (math.nan, math.nan)
-    return ((H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w)
-
-
-def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
-    """Path length of every player's projected foot point, in metres."""
-    last: dict[int, tuple[float, tuple[float, float]]] = {}
-    total: dict[int, float] = defaultdict(float)
-    for fr in frames:
-        H = _homography_for(calib, fr.frame)
-        if H is None:
-            continue
-        for p in fr.players:
-            m = project(H, p.foot)
-            if not all(math.isfinite(v) for v in m):
-                continue
-            if p.id in last:
-                t0, m0 = last[p.id]
-                dt = fr.t - t0
-                d = math.hypot(m[0] - m0[0], m[1] - m0[1])
-                if 0 < dt <= 0.5 and d / dt <= MAX_PLAYER_SPEED_MS:
-                    total[p.id] += d
-            last[p.id] = (fr.t, m)
-    return dict(total)
-
-
 def court_distances(calib_path: Path, tracks_path: Path) -> dict[int, float] | None:
     """COURT's projection helper (vision/court/project.py), if it is importable."""
     try:
@@ -269,6 +233,18 @@ def court_distances(calib_path: Path, tracks_path: Path) -> dict[int, float] | N
     except Exception as exc:  # noqa: BLE001 - any failure there must not block stats
         print(f"court projection unavailable ({exc}); using own projection", file=sys.stderr)
         return None
+
+
+def meta_value(tracks_path: Path, key: str) -> float | None:
+    meta = tracks_path.parent / "tracks_meta.json"
+    if not meta.exists():
+        return None
+    try:
+        d = json.loads(meta.read_text())
+    except json.JSONDecodeError:
+        return None
+    v = d.get(key)
+    return float(v) if isinstance(v, (int, float)) and v > 0 else None
 
 
 def meta_fps(tracks_path: Path) -> float | None:
@@ -292,7 +268,10 @@ def meta_fps(tracks_path: Path) -> float | None:
 
 
 def summary(events: dict, stats: dict) -> str:
-    lines = [f"shots: {len(events['shots'])}  possessions: {len(events['possessions'])}"]
+    lines = [
+        f"shots: {len(events['shots'])}  possessions: {len(events['possessions'])}  "
+        f"off-court track ids removed: {len(events.get('off_court_track_ids', []))}"
+    ]
     for s in events["shots"]:
         who = f"#{s['player_id']}" if s["player_id"] is not None else "?"
         flag = "" if s["shooter_confirmed"] else " (unconfirmed)"
@@ -317,17 +296,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
     ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
+    ap.add_argument("--no-court-filter", action="store_true", help="keep bench players and spectators")
     ap.add_argument("--fixture", choices=["made", "miss", "pass"], help="run on a synthetic scenario")
     ap.add_argument("--min-hold", type=float, default=PossessionParams.min_hold_s, help="seconds")
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
     args = ap.parse_args(argv)
 
+    image_height = 1080.0
     if args.fixture:
         fps = args.fps or 50.0
         frames = synthetic_scenario(args.fixture, fps=fps)
         clip = f"fixture:{args.fixture}"
     else:
         fps = args.fps or meta_fps(Path(args.tracks))
+        image_height = meta_value(Path(args.tracks), "height") or 1080.0
         frames = read_tracks(args.tracks, fps=fps)
         if not frames:
             print(f"no frames in {args.tracks}", file=sys.stderr)
@@ -358,6 +340,8 @@ def main(argv: list[str] | None = None) -> int:
         distances=distances,
         cuts=cuts,
         identities=identities,
+        image_height=image_height,
+        on_court_filter=not args.no_court_filter,
         possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
     out.mkdir(parents=True, exist_ok=True)

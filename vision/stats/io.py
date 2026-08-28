@@ -33,6 +33,7 @@ class Player:
     foot: Point
     team: int = -1
     conf: float = 0.0
+    on_court: bool | None = None  # TRACK's verdict if it has one; None = decide here
 
     @property
     def width(self) -> float:
@@ -103,6 +104,7 @@ def frame_from_dict(d: dict, fps: float | None = None) -> Frame:
                 foot=foot_pt,
                 team=int(p.get("team", -1)),
                 conf=float(p.get("conf", 0.0)),
+                on_court=p.get("on_court"),
             )
         )
 
@@ -224,6 +226,7 @@ def frame_to_dict(fr: Frame) -> dict:
                 "foot": [round(v, 1) for v in p.foot],
                 "team": p.team,
                 "conf": round(p.conf, 3),
+                "on_court": p.on_court,
             }
             for p in fr.players
         ],

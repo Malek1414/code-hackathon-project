@@ -113,3 +113,24 @@ def test_unknown_shooter_is_flagged():
     shots = detect_shots(frames, track_possession(frames))
     assert len(shots) == 1
     assert shots[0].player_id is None and shots[0].team == -1 and not shots[0].shooter_confirmed
+
+
+def test_ball_vanishing_at_the_rim_counts_as_unconfirmed_attempt():
+    """dev60 at 57 s: clean arc into the hoop, then the detector loses the ball."""
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t >= 3.66:  # last sample above the rim is at ~3.64 s
+            fr.ball = None
+    shots = detect_shots(frames, track_possession(frames))
+    assert len(shots) == 1
+    s = shots[0]
+    assert s.made_confirmed is False and s.player_id == FIXTURE_SHOOTER_ID
+    assert s.made is True  # the arc was heading into the rim
+    assert s.decided_t - s.t <= 0.7
+
+    # ball vanishing far from the rim (lost in the crowd) is not an attempt
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t >= 3.3:
+            fr.ball = None
+    assert detect_shots(frames, track_possession(frames)) == []
