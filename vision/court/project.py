@@ -105,6 +105,16 @@ class Calibration:
     def to_px(self, frame: int | None, points_m) -> np.ndarray:
         return apply_h(self.H_m_to_px(frame), points_m)
 
+    def court_polygon_px(self, frame: int | None = None) -> np.ndarray | None:
+        """Court corners in pixels for this frame ([4, 2] float32, bottom-left, bottom-right,
+        top-right, top-left in court terms), or None when the frame is uncalibrated."""
+        H = self.H_m_to_px(frame)
+        if not np.isfinite(H).all():
+            return None
+        corners = np.float64([[0, 0], [self.spec.length_m, 0], [self.spec.length_m, self.spec.width_m], [0, self.spec.width_m]])
+        px = apply_h(H, corners)
+        return px.astype(np.float32) if np.isfinite(px).all() else None
+
     def on_court(self, xy_m, tolerance_m: float = 1.5) -> np.ndarray:
         xy = np.asarray(xy_m, np.float64).reshape(-1, 2)
         ok = np.isfinite(xy).all(axis=1)
