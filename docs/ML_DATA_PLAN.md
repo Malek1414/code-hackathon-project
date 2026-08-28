@@ -46,7 +46,26 @@ datasets (ball/player/hoop classes) → fine-tune YOLO11n for speed.
 3. **Assists**: completed pass → possession ≤1 dribble/2s → made shot.
    Hardest; needs possession attribution to be trustworthy. Ship last.
 
-## Pipeline in this repo
+## Canonical pipeline: `vision/` (merged from PR #1)
+
+Sammy's `vision/` package is the production pipeline — use it over the `ml/`
+bootstrap scripts where they overlap:
+
+- Label + train: `vision/label/autolabel.py` + `vision/label/train.py`
+  (imgsz 960, hoop class included, timeboxed runs → `models/best.pt`).
+  Supersedes `ml/build_dataset.py` + `ml/train_finetune.py`.
+- Track: `vision/track/run.py` (separate person + ball/hoop weights, jersey
+  team assignment, id-switch closing, atomic publish). Supersedes
+  `ml/analyze_video.py` for real games.
+- Events: `vision/stats/` (possession, shots WITH made/missed, tests).
+  `ml/correlate_hr.py` consumes its shot events directly (missed shots =
+  mistakes); `ml/replay_pan.py` reads either tracks schema.
+- Orchestration: `make demo CLIP=...` / `make smoke` (vision/run_all.py).
+
+Still `ml/`-only: NBA play-by-play labels, open-footage acquisition,
+HR correlation, servo replay.
+
+## Bootstrap pipeline in `ml/` (kept for laptop-quick runs)
 
 - `ml/fetch_playbyplay.py` — pull tier-1 event labels to CSV (nba_api).
 - `ml/analyze_video.py` — YOLO11 + ByteTrack over any mp4/mov → annotated

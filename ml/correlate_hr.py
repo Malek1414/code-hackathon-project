@@ -61,8 +61,15 @@ def main():
             events = [int(r["start_frame"]) for r in csv.DictReader(f)]
         kind = "mistakes (hand-labeled)"
     else:
-        events = [e["start"] for e in json.load(open(a.events_json))["shot_candidates"]]
-        kind = "shot attempts"
+        data = json.load(open(a.events_json))
+        shots = data.get("shots") if isinstance(data, dict) else data
+        if shots and isinstance(shots[0], dict) and "made" in shots[0]:
+            # vision/stats schema (Sammy's pipeline): missed shots are the mistakes
+            events = [s["frame"] for s in shots if not s["made"]]
+            kind = "missed shots (vision/stats)"
+        else:
+            events = [e["start"] for e in data["shot_candidates"]]
+            kind = "shot attempts"
 
     minutes = {name: 0.0 for _, _, name in ZONES}
     for i in range(1, len(samples)):
