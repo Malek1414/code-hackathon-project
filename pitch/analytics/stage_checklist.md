@@ -20,8 +20,8 @@ only; two processes may share camera 0.
 4. 15:59 Start live mode, window on the projector screen:
    `.venv/bin/python -m vision.live.live --source <index> --minimap panel`
    Camera dead: `--source 0` (laptop camera, verified). No camera at all:
-   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60/tracks.jsonl --minimap panel`
-   (out/dev60/tracks.jsonl matches dev60; out/tracks.jsonl is whatever TRACK ran last).
+   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v2/tracks.jsonl --minimap panel`
+   (out/dev60_v2/tracks.jsonl matches dev60; out/tracks.jsonl is whatever TRACK ran last).
 5. Optional stream: `FOLLOWCAM_RTMP_URL` in `.env` (never on screen); MJPEG at
    http://127.0.0.1:8501/stream is loopback only, it does not reach a phone.
 6. Hotkeys work only with the OpenCV window focused (click it once): 1 = +2 team A,
