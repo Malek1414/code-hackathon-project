@@ -14,3 +14,9 @@ viz/clips/
 bridge-annotate*.md
 bridge-annotate*-result.log
 bridge-annotate-result.log
+
+# ML env, data, weights, ultralytics artifacts
+ml/.venv/
+ml/data/
+*.pt
+runs/
