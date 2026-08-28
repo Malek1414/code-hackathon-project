@@ -36,8 +36,13 @@ TEAM_LETTER = {0: "A", 1: "B"}
 MAX_OVERLAP_S = 1.0  # same (team, number) ids may overlap this long and still be one player
 
 
+def start_t(tr: dict) -> float:
+    """Lifetime start for the identity: after an id switch the number belongs to the later player."""
+    return tr["switch_t"] if tr.get("switch_t") is not None else tr["first_t"]
+
+
 def overlap_s(a: dict, b: dict) -> float:
-    return min(a["last_t"], b["last_t"]) - max(a["first_t"], b["first_t"])
+    return min(a["last_t"], b["last_t"]) - max(start_t(a), start_t(b))
 
 
 def letter(team: int) -> str:
@@ -62,7 +67,7 @@ def group_players(tracks: dict[str, dict]) -> list[dict]:
     for (team, number), members in by_identity.items():
         # greedy: sort by first_t, longest-lived / most confident first when ties;
         # a member overlapping the group's span so far becomes its own player
-        members.sort(key=lambda m: (m[1]["first_t"], -m[1].get("conf", 0)))
+        members.sort(key=lambda m: (start_t(m[1]), -m[1].get("conf", 0)))
         groups: list[list[tuple[int, dict]]] = []
         for tid, tr in members:
             placed = False

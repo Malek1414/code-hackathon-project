@@ -113,3 +113,11 @@ def test_eval_scores_cards_by_key_then_track_ids():
                 "shots": [{"n": 1, "t": 56.96, "player_id": 805, "number": 9, "number_team": 1}]}
     lines, right, wrong, open_ = score(identities, verdicts)
     assert (right, wrong, open_) == (3, 0, 0) and len(lines) == 4
+
+
+def test_group_players_uses_switch_t_as_start_after_an_id_jump():
+    # dev60 best.pt ids: 257 (31.3-34.7) and 284 (33.6-38.2, id jumped at 35.6) both read B12
+    a = _tr(1, 12, 31.28, 34.68)
+    b = dict(_tr(1, 12, 33.6, 38.2), switch_t=35.6)
+    players = {p["key"]: p for p in group_players({"257": a, "284": b})}
+    assert players["B12"]["track_ids"] == [257, 284] and "B12~284" not in players
