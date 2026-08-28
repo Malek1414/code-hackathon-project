@@ -69,6 +69,7 @@ class Tracker:
                  conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.5,
                  ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
                  hoop_min_streak: int = 3, crop_px: int = 640, crop_after_gap: int = 2,
+                 ball_blacklist_rel: list | None = None,
                  tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
@@ -113,7 +114,10 @@ class Tracker:
                      weights_ballhoop, ball_imgsz, self.ball_model.names)
 
         self.teams = TeamClassifier(team_mode)
-        self.gate = BallGate()
+        seed = [np.asarray(b, dtype=np.float32) for b in (ball_blacklist_rel or [])]
+        self.gate = BallGate(blacklist_rel=seed)
+        if seed:
+            log.info("ball blacklist seeded with %d hoop-relative fixture offsets", len(seed))
         self.last_hoop: list[float] | None = None
         self.last_hoop_frame = -10**9
         self._auto_index = 0

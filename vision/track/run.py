@@ -85,6 +85,9 @@ def parse_args() -> argparse.Namespace:
                         "kmeans = generic two-color split")
     p.add_argument("--team-samples", type=int, default=24,
                    help="kmeans mode: frames sampled across the clip for the fit")
+    p.add_argument("--ball-blacklist", type=Path, default=None,
+                   help="track_summary.json of an earlier run in the same hall; its "
+                        "ball_blacklist_rel_hoopwidths seeds the fixture blacklist")
     p.add_argument("--cuts", type=Path, default=None,
                    help="COURT's cut list (default out/cuts_<clip>.json if present); "
                         "tracker state is reset at every cut frame")
@@ -173,7 +176,11 @@ def main() -> None:
     log.info("%s: %dx%d @ %.2f fps, %d frames, processing %d..%d stride %d",
              a.video, width, height, fps, n_frames, first, last, a.stride)
 
+    seed = []
+    if a.ball_blacklist and a.ball_blacklist.exists():
+        seed = json.loads(a.ball_blacklist.read_text()).get("ball_blacklist_rel_hoopwidths", [])
     tr = Tracker(a.person_weights, a.ball_weights, a.device, weights=a.weights,
+                 ball_blacklist_rel=seed,
                  person_imgsz=a.person_imgsz, ball_imgsz=a.ball_imgsz, imgsz=a.imgsz,
                  conf_player=a.conf_player, conf_ball=a.conf_ball, conf_hoop=a.conf_hoop,
                  ball_max_px=a.ball_max_px, hoop_hold=a.hoop_hold, tracker=a.tracker,

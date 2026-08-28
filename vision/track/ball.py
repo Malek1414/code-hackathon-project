@@ -12,12 +12,15 @@ them. What separates them is time and motion:
   and the blacklist is handed from segment to segment. A candidate whose
   offset recurred within `rel_tol` hoop widths in at least `rel_min` earlier
   frames of the last `rel_window` processed frames, spread over at least
-  `rel_span` frames (0.6 s), is static and dropped and its offset is
+  `rel_span` frames (0.3 s), is static and dropped and its offset is
   blacklisted. A ball held still for that long loses those frames, nothing
-  else. Measured on dev60 v3: without the hand-over, the fixture won the
+  else; Sami's call (28.08. 13:59): strict against the fixtures even at the
+  cost of a still ball. A run can be seeded with the offsets of an earlier
+  run in the same hall (`blacklist_rel`, hoop widths), so the fixtures are
+  known from frame 0. Measured on dev60 v3: without the hand-over, the fixture won the
   first 0.6 s after the cut at 2798 and the real shot arc (0.83-0.88) was
   gated out.
-* static takeover: when the last 8 accepted positions did not move (< 8 px)
+* static takeover: when the last 5 accepted positions did not move (< 8 px)
   the gate opens fully and confidence alone decides, so a high-confidence
   candidate anywhere beats what is by then most likely a fixture (a ball held
   still keeps winning as long as it scores higher than the alternatives).
@@ -73,10 +76,10 @@ class BallGate:
     def __init__(self, *, base_px: float = 120.0, per_frame_px: float = 80.0,
                  max_gate_px: float = 900.0, near_px: float = 120.0, near_grow_px: float = 40.0,
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
-                 rel_tol: float = 0.12, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
+                 rel_tol: float = 0.12, rel_min: int = 3, rel_window: int = 150, rel_span: int = 8,
                  radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
                  head_conf: float = 0.75, wall_hoop_widths: float = 2.5, wall_player_px: float = 150.0,
-                 pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 8,
+                 pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 5,
                  takeover_px: float = 8.0, counts: dict | None = None,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
         self.base_px, self.per_frame_px, self.max_gate_px = base_px, per_frame_px, max_gate_px
