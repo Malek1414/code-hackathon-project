@@ -211,20 +211,39 @@ def main(argv=None) -> int:
     ap.add_argument("--stride", type=int, default=1)
     ap.add_argument("--end", type=int, default=None, help="nur bis zu diesem Frame")
     ap.add_argument("--reanchor-every", type=int, default=60)
+    ap.add_argument("--no-cache", action="store_true", help="Kamerakette neu rechnen")
+    ap.add_argument("--chain-only", action="store_true", help="nur die Kamerakette cachen, keine Keyframes nötig")
     ap.add_argument("--preview", action="store_true", help="out/court_propagate_preview.mp4 mit Linien-Overlay schreiben")
     ap.add_argument("--preview-every", type=int, default=5)
     args = ap.parse_args(argv)
 
-    data = json.loads(args.calib.read_text())
+    data = json.loads(args.calib.read_text()) if args.calib.exists() else {}
     keyframes = {int(k): np.array(v["H_m_to_px"], np.float64) for k, v in (data.get("frames") or {}).items()}
-    if not keyframes:
+    if not keyframes and data:
         keyframes = {int(data["frame"]): np.linalg.inv(np.array(data["H_px_to_m"], np.float64))}
+    if not keyframes and not args.chain_only:
+        raise SystemExit(f"keine Keyframes in {args.calib}, erst calibrate.py laufen lassen (oder --chain-only).")
     boxes = load_boxes(args.tracks)
     print(f"{len(keyframes)} Keyframes {sorted(keyframes)}, Maske aus {len(boxes)} Frames mit Boxen"
           + ("" if boxes else " (keine tracks.jsonl, ohne Spielermaske)"))
 
-    frames, C, stats = chain_camera(args.clip, scale=args.scale, boxes=boxes, keyframes=keyframes, end=args.end,
-                                    stride=args.stride, reanchor_every=args.reanchor_every)
+    # The camera chain does not depend on the keyframes (only re-anchoring does, and
+    # that needs their images, not their H), so it is cached per clip and reused
+    # when Sami refines his clicks. --no-cache forces a fresh run.
+    cache = args.out.with_name(f"court_chain_{args.clip.stem}_s{args.stride}_x{args.scale:g}.npz")
+    if cache.exists() and not args.no_cache:
+        npz = np.load(cache)
+        frames, C = npz["frames"], npz["C"]
+        stats = {"failed": int(npz["failed"]), "reanchors": 0, "cached": str(cache)}
+        print(f"Kamerakette aus Cache: {rel(cache)} ({len(frames)} Frames)")
+    else:
+        frames, C, stats = chain_camera(args.clip, scale=args.scale, boxes=boxes, keyframes=keyframes, end=args.end,
+                                        stride=args.stride, reanchor_every=args.reanchor_every)
+        if args.end is None:
+            np.savez_compressed(cache, frames=frames, C=C, failed=stats["failed"])
+    if args.chain_only:
+        print("nur Kamerakette berechnet.")
+        return 0
     H_m_to_px, drift = per_frame_homographies(frames, C, keyframes)
     H_px_to_m = np.linalg.inv(H_m_to_px)
     args.out.parent.mkdir(parents=True, exist_ok=True)

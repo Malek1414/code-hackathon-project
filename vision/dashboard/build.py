@@ -90,6 +90,8 @@ def place_shots(events: dict | None, cal: Calibration | None) -> list[dict]:
         if s.get("court_m") is None and foot and cal is not None:
             xy = cal.project(int(s.get("frame", 0)) if s.get("frame") is not None else None, [foot])[0]
             s["court_m"] = [float(xy[0]), float(xy[1])] if np.isfinite(xy).all() else None
+        if s.get("shooter_confirmed") is False:
+            s["unconfirmed"] = True
         shots.append(s)
     return shots
 
