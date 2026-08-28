@@ -52,13 +52,15 @@ def draw(frame, r):
 
 
 def run(name: str, tr: Tracker, video: Path, start: int, end: int, stride: int,
-        sample: set[int], outdir: Path) -> dict:
+        sample: set[int], outdir: Path, window: tuple[float, float] | None,
+        fixture: tuple[float, float] | None) -> dict:
     cap = cv2.VideoCapture(str(video))
     fps = cap.get(cv2.CAP_PROP_FPS) or 50.0
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     d = outdir / name.split()[0]
     d.mkdir(parents=True, exist_ok=True)
     confs, t0, idx = [], time.time(), start
+    win = {"frames": 0, "ball": 0, "fixture": 0, "rim": 0, "trace": []}
     while idx < end:
         ok, frame = cap.read()
         if not ok:
@@ -67,8 +69,26 @@ def run(name: str, tr: Tracker, video: Path, start: int, end: int, stride: int,
             r = tr.step(frame, idx, idx / fps)
             if r["ball"]:
                 confs.append(r["ball"]["conf"])
-            if idx in sample:
-                cv2.imwrite(str(d / f"f{idx}.jpg"), cv2.resize(draw(frame, r), (1280, 720)),
+            in_window = window is not None and window[0] <= r["t"] <= window[1]
+            if in_window:
+                win["frames"] += 1
+                b = r["ball"]
+                if b:
+                    win["ball"] += 1
+                    cx, cy = b["center"]
+                    if fixture and abs(cx - fixture[0]) < 30 and abs(cy - fixture[1]) < 30:
+                        win["fixture"] += 1
+                    if r["hoops"]:
+                        h = r["hoops"][0]["bbox"]
+                        hx, hy = (h[0] + h[2]) / 2, (h[1] + h[3]) / 2
+                        if abs(cx - hx) < 150 and abs(cy - hy) < 150:
+                            win["rim"] += 1
+                    win["trace"].append([r["t"], round(cx), round(cy), b["conf"]])
+                else:
+                    win["trace"].append([r["t"], None, None, None])
+            if idx in sample or in_window:
+                tag = "shot_" if in_window else ""
+                cv2.imwrite(str(d / f"{tag}f{idx}.jpg"), cv2.resize(draw(frame, r), (1280, 720)),
                             [cv2.IMWRITE_JPEG_QUALITY, 80])
         idx += 1
     cap.release()
@@ -79,8 +99,10 @@ def run(name: str, tr: Tracker, video: Path, start: int, end: int, stride: int,
            "ball_share": s["ball_frame_share"],
            "ball_conf_mean": round(sum(confs) / max(len(confs), 1), 3),
            "players_per_frame": s["players_per_frame"], "hoop_share": s["hoop_frame_share"],
-           "ids": s["track_ids"], "ball_rejected_static": s["ball_rejected_static"]}
-    log.info("%s", json.dumps(row))
+           "ids": s["track_ids"], "ball_rejected_static": s["ball_rejected_static"],
+           "win_frames": win["frames"], "win_ball": win["ball"], "win_fixture": win["fixture"],
+           "win_rim": win["rim"], "win_trace": win["trace"]}
+    log.info("%s", json.dumps({k: v for k, v in row.items() if k != "win_trace"}))
     return row
 
 
@@ -97,11 +119,18 @@ def main() -> None:
     p.add_argument("--frames-dir", type=Path, default=Path("out/compare"))
     p.add_argument("--samples", type=int, default=40)
     p.add_argument("--ball-confs", default="0.45,0.35,0.30")
+    p.add_argument("--window", default="57.0,57.8",
+                   help="t range of the known shot (dev60: front-iron miss); "
+                        "per-frame ball trace + shot_f*.jpg are reported for it")
+    p.add_argument("--fixture", default="519,383",
+                   help="pixel position of the known false ball in the window")
     a = p.parse_args()
 
+    window = tuple(float(v) for v in a.window.split(",")) if a.window else None
+    fixture = tuple(float(v) for v in a.fixture.split(",")) if a.fixture else None
     processed = list(range(a.start, a.end, a.stride))
     sample = set(random.Random(0).sample(processed, min(a.samples, len(processed))))
-    args = (a.video, a.start, a.end, a.stride, sample, a.frames_dir)
+    args = (a.video, a.start, a.end, a.stride, sample, a.frames_dir, window, fixture)
 
     rows = []
     for cb in (float(v) for v in a.ball_confs.split(",")):
@@ -115,7 +144,8 @@ def main() -> None:
     a.out.write_text(json.dumps({"video": str(a.video), "start": a.start, "end": a.end,
                                  "stride": a.stride, "rows": rows}, indent=1))
     keys = ["config", "frames", "s_per_frame", "ball_share", "ball_conf_mean",
-            "players_per_frame", "hoop_share", "ids", "ball_rejected_static"]
+            "players_per_frame", "hoop_share", "ids", "ball_rejected_static",
+            "win_frames", "win_ball", "win_fixture", "win_rim"]
     print("\t".join(keys))
     for r in rows:
         print("\t".join(str(r[k]) for k in keys))

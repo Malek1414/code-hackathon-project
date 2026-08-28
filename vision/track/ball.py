@@ -1,23 +1,29 @@
 """Ball plausibility gate.
 
 The ball/hoop detector fires on orange wall fixtures next to the backboard
-(fire alarm, orange box) at 0.48-0.69, a real ball scores ~0.86, and a plain
-threshold cannot separate them. What separates them is time:
+(fire alarm, orange box) at 0.48-0.75, a real ball scores ~0.86 in flight but
+drops below 0.5 when it is blurred on the rim, and a plain threshold cannot
+separate them. What separates them is time and motion:
 
 * hoop-relative recurrence (LABEL's rule, vision/label/clean_balls.py): a
   fixture keeps the same offset to the hoop box in every frame, a ball does
   not. A candidate whose hoop-relative offset recurred within `rel_px` in at
   least `rel_min` earlier frames of the last `rel_window` processed frames,
-  spread over at least `rel_span` frames, is static and dropped; its offset is
-  blacklisted for the rest of the clip. The span requirement is what keeps a
-  ball held still before a free throw (1-2 s) alive.
+  spread over at least `rel_span` frames (0.6 s), is static and dropped; its
+  offset is blacklisted for the rest of the clip. A ball held still for that
+  long loses those frames, nothing else.
 * absolute static filter for frames without a hoop: an accepted ball that has
   not moved more than `static_px` in `static_frames` frames is a fixture.
-* gating: a candidate must lie within `base + per_frame * gap` px of the last
+* trajectory: the ball's next position is extrapolated from the last two
+  accepted positions (damped). Candidates within `near_px` (+ growth per
+  missed frame) of that prediction form the first tier and always beat
+  candidates outside it, whatever their confidence: measured on dev60 57.0 s,
+  a 0.75 fixture 320 px away must not outscore a 0.5 ball on the rim. Inside a
+  tier, confidence minus a distance penalty decides.
+* gate: a candidate must lie within `base + per_frame * gap` px of the last
   accepted ball; the gate grows with the gap, so a lost ball (out of frame,
   occluded) is re-acquired anywhere, but a wall object while the ball is in
-  view is not. Among survivors the one nearest the previous ball wins, weighted
-  by confidence.
+  view is not.
 
 Inspired by courtside/engine/analytics/ball.py (max-speed outlier drop).
 """
@@ -35,24 +41,20 @@ def _center(box) -> np.ndarray:
 
 class BallGate:
     def __init__(self, *, base_px: float = 120.0, per_frame_px: float = 80.0,
-                 max_gate_px: float = 900.0, static_px: float = 6.0, static_frames: int = 75,
-                 blacklist_px: float = 25.0, rel_px: float = 8.0, rel_min: int = 4,
-                 rel_window: int = 150, rel_span: int = 75,
+                 max_gate_px: float = 900.0, near_px: float = 120.0, near_grow_px: float = 40.0,
+                 static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
+                 rel_px: float = 8.0, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
-        self.base_px = base_px
-        self.per_frame_px = per_frame_px
-        self.max_gate_px = max_gate_px
-        self.static_px = static_px
-        self.static_frames = static_frames
-        self.blacklist_px = blacklist_px
-        self.rel_px = rel_px
-        self.rel_min = rel_min
-        self.rel_window = rel_window
-        self.rel_span = rel_span
+        self.base_px, self.per_frame_px, self.max_gate_px = base_px, per_frame_px, max_gate_px
+        self.near_px, self.near_grow_px = near_px, near_grow_px
+        self.static_px, self.static_frames, self.blacklist_px = static_px, static_frames, blacklist_px
+        self.rel_px, self.rel_min, self.rel_window, self.rel_span = rel_px, rel_min, rel_window, rel_span
 
         self.step_no = 0
         self.last: np.ndarray | None = None
         self.last_step: int = -10**9
+        self.prev: np.ndarray | None = None  # accepted position before `last`
+        self.prev_step: int = -10**9
         self.history: deque[np.ndarray] = deque(maxlen=static_frames)
         self.blacklist_abs: list[np.ndarray] = []
         self.blacklist_rel: list[np.ndarray] = list(blacklist_rel or [])
@@ -69,6 +71,16 @@ class BallGate:
             return True
         return False
 
+    def predict(self, gap: int) -> np.ndarray | None:
+        """Where the ball should be `gap` processed frames after the last fix."""
+        if self.last is None:
+            return None
+        if self.prev is None or self.last_step - self.prev_step > 3:
+            return self.last
+        v = (self.last - self.prev) / (self.last_step - self.prev_step)
+        # Damped: a bouncing or caught ball does not keep its velocity for long.
+        return self.last + v * min(gap, 4) * 0.7
+
     def pick(self, candidates: list[tuple[float, list[float]]],
              hoop: list[float] | None = None) -> tuple[float, list[float]] | None:
         """candidates = [(conf, [x1,y1,x2,y2])]; returns the accepted one or None."""
@@ -76,8 +88,12 @@ class BallGate:
         while self.rel_seen and self.step_no - self.rel_seen[0][0] > self.rel_window:
             self.rel_seen.popleft()
         hoop_c = _center(hoop) if hoop else None
+        gap = self.step_no - self.last_step
+        pred = self.predict(gap)
+        gate = min(self.base_px + self.per_frame_px * gap, self.max_gate_px)
+        near = self.near_px + self.near_grow_px * min(gap, 10)
 
-        scored = []
+        tier1, tier2 = [], []
         for conf, box in candidates:
             c = _center(box)
             if hoop_c is not None:
@@ -90,19 +106,20 @@ class BallGate:
             if any(np.linalg.norm(c - b) < self.blacklist_px for b in self.blacklist_abs):
                 self.rejected_static += 1
                 continue
-            if self.last is not None:
-                gap = self.step_no - self.last_step
-                gate = min(self.base_px + self.per_frame_px * gap, self.max_gate_px)
-                dist = float(np.linalg.norm(c - self.last))
-                if dist > gate:
-                    self.rejected_gate += 1
-                    continue
-                scored.append((conf - 0.3 * dist / gate, conf, box, c))
-            else:
-                scored.append((conf, conf, box, c))
-        if not scored:
+            if pred is None:
+                tier2.append((conf, conf, box, c))
+                continue
+            dist_last = float(np.linalg.norm(c - self.last))
+            if dist_last > gate:
+                self.rejected_gate += 1
+                continue
+            dist_pred = float(np.linalg.norm(c - pred))
+            score = conf - 0.5 * dist_pred / gate
+            (tier1 if dist_pred <= near else tier2).append((score, conf, box, c))
+        pool = tier1 or tier2
+        if not pool:
             return None
-        _s, conf, box, c = max(scored, key=lambda x: x[0])
+        _s, conf, box, c = max(pool, key=lambda x: x[0])
 
         self.history.append(c)
         if len(self.history) == self.static_frames:
@@ -110,9 +127,10 @@ class BallGate:
             if np.ptp(pts, axis=0).max() < self.static_px:
                 self.blacklist_abs.append(pts.mean(axis=0))
                 self.history.clear()
-                self.last, self.last_step = None, -10**9
+                self.last, self.last_step, self.prev = None, -10**9, None
                 self.rejected_static += 1
                 return None
+        self.prev, self.prev_step = self.last, self.last_step
         self.last, self.last_step = c, self.step_no
         return conf, box
 
