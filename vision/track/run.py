@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import sys
 import time
 from pathlib import Path
@@ -178,6 +179,12 @@ def main() -> None:
     log.info("writing to %s, publishing to %s when complete", work, a.out.parent)
 
     cuts = load_cuts(a.cuts, a.video)
+    # Graceful stop: `touch out/<clip>/STOP` or SIGTERM ends the loop and still
+    # publishes what was processed (a kill leaves an unreadable mp4).
+    stop_file = work / "STOP"
+    stop_file.unlink(missing_ok=True)
+    stop = {"flag": False}
+    signal.signal(signal.SIGTERM, lambda *_: stop.__setitem__("flag", True))
     t0 = time.time()
     done = 0
     if first:
@@ -189,6 +196,9 @@ def main() -> None:
             if not ok:
                 break
             if (idx - first) % a.stride == 0:
+                if stop["flag"] or (done % 25 == 0 and stop_file.exists()):
+                    log.warning("stopping early at frame %d (STOP file or SIGTERM)", idx)
+                    break
                 if cuts and cuts[0] <= idx:
                     while cuts and cuts[0] <= idx:
                         cuts.pop(0)
@@ -216,6 +226,7 @@ def main() -> None:
     el = time.time() - t0
     summary = {**meta, **tr.summary(), "seconds": round(el, 1),
                "s_per_frame": round(el / max(done, 1), 3), "tracker": a.tracker,
+               "stopped_early_at": idx if (stop["flag"] or stop_file.exists()) else None,
                "overlay": None if a.no_overlay else str(a.overlay)}
     w_summary.write_text(json.dumps(summary, indent=1))
     if not a.no_publish:

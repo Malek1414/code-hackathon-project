@@ -32,8 +32,11 @@ them. What separates them is time and motion:
   tried first and measured wrong: dev60 frames 1800-1816 the real ball at
   0.87-0.91 conf was rejected because it flew towards the camera and doubled
   in size while the median came from far-away frames.
-* heads: a candidate whose center lies in the top 20 % of any player box is a
-  head, unless the previous ball was already there (a ball held overhead).
+* heads: a candidate with conf < `head_conf` whose center lies in the top
+  20 % and the central 60 % of a player box is a head, unless the previous
+  ball was already there. High-confidence candidates are exempt on purpose:
+  measured on dev60 frame 2336 the rule threw away the ball at the release
+  of a shot (0.87 conf, above the shooter's hands, top of his box).
 * trajectory: the ball's next position is extrapolated from the last two
   accepted positions (damped). Candidates within `near_px` (+ growth per
   missed frame) of that prediction form the first tier and always beat
@@ -67,6 +70,7 @@ class BallGate:
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
                  rel_tol: float = 0.12, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
                  radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
+                 head_conf: float = 0.75,
                  pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 8,
                  takeover_px: float = 8.0, counts: dict | None = None,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
@@ -75,7 +79,7 @@ class BallGate:
         self.static_px, self.static_frames, self.blacklist_px = static_px, static_frames, blacklist_px
         self.rel_tol, self.rel_min, self.rel_window, self.rel_span = rel_tol, rel_min, rel_window, rel_span
         self.takeover_frames, self.takeover_px = takeover_frames, takeover_px
-        self.radius_frac, self.head_frac = radius_frac, head_frac
+        self.radius_frac, self.head_frac, self.head_conf = radius_frac, head_frac, head_conf
         self.pan_px, self.still_px = pan_px, still_px
 
         self.step_no = 0
@@ -122,11 +126,15 @@ class BallGate:
         frac = r / best_h
         return not (self.radius_frac[0] <= frac <= self.radius_frac[1])
 
-    def _is_head(self, c: np.ndarray, players) -> bool:
+    def _is_head(self, c: np.ndarray, conf: float, players) -> bool:
+        if conf >= self.head_conf:
+            return False  # a confident ball above the hands is a shot, not a head
         if self.last is not None and float(np.linalg.norm(c - self.last)) < 60:
             return False  # ball was already there (held overhead)
         for b in players:
-            if b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[1] + self.head_frac * (b[3] - b[1]):
+            w = b[2] - b[0]
+            if b[0] + 0.2 * w <= c[0] <= b[2] - 0.2 * w \
+                    and b[1] <= c[1] <= b[1] + self.head_frac * (b[3] - b[1]):
                 return True
         return False
 
@@ -218,7 +226,7 @@ class BallGate:
             if self._bad_radius(box, players):
                 self._reject(box, conf, "radius")
                 continue
-            if self._is_head(c, players):
+            if self._is_head(c, conf, players):
                 self._reject(box, conf, "head")
                 continue
             if pred is None:
