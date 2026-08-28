@@ -103,12 +103,13 @@ class Tracker:
             self.person_model = YOLO(str(weights_players))
             self.ball_model = YOLO(str(weights_ballhoop))
             bn = {n.lower(): i for i, n in self.ball_model.names.items()}
-            self.ball_cls = bn.get("basketball", bn.get("ball", 0))
-            self.hoop_cls = bn.get("basketball hoop", bn.get("hoop", 1))
+            self.ball_cls = next((bn[k] for k in ("basketball", "sports ball", "ball") if k in bn), 0)
+            self.hoop_cls = next((bn[k] for k in ("basketball hoop", "hoop") if k in bn), None)
             pn = {n.lower(): i for i, n in self.person_model.names.items()}
-            # COCO person = 0, contract player = 0; referees only if the model knows them.
+            # COCO person = 0, contract player = 0; referees and hoops only if the model knows them.
             self.ref_cls = pn.get("referee")
-            self.person_ids = [0] + ([self.ref_cls] if self.ref_cls is not None else [])
+            self.person_hoop_cls = pn.get("hoop")  # best.pt: hoop candidates from the person model too
+            self.person_ids = [0] + [c for c in (self.ref_cls, self.person_hoop_cls) if c is not None]
             self.weights_info = {"persons": str(weights_players), "ball_hoop": str(weights_ballhoop)}
             log.info("persons %s @%d, ball/hoop %s @%d %s", weights_players, person_imgsz,
                      weights_ballhoop, ball_imgsz, self.ball_model.names)
@@ -116,8 +117,12 @@ class Tracker:
         self.teams = TeamClassifier(team_mode)
         seed = [np.asarray(b, dtype=np.float32) for b in (ball_blacklist_rel or [])]
         # Ball physics are tuned at 25 processed fps (1080p50, stride 2): scale to the real rate.
+        k = proc_fps / 25.0
         self.gate_kw = {"gravity_px": 2.5 * (25.0 / proc_fps) ** 2,
-                        "coast_frames": max(3, round(0.5 * proc_fps))}
+                        "coast_frames": max(3, round(0.5 * proc_fps)),
+                        "static_frames": max(10, round(30 * k)), "rel_span": max(3, round(8 * k)),
+                        "rel_window": round(150 * k), "takeover_frames": max(3, round(5 * k)),
+                        "near_grow_px": 40.0 / k, "per_frame_px": 80.0 / k}
         self.gate = BallGate(blacklist_rel=seed, **self.gate_kw)
         if seed:
             log.info("ball blacklist seeded with %d hoop-relative fixture offsets", len(seed))
@@ -190,16 +195,19 @@ class Tracker:
                                     imgsz=self.person_imgsz, conf=self.conf_player,
                                     classes=self.person_ids, device=self.device, verbose=False)[0]
         for box, conf, cls, tid in _iter_boxes(r):
-            if tid is not None:
+            if cls == self.person_hoop_cls:
+                if conf >= self.conf_hoop:
+                    hoops.append((conf, box.tolist()))
+            elif tid is not None:
                 persons.append((box, conf, tid, cls == self.ref_cls))
         r = self.ball_model.predict(frame, imgsz=self.ball_imgsz,
                                     conf=min(self.conf_ball, self.conf_hoop),
-                                    classes=[self.ball_cls, self.hoop_cls], device=self.device,
-                                    verbose=False)[0]
+                                    classes=[c for c in (self.ball_cls, self.hoop_cls) if c is not None],
+                                    device=self.device, verbose=False)[0]
         for box, conf, cls, _tid in _iter_boxes(r):
             if cls == self.ball_cls and conf >= self.conf_ball:
                 balls.append((conf, box.tolist()))
-            elif cls == self.hoop_cls and conf >= self.conf_hoop:
+            elif self.hoop_cls is not None and cls == self.hoop_cls and conf >= self.conf_hoop:
                 hoops.append((conf, box.tolist()))
         return persons, balls, hoops
 
