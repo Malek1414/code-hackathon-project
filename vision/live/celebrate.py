@@ -90,14 +90,18 @@ def classify(shot: dict, frames: list[int], recs: dict[int, dict]) -> str:
 
 
 def parse_manual(spec: str, fps: float) -> list[dict]:
+    """"36.8:three,44.0:dunk" — optional rim pixel position: "36.8:three:410:300"."""
     out = []
     for item in spec.split(","):
         item = item.strip()
         if not item:
             continue
-        t, _, kind = item.partition(":")
-        out.append({"t": float(t), "frame": int(round(float(t) * fps)), "kind": (kind or "basket").upper(),
-                    "team": -1, "made": True, "hoop_bbox": None})
+        parts = item.split(":")
+        t = float(parts[0])
+        kind = parts[1] if len(parts) > 1 and parts[1] else "basket"
+        rim = (int(float(parts[2])), int(float(parts[3]))) if len(parts) >= 4 else None
+        out.append({"t": t, "frame": int(round(t * fps)), "kind": kind.upper(), "team": -1, "made": True,
+                    "hoop_bbox": None, "rim": rim})
     return out
 
 
@@ -218,7 +222,12 @@ def main(argv: list[str] | None = None) -> int:
             for e in events:
                 if e["frame"] <= idx < e["frame"] + 2 and not any(c.event is e for c in active):
                     hoop = e.get("hoop_bbox") or ((rec.get("hoops") or [{}])[0].get("bbox") if rec else None)
-                    rim = (int((hoop[0] + hoop[2]) / 2), int(hoop[1])) if hoop else (w // 2, int(h * 0.3))
+                    if e.get("rim"):
+                        rim = e["rim"]
+                    elif hoop:
+                        rim = (int((hoop[0] + hoop[2]) / 2), int(hoop[1]))
+                    else:
+                        rim = (w // 2, int(h * 0.3))
                     active.append(Celebration(e, rim, ACCENT.get(e.get("team", -1), ACCENT[-1]), seed=idx))
             for c in active:
                 c.draw(frame, t - c.event["t"], k)
