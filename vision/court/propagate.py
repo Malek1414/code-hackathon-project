@@ -264,6 +264,24 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
     return out, drift_px, report
 
 
+def write_cuts(clip: Path, frames: np.ndarray, cuts: list[int], threshold: float, out_dir: Path) -> Path:
+    """out/cuts_<clip>.json for TRACK/STATS: reset ids and ball history at these frames."""
+    fps = cv2.VideoCapture(str(clip)).get(cv2.CAP_PROP_FPS) or 50.0
+    bounds = [int(frames[0])] + [int(c) for c in cuts] + [int(frames[-1]) + 1]
+    data = {
+        "clip": rel(clip), "fps": fps, "first_frame": int(frames[0]), "last_frame": int(frames[-1]),
+        "cuts": [int(c) for c in cuts], "cut_times_s": [round(int(c) / fps, 2) for c in cuts],
+        "segments": [{"start": a, "end": b - 1, "start_s": round(a / fps, 2), "end_s": round((b - 1) / fps, 2)}
+                     for a, b in zip(bounds[:-1], bounds[1:])],
+        "method": f"frame vs frame {CUT_LAG} frames earlier, aligned by tracked camera motion, mean grey diff > {threshold}; "
+                  "a cut frame is the first frame that no longer belongs to the previous camera shot (dissolves: mid-fade)",
+    }
+    path = out_dir / f"cuts_{clip.stem}.json"
+    path.write_text(json.dumps(data, indent=1))
+    print(f"Schnittliste: {rel(path)}")
+    return path
+
+
 def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Path, every: int, scale: float = 0.5) -> None:
     cap = cv2.VideoCapture(str(clip))
     fps = cap.get(cv2.CAP_PROP_FPS) or 50.0
@@ -290,9 +308,9 @@ def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Pa
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("clip", type=Path)
-    ap.add_argument("--calib", type=Path, default=ROOT / "out" / "court_calib.json")
+    ap.add_argument("--calib", type=Path, default=None, help="Standard: out/court_calib_<clip>.json, sonst out/court_calib.json")
     ap.add_argument("--tracks", type=Path, default=ROOT / "out" / "tracks.jsonl", help="Spielerboxen als Maske (optional)")
-    ap.add_argument("--out", type=Path, default=ROOT / "out" / "court_H.npz")
+    ap.add_argument("--out", type=Path, default=None, help="Standard: out/court_H_<clip>.npz")
     ap.add_argument("--scale", type=float, default=0.5, help="Tracking-Auflösung relativ zum Frame")
     ap.add_argument("--stride", type=int, default=1)
     ap.add_argument("--end", type=int, default=None, help="nur bis zu diesem Frame")
@@ -304,7 +322,14 @@ def main(argv=None) -> int:
     ap.add_argument("--preview-every", type=int, default=5)
     args = ap.parse_args(argv)
 
+    if args.out is None:
+        args.out = ROOT / "out" / f"court_H_{args.clip.stem}.npz"
+    if args.calib is None:
+        per_clip = ROOT / "out" / f"court_calib_{args.clip.stem}.json"
+        args.calib = per_clip if per_clip.exists() else ROOT / "out" / "court_calib.json"
     data = json.loads(args.calib.read_text()) if args.calib.exists() else {}
+    if data and data.get("clip") not in (None, rel(args.clip)):
+        raise SystemExit(f"{rel(args.calib)} gehört zu {data.get('clip')}, nicht zu {rel(args.clip)}.")
     keyframes = {int(k): np.array(v["H_m_to_px"], np.float64) for k, v in (data.get("frames") or {}).items()}
     if not keyframes and data:
         keyframes = {int(data["frame"]): np.linalg.inv(np.array(data["H_px_to_m"], np.float64))}
@@ -336,6 +361,7 @@ def main(argv=None) -> int:
         print(f"Schnitt-Signal (ausgerichtete Differenz) Median {np.median(vals):.1f}, 90% {np.percentile(vals, 90):.1f}, max {vals.max():.1f}")
     cuts = cuts_from_signal(stats["aligned_diff"], int(frames[0]), args.cut_threshold) if stats.get("aligned_diff") else stats.get("cuts", [])
     print(f"{len(cuts)} Schnitte/Überblendungen erkannt (Schwelle {args.cut_threshold}): {cuts}")
+    write_cuts(args.clip, frames, cuts, args.cut_threshold, args.out.parent)
     if args.chain_only:
         print("nur Kamerakette berechnet.")
         return 0
@@ -355,6 +381,9 @@ def main(argv=None) -> int:
                            "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),
                            "chain_drift_px_at_next_keyframe": drift}
     args.calib.write_text(json.dumps(data, indent=1))
+    contract = args.calib.with_name("court_calib.json")
+    if args.calib != contract:
+        contract.write_text(json.dumps(data, indent=1))
     print(f"gespeichert: {rel(args.out)} ({len(frames)} Frames), Drift zum nächsten Keyframe: {drift or 'nur ein Keyframe'}")
     if stats["failed"]:
         print(f"  Hinweis: {stats['failed']} Übergänge ohne Bewegungsschätzung (Kamera dort als still angenommen).")

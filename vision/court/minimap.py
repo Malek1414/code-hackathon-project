@@ -103,7 +103,8 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tracks", type=Path, default=ROOT / "out" / "tracks.jsonl")
-    ap.add_argument("--calib", type=Path, default=ROOT / "out" / "court_calib.json")
+    ap.add_argument("--calib", type=Path, default=None, help="Standard: out/court_calib_<clip>.json bei --clip, sonst out/court_calib.json")
+    ap.add_argument("--clip", type=Path, default=None, help="Clip, zu dem tracks.jsonl gehört (wählt die Kalibrierdatei)")
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "minimap.mp4")
     ap.add_argument("--scale", type=float, default=40.0, help="px per metre")
     ap.add_argument("--fps", type=float, default=None, help="output fps (default: clip fps / detected stride)")
@@ -112,6 +113,9 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", type=Path, default=None, help="also write one PNG of the first frame with players")
     args = ap.parse_args(argv)
 
+    if args.calib is None:
+        per_clip = ROOT / "out" / f"court_calib_{args.clip.stem}.json" if args.clip else None
+        args.calib = per_clip if per_clip and per_clip.exists() else ROOT / "out" / "court_calib.json"
     cal = load_calibration(args.calib) if args.calib.exists() else None
     if cal is None:
         print(f"{args.calib} fehlt: Platzhalter ohne Spieler, als uncalibrated markiert.")

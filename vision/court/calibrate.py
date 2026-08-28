@@ -355,6 +355,9 @@ def write_outputs(out: Path, spec: SurfaceSpec, keyframes: dict[int, Clicks], fi
     out.parent.mkdir(parents=True, exist_ok=True)
     data = calib_dict(spec, keyframes, fits, rel(clip.path), clip.fps, (clip.width, clip.height))
     out.write_text(json.dumps(data, indent=1))
+    contract = out.with_name("court_calib.json")
+    if out != contract:
+        contract.write_text(json.dumps(data, indent=1))
     for f in sorted(fits):
         preview = out.with_name(f"{out.stem}_preview_{f}.jpg")
         cv2.imwrite(str(preview), overlay_image(clip.frame(f), spec, keyframes[f], fits[f]), [cv2.IMWRITE_JPEG_QUALITY, 88])
@@ -369,7 +372,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("clip", type=Path)
     ap.add_argument("--frame", type=int, default=0, help="Startframe im Fenster")
-    ap.add_argument("--out", type=Path, default=ROOT / "out" / "court_calib.json")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="Standard: out/court_calib_<clip>.json, zusätzlich Kopie nach out/court_calib.json (Vertrag)")
     ap.add_argument("--points", type=Path, default=None,
                     help="vorhandene court_calib.json als Start laden (Standard: --out, falls vorhanden)")
     ap.add_argument("--fresh", action="store_true", help="keine gespeicherten Punkte laden")
@@ -379,6 +383,11 @@ def main(argv=None) -> int:
 
     spec = FIBA
     clip = Clip(args.clip)
+    if args.out is None:
+        args.out = ROOT / "out" / f"court_calib_{args.clip.stem}.json"
+        contract = ROOT / "out" / "court_calib.json"
+        if not args.out.exists() and contract.exists() and json.loads(contract.read_text()).get("clip") == rel(args.clip):
+            args.out.write_text(contract.read_text())  # older run saved only the contract file
     keyframes: dict[int, Clicks] = {}
     source = args.points or (args.out if args.out.exists() and not args.fresh else None)
     if source and source.exists():
