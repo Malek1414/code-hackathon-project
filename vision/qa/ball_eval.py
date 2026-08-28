@@ -40,7 +40,7 @@ def is_game10(tracks: Path) -> bool:
 
 def pick_tracks(explicit: Path | None) -> Path | None:
     if explicit:
-        return explicit
+        return explicit if is_game10(explicit) else None  # the labels are game10 frames; any other clip cannot be scored
     for cand in TRACK_CANDIDATES:
         if cand.exists() and is_game10(cand):
             return cand
