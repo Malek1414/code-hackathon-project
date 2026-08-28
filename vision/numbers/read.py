@@ -330,10 +330,16 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
     # which crops do we need
     plan: dict[int, list[dict]] = {}
     for tid, rows in tracks.items():
-        samples = pick_samples(rows, max_crops)
+        fresh = pick_samples(rows, max_crops)
         if track_seconds(rows) < min_track_s or (only_ids is not None and tid not in only_ids):
-            samples = [r for r in samples if crop_key(clip, r["frame"], r["bbox"]) in cache]
-        plan[tid] = samples
+            fresh = []  # not OCR'd in this pass
+        # every crop of this track that an earlier pass already read counts too (the shooters
+        # pass samples 2x MAX_CROPS, a later 6-crop pass must not drop those reads)
+        seen: dict[str, dict] = {}
+        for r in fresh + [r for k in (max_crops, MAX_CROPS, 2 * MAX_CROPS) for r in pick_samples(rows, k)
+                          if crop_key(clip, r["frame"], r["bbox"]) in cache]:
+            seen.setdefault(crop_key(clip, r["frame"], r["bbox"]), r)
+        plan[tid] = sorted(seen.values(), key=lambda r: r["frame"])
     wanted_frames: set[int] = set()
     todo: dict[str, list[tuple[int, dict]]] = defaultdict(list)  # key -> [(tid, row)]
     for tid, rows in plan.items():
