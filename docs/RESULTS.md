@@ -180,3 +180,30 @@ image, worse mid-stretch. Good enough for minimap and shot chart, not for
 metre-precise distances. Stride > 1 in the camera chain is unusable (stride 2
 diverges by thousands of px on a real pan), measured, so chains run at stride
 1 and half resolution (~25 fps CPU, cached per clip).
+
+## Rig tracker (`software/ball_tracker_yolo.py`, RIG)
+
+YOLO ball detector for the physical rig, same CLI and serial protocol as
+Malek's HSV `ball_tracker.py` (`A<angle>\n` at 115200, 40 to 140 degrees,
+KP 0.06, deadband 25 px, EMA 0.35). Ball via `models/ball_hoop_avishah.pt`
+class 0 at imgsz 640, conf 0.35; once the ball is known the model runs on a
+320 px crop around it at native resolution (4x cheaper, small balls keep
+their pixels), full frame at 640 when lost; HSV fallback (same mask plus a
+roundness check) after 15 lost frames. Default device cpu so the GPU stays
+free for the live demo.
+
+Measured 14:20 on CPU, 960x540, next to TRACK's game10 run (machine loaded):
+
+| Source | fps | Ball by model | HSV fallback fired |
+|---|---|---|---|
+| `data/clips/dev60.mp4` (wide gym shot, ball 8 to 12 px at 640) | 6.9 | 24/208 frames = 12 % | 9 frames = 4 % |
+| `--cam 0` (laptop camera, no ball in view) | 5.9 | 0/179 = 0 % | 99 frames = 55 % |
+
+Reading: on the CPU under load the tracker runs at 6 to 7 fps, below the 20
+fps target; the model's ROI path is what makes it usable at all. The HSV
+fallback fires on skin tones when no ball is in view (55 % on the laptop
+camera), so on stage the ball must be the only orange object near the lens or
+the fallback should be disabled. The dev60 12 percent is the wide-shot case;
+the stage case (ball 40 px or more at 5 m from the phone) was not measured.
+MPS was not tested because a `vision/track` job held the GPU during the
+measurement slot. Three frames with the detection box: `out/rig/`.
