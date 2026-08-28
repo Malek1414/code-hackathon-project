@@ -40,6 +40,7 @@ class CourtCanvas:
         self.w = int(round((spec.length_m + 2 * margin_m) * scale))
         self.h = int(round((spec.width_m + 2 * margin_m) * scale))
         self.base = self._draw_base()
+        self.history: dict[int, deque] = {}  # per track id: last samples (frame, x_m, y_m) for the temporal median
 
     def px(self, x_m: float, y_m: float) -> tuple[int, int]:
         """Metres -> canvas pixels. y is mirrored: court y grows upwards, image y downwards."""
@@ -57,21 +58,46 @@ class CourtCanvas:
         return img
 
 
+DISPLAY_TOLERANCE_M = 2.0
+"""Points further than this outside the court are tracking or calibration errors, not players."""
+BALL_JUMP_M = 3.0
+"""A ball that moves more than this between two samples (40 ms apart) is a different ball
+(fixture, false detection) or a calibration jump: the trail is broken there, never bridged."""
+MEDIAN_SAMPLES = 3
+HISTORY_MAX_GAP = 10  # frames; an id that vanished longer than this starts a fresh history
+
+
+def _smoothed(canvas: CourtCanvas, pid: int, frame: int, xy) -> tuple[float, float]:
+    """Temporal median over the last MEDIAN_SAMPLES positions of this track id."""
+    h = canvas.history.get(pid)
+    if h is None or (h and frame - h[-1][0] > HISTORY_MAX_GAP):
+        h = canvas.history[pid] = deque(maxlen=MEDIAN_SAMPLES)
+    h.append((frame, float(xy[0]), float(xy[1])))
+    arr = np.array([[x, y] for _, x, y in h])
+    med = np.median(arr, axis=0)
+    return float(med[0]), float(med[1])
+
+
 def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque, show_ids: bool) -> np.ndarray:
     img = canvas.base.copy()
     frame = int(rec["frame"])
     players = rec.get("players") or []
     calibrated = cal is not None and np.isfinite(cal.H_m_to_px(frame)).all()
+    uncertain = calibrated and cal.is_uncertain(frame)
     if not calibrated:
         cv2.putText(img, "uncalibrated", (canvas.w - 190, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 240), 2, cv2.LINE_AA)
         players = []
         trail.append(None)
+    elif uncertain:
+        cv2.putText(img, "Kamera unsicher", (canvas.w - 230, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2, cv2.LINE_AA)
+        players = []
     if players:
         feet = cal.project(frame, [p["foot"] for p in players])
-        ok = cal.on_court(feet)
+        ok = cal.on_court(feet, DISPLAY_TOLERANCE_M)
         for p, xy, keep in zip(players, feet, ok):
             if not keep:
                 continue
+            xy = _smoothed(canvas, int(p["id"]), frame, xy)
             c = canvas.px(float(xy[0]), float(xy[1]))
             colour = TEAM.get(int(p.get("team", -1)), TEAM[-1])
             cv2.circle(img, c, 9, colour, -1, cv2.LINE_AA)
@@ -80,29 +106,47 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
                 cv2.putText(img, str(p["id"]), (c[0] + 11, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, TEXT, 1, cv2.LINE_AA)
     ball = rec.get("ball")
     predicted_px = None
-    if calibrated and ball and ball.get("center"):
+    if calibrated and not uncertain and ball and ball.get("center"):
         # a ball in flight projects "too far" along the ground plane; the bottom of its box is closer
         bx, by = ball["center"]
         if ball.get("bbox"):
             by = ball["bbox"][3]
         xy = cal.project(frame, [[bx, by]])[0]
-        if cal.on_court(xy)[0]:
+        if cal.on_court(xy, DISPLAY_TOLERANCE_M)[0]:
             if ball.get("predicted"):
                 # Kalman coasting from TRACK (conf 0): shown hollow, never part of the trail
                 predicted_px = canvas.px(float(xy[0]), float(xy[1]))
                 trail.append(None)
             else:
-                trail.append(canvas.px(float(xy[0]), float(xy[1])))
+                last = next((p for p in reversed(trail) if p is not None), None)
+                if last is not None and np.hypot(xy[0] - last[1], xy[1] - last[2]) > BALL_JUMP_M:
+                    trail.append(None)  # break the trail: a 3 m jump in 40 ms is not the same ball
+                trail.append((canvas.px(float(xy[0]), float(xy[1])), float(xy[0]), float(xy[1])))
         else:
             trail.append(None)
     else:
         trail.append(None)
-    pts = [p for p in list(trail) if p is not None]
-    for i in range(1, len(pts)):
-        a = 0.3 + 0.7 * i / len(pts)
-        cv2.line(img, pts[i - 1], pts[i], tuple(int(v * a) for v in BALL), 2, cv2.LINE_AA)
+    # draw only runs of consecutive samples, never across a None
+    run: list = []
+    runs: list = []
+    for p in trail:
+        if p is None:
+            if run:
+                runs.append(run)
+            run = []
+        else:
+            run.append(p[0])
+    if run:
+        runs.append(run)
+    n = sum(len(r) for r in runs) or 1
+    k = 0
+    for r in runs:
+        for i in range(1, len(r)):
+            k += 1
+            a = 0.3 + 0.7 * k / n
+            cv2.line(img, r[i - 1], r[i], tuple(int(v * a) for v in BALL), 2, cv2.LINE_AA)
     if trail and trail[-1] is not None:
-        cv2.circle(img, trail[-1], 6, BALL, -1, cv2.LINE_AA)
+        cv2.circle(img, trail[-1][0], 6, BALL, -1, cv2.LINE_AA)
     elif predicted_px is not None:
         cv2.circle(img, predicted_px, 6, BALL, 2, cv2.LINE_AA)
     t = rec.get("t", frame / (cal.fps if cal else 50.0))
