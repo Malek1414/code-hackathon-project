@@ -13,6 +13,8 @@ pkill -f "vision/court/propagate.py" 2>/dev/null
 pkill -f "vision/qa/ball_check" 2>/dev/null
 pkill -f "imageio_ffmpeg" 2>/dev/null
 touch out/.stop_autopush
+(caffeinate -d -i >/dev/null 2>&1 &) ; echo "caffeinate on (no sleep, no dimming)"
+pmset -g batt | head -2
 sleep 2
 echo "remaining .venv python processes:"
 ps -axo pid,%cpu,command | grep "\.venv/bin/python" | grep -v grep | cut -c1-100
