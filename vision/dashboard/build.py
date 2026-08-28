@@ -274,10 +274,11 @@ def cuts_s(events: dict | None) -> list[float]:
 def clip_duration(events: dict | None, tracks_meta: dict | None, tracks: Path, shots: list[dict]) -> float:
     if events and events.get("duration_s"):
         return float(events["duration_s"])
-    if tracks_meta and tracks_meta.get("source_fps") and tracks_meta.get("last_frame") is not None:
+    same_clip = (not events) or Path(str(events.get("clip") or "")).name == Path(str((tracks_meta or {}).get("clip") or "")).name
+    if same_clip and tracks_meta and tracks_meta.get("source_fps") and tracks_meta.get("last_frame") is not None:
         return (float(tracks_meta["last_frame"]) - float(tracks_meta.get("first_frame") or 0)) / float(tracks_meta["source_fps"])
     last_t = 0.0
-    if tracks.exists():
+    if same_clip and tracks.exists():
         with tracks.open("rb") as fh:
             try:
                 fh.seek(-4096, 2)
