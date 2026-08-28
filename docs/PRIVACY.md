@@ -28,7 +28,13 @@ more than 1 m outside the 28 x 15 m court is blurred in full (bench, table,
 spectators). Output is H.264 via the bundled ffmpeg
 (`-c:v libx264 -pix_fmt yuv420p -movflags +faststart`), for the overlay or
 the raw clip (`--stride` from `out/tracks_meta.json`). The blurred file is
-the one that leaves the laptop; raw clips do not.
+the one that leaves the laptop; raw clips do not. Measured on
+`out/overlay.mp4` (60 s, 1501 frames): 11,579 head regions blurred in 125 s
+on CPU, output `out/overlay_blurred.mp4`. Known gap (12:55): since TRACK
+switched to the fine-tuned player class, referees and bench spectators are
+no longer in `tracks.jsonl` and therefore not blurred; fixing it needs an
+`others` box list in `tracks.jsonl` (referee and off-court detections) from
+TRACK, which `blur.py` would then treat like players.
 
 **How long.** `vision/privacy/retention.py` lists and, with `--apply`,
 deletes `data/clips/*.mp4` and `data/frames/*.jpg` older than `--hours`

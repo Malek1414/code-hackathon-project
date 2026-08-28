@@ -29,12 +29,15 @@
 Privacy, filming minors: The pipeline works on the device that films; nothing
 is uploaded, no RTMP unless a URL is set on purpose. Faces are not used by any
 model: identity comes from jersey number and color, not from faces. The
-export step blurs head regions and everyone outside the court before a video
-leaves the laptop, and raw clips are deleted after a set number of hours
-(`vision/privacy/blur.py` and `retention.py`, PRIVACY role, in progress at
-12:45; say "planned" if they are not merged by 16:00). Youth games: the club
-asks consent as it does for team photos, and the export is the blurred
-overlay, not the raw video.
+export step blurs head regions before a video leaves the laptop
+(`vision/privacy/blur.py`, from the tracking boxes alone, no extra model;
+`out/overlay_blurred.mp4` is the 60 s proof, 11,579 heads in 2 minutes on
+CPU), and raw clips are deleted after a set number of hours
+(`vision/privacy/retention.py`). If asked about the referee or the bench:
+today's blur covers the tracked players; referees and spectators need their
+boxes written by the tracker too, that is a one-line contract change, not a
+model. Youth games: the club asks consent as it does for team photos, and the
+export is the blurred overlay, not the raw video.
 
 Accuracy: Measured today on held-out frames of a Berlin Landesliga game:
 players 0.96 mAP50, hoop 0.97, referee 0.76, ball 0.21 with the fine-tuned
