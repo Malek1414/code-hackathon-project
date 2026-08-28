@@ -94,6 +94,7 @@ class Tracker:
             if PLAYER not in self.cmap.values():
                 raise ValueError(f"{weights}: classes {names} match neither contract nor COCO")
             self.person_ids = [k for k, v in self.cmap.items() if v in (PLAYER, REFEREE)]
+            self.ref_cls = next((k for k, v in self.cmap.items() if v == REFEREE), None)
             self.person_model = self.model
             self.weights_info = str(weights)
             log.info("single model %s, class map %s", weights, self.cmap)
@@ -103,7 +104,10 @@ class Tracker:
             bn = {n.lower(): i for i, n in self.ball_model.names.items()}
             self.ball_cls = bn.get("basketball", bn.get("ball", 0))
             self.hoop_cls = bn.get("basketball hoop", bn.get("hoop", 1))
-            self.person_ids = [0]
+            pn = {n.lower(): i for i, n in self.person_model.names.items()}
+            # COCO person = 0, contract player = 0; referees only if the model knows them.
+            self.ref_cls = pn.get("referee")
+            self.person_ids = [0] + ([self.ref_cls] if self.ref_cls is not None else [])
             self.weights_info = {"persons": str(weights_players), "ball_hoop": str(weights_ballhoop)}
             log.info("persons %s @%d, ball/hoop %s @%d %s", weights_players, person_imgsz,
                      weights_ballhoop, ball_imgsz, self.ball_model.names)
@@ -174,11 +178,11 @@ class Tracker:
             return persons, balls, hoops
 
         r = self.person_model.track(frame, persist=True, tracker=self.tracker_yaml,
-                                    imgsz=self.person_imgsz, conf=self.conf_player, classes=[0],
-                                    device=self.device, verbose=False)[0]
-        for box, conf, _cls, tid in _iter_boxes(r):
+                                    imgsz=self.person_imgsz, conf=self.conf_player,
+                                    classes=self.person_ids, device=self.device, verbose=False)[0]
+        for box, conf, cls, tid in _iter_boxes(r):
             if tid is not None:
-                persons.append((box, conf, tid, False))
+                persons.append((box, conf, tid, cls == self.ref_cls))
         r = self.ball_model.predict(frame, imgsz=self.ball_imgsz,
                                     conf=min(self.conf_ball, self.conf_hoop),
                                     classes=[self.ball_cls, self.hoop_cls], device=self.device,
@@ -236,13 +240,17 @@ class Tracker:
 
         persons, balls, hoops = self._detect(frame)
 
-        players = []
+        players, others = [], []
         for box, conf, raw_id, is_ref in persons:
             self.max_raw_id = max(self.max_raw_id, raw_id)
+            if is_ref:
+                # Not a player: for PRIVACY's blur and the overlay, not for stats.
+                others.append({"bbox": _round(box), "cls": "referee", "conf": round(conf, 3)})
+                continue
             tid = self.id_remap.get(raw_id, raw_id + self.id_offset)
             b = _round(box)
             team = -1
-            if not is_ref:
+            if True:
                 team, switched = self.teams.assign(tid, torso_color(frame, box))
                 if switched:
                     # The box now follows another player: close this id, open a new one.
@@ -319,7 +327,7 @@ class Tracker:
         st["player_dets"] += len(players)
         st["ids"].update(p["id"] for p in players)
         return {"frame": frame_index, "t": round(t, 3), "players": players,
-                "ball": ball, "hoops": hoop_list}
+                "ball": ball, "hoops": hoop_list, "others": others}
 
     def summary(self) -> dict:
         st, n = self.stats, max(self.stats["frames"], 1)
