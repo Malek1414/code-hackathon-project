@@ -132,7 +132,8 @@ def test_pan_controller_law_and_rate():
     for _ in range(40):
         angles.append(pan.update(1800.0, now=t))
         t += 0.02
-    assert angles[0] >= 82.0 and angles[-1] < angles[0] and angles[-1] == 40.0 and all(40 <= a <= 140 for a in angles)
+    assert angles[0] >= 87.0 and angles[-1] < angles[0] and angles[-1] == 40.0 and all(40 <= a <= 140 for a in angles)
+    assert max(abs(b - a) for a, b in zip(angles, angles[1:])) <= 90 * 0.02 + 1e-6  # 90 deg/s slew limit
     assert pan.commands <= 17  # 0.8 s at <= 20 Hz
     # inside the deadband nothing moves
     a0 = pan.update(960.0 + 10, now=t)

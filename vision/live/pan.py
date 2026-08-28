@@ -25,7 +25,7 @@ SERVO_MIN, SERVO_MAX, SERVO_CENTER = 40.0, 140.0, 90.0
 class PanController:
     def __init__(self, port: str | None, *, dry: bool = False, invert: bool = False, frame_width: int = 1920,
                  max_hz: float = 20.0, min_step_deg: float = 1.0, return_s: float = 3.0,
-                 return_rate_deg_s: float = 10.0, max_step_deg: float = 8.0) -> None:
+                 return_rate_deg_s: float = 10.0, max_rate_deg_s: float = 90.0) -> None:
         self.dry = dry
         self.invert = invert
         self.center_x = frame_width / 2
@@ -33,7 +33,7 @@ class PanController:
         self.min_step = min_step_deg
         self.return_s = return_s
         self.return_rate = return_rate_deg_s
-        self.max_step = max_step_deg  # KP was tuned on a webcam; at 1920 px a far ball would ask for 50 deg at once
+        self.max_rate = max_rate_deg_s  # slew limit: KP was tuned on a webcam, at 1920 px a far ball asks for 50 deg at once
         self.angle = SERVO_CENTER
         self.sent_angle: float | None = None
         self.smooth_x: float | None = None
@@ -65,7 +65,8 @@ class PanController:
             err = self.smooth_x - self.center_x
             if abs(err) > DEADBAND_PX:
                 step = KP * err * (1 if self.invert else -1)
-                step = max(-self.max_step, min(self.max_step, step))
+                limit = self.max_rate * (dt if dt > 0 else 1.0 / 30.0)
+                step = max(-limit, min(limit, step))
                 self.angle = min(SERVO_MAX, max(SERVO_MIN, self.angle + step))
             self.last_seen = now
         elif self.last_seen is not None and now - self.last_seen > self.return_s:
