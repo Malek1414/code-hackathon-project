@@ -37,6 +37,11 @@ import cv2
 from vision.live.env import load_dotenv, rtmp_url
 from vision.live.minimap import MiniMap, compose_side_by_side, load_numbers, try_load_calibration
 from vision.live.overlay import draw_flash, draw_score_bar, draw_tracks
+
+try:  # COURT's court overlay (vision/court/draw.py); optional so live never depends on it
+    from vision.court.draw import court_lines
+except Exception:  # noqa: BLE001
+    court_lines = None
 from vision.live.score import ScoreBoard
 from vision.live.stream import MjpegServer, RtmpPusher
 from vision.stats.engine import StatsEngine
@@ -67,6 +72,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="2D court: right third of the output (panel), its own window, or off")
     ap.add_argument("--calib", default="out/court_calib.json")
     ap.add_argument("--identities", default="out/identities.json")
+    ap.add_argument("--no-court-lines", action="store_true", help="do not draw the court on the video")
     return ap.parse_args(argv)
 
 
@@ -265,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
                 log.info("shot %s at %.1fs: %s", "MADE" if ev.made else "miss", ev.t, act.label)
 
             view = frame.copy()
+            if court_lines is not None and minimap is not None and minimap.cal is not None and not args.no_court_lines:
+                court_lines(view, None if is_cam else idx, minimap.cal)
             draw_tracks(view, worker.latest, worker.holder)
             info = f"det {1 / max(worker.proc_dt, 1e-3):.1f} fps   1/2 +2  3/4 +3  z undo  q quit"
             draw_score_bar(view, board, t, info)

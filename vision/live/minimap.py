@@ -85,9 +85,10 @@ class MiniMap:
                     cv2.circle(img, c, 17, BALL, 1, cv2.LINE_AA)
                 label = self.numbers.get(int(p["id"]))
                 if label:
-                    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-                    cv2.putText(img, label, (c[0] - tw // 2, c[1] + th // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                                (20, 20, 20), 1, cv2.LINE_AA)
+                    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+                    org = (c[0] + 12, c[1] + th // 2)
+                    cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (20, 20, 20), 3, cv2.LINE_AA)
+                    cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, TEXT, 1, cv2.LINE_AA)
         if pan_deg:
             cv2.putText(img, f"pan {pan_deg:+.0f} deg: calibration off", (12, self.canvas.h - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 60, 240), 2, cv2.LINE_AA)
