@@ -495,11 +495,16 @@ def main(argv: list[str] | None = None) -> int:
     events = read_json(args.events)
     meta = read_json(META) or {}
     frames = read_tracks(args.tracks)
-    index = TrackIndex(frames)
     shots = (events or {}).get("shots", [])
     if events is None:
         print(f"{args.events} missing or unreadable, writing an empty index")
     clip = resolve_clip(str(args.clip) if args.clip else None, (events or {}).get("clip"), meta.get("clip"))
+    if events and meta.get("clip") and Path(events.get("clip", "")).name != Path(meta["clip"]).name:
+        # events.json (STATS) and tracks.jsonl (TRACK) belong to different clips while the pipeline
+        # moves from one clip to the next: draw the sheets from events only, no boxes from foreign tracks
+        print(f"events.json is {events.get('clip')} but tracks.jsonl is {meta['clip']}: sheets without track boxes")
+        frames = []
+    index = TrackIndex(frames)
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
     for old in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
