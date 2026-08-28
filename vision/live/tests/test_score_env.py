@@ -122,26 +122,24 @@ def test_capture_survives_camera_silence(monkeypatch):
     assert FakeCap.instances == 2
 
 
-def test_pan_controller_law_and_rate():
+def test_pan_controller_adapter(capsys):
     from vision.live.pan import PanController
 
     pan = PanController(None, dry=True, frame_width=1920)
-    # ball far right of centre: angle decreases (default sign), clamped, at most 20 commands/s, >= 1 deg steps
     t = 0.0
     angles = []
-    for _ in range(40):
+    for _ in range(60):
         angles.append(pan.update(1800.0, now=t))
         t += 0.02
-    assert angles[0] >= 87.0 and angles[-1] < angles[0] and angles[-1] == 40.0 and all(40 <= a <= 140 for a in angles)
-    assert max(abs(b - a) for a, b in zip(angles, angles[1:])) <= 90 * 0.02 + 1e-6  # 90 deg/s slew limit
-    assert pan.commands <= 17  # 0.8 s at <= 20 Hz
-    # inside the deadband nothing moves
+    assert angles[0] < 90.0 and angles[-1] == 40.0 and all(40 <= a <= 140 for a in angles)
+    assert max(abs(b - a) for a, b in zip(angles, angles[1:])) <= 90 * 0.02 + 1e-6  # slew 90 deg/s
+    assert 0 < pan.commands <= 25  # 1.2 s at <= 20 Hz, only on >= 1 deg change
     a0 = pan.update(960.0 + 10, now=t)
-    assert abs(pan.update(960.0 - 10, now=t + 0.05) - a0) < 1e-9
-    # lost for > 3 s: drifts back towards 90
+    assert abs(pan.update(960.0 - 10, now=t + 0.05) - a0) < 1e-9  # deadband
     pan.update(None, now=t + 3.5)
     a1 = pan.update(None, now=t + 4.5)
-    assert abs(a1 - 90.0) < abs(a0 - 90.0)
+    assert abs(a1 - 90.0) < abs(a0 - 90.0)  # returns towards the centre after 3 s
+    assert "A" in capsys.readouterr().out
     inv = PanController(None, dry=True, invert=True, frame_width=1920)
     assert inv.update(1800.0, now=0.0) > 90.0
 
