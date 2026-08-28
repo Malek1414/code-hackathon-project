@@ -30,3 +30,16 @@ reference/thirdparty/
 .env
 .env.*
 !.env.example
+
+# --- from main (Malek) ---
+# macOS / python junk
+
+# regenerable render/proxy/QC intermediates (recipes live in viz/EDIT_PLAN.md)
+
+# transient bridge task logs from annotation runs
+
+# ML env, data, weights, ultralytics artifacts
+ml/.venv/
+ml/data/
+*.xcuserdata/
+xcuserdata/
