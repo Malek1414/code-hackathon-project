@@ -75,7 +75,6 @@ struct ContentView: View {
                 statusStrip
                 PanScale(angle: pan.angle)
                     .frame(height: 44)
-                    .padding(.horizontal, 24)
                 LevelLine(roll: level.rollDegrees, isLevel: level.isLevel)
                     .frame(height: 16)
                 Spacer()
@@ -324,8 +323,8 @@ struct PanScale: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let pad: CGFloat = 22   // inset so the 40/140 ticks, labels and the
-                                    // needle stay fully visible at the extremes
+            let pad: CGFloat = 46   // margin lives INSIDE the full-width band so
+                                    // the dark chrome reaches the screen corners
             let x: (Double) -> CGFloat = { pad + (w - 2 * pad) * ($0 - 40) / 100 }
             ZStack(alignment: .topLeading) {
                 // ticks every 5 deg, tall every 25
