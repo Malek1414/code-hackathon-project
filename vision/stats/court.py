@@ -100,13 +100,34 @@ def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 0.5) -> 
     return -margin_m <= x <= length + margin_m and -margin_m <= y <= width + margin_m
 
 
+def uncertain_ranges(calib: dict) -> list[tuple[int, int]]:
+    """COURT's "uncertain_frames": stretches where the homography is a guess;
+    distance steps inside them are skipped (cal.player_distances does the same)."""
+    out = []
+    for r in calib.get("uncertain_frames") or []:
+        if isinstance(r, dict):
+            a, b = r.get("start", r.get("from")), r.get("end", r.get("to"))
+        else:
+            a, b = r[0], r[1]
+        if a is not None and b is not None:
+            out.append((int(a), int(b)))
+    return out
+
+
+def is_uncertain(ranges: list[tuple[int, int]], frame_no: int) -> bool:
+    return any(a <= frame_no <= b for a, b in ranges)
+
+
 def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
-    """Path length of every player's projected foot point, in metres."""
+    """Path length of every player's projected foot point, in metres
+    (fallback when COURT's player_distances is not importable)."""
     last: dict[int, tuple[float, Point]] = {}
     total: dict[int, float] = defaultdict(float)
+    unsure = uncertain_ranges(calib)
     for fr in frames:
         H = homography_for(calib, fr.frame)
-        if H is None:
+        if H is None or is_uncertain(unsure, fr.frame):
+            last.clear()
             continue
         for p in fr.players:
             m = project(H, p.foot)

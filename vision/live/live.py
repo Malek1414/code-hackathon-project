@@ -80,6 +80,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="default: out/court_calib_<source stem>.json, else out/court_calib.json")
     ap.add_argument("--identities", default="out/identities.json")
     ap.add_argument("--no-court-lines", action="store_true", help="do not draw the court on the video")
+    ap.add_argument("--panel-every", type=int, default=3,
+                    help="render the court panel every Nth frame and reuse it in between (render rate)")
     return ap.parse_args(argv)
 
 
@@ -99,29 +101,40 @@ def _read_with_timeout(cap: cv2.VideoCapture, timeout_s: float):
 
 
 def probe_source(index: int, timeout_s: float = 2.0) -> tuple[str, int, int, float]:
-    """('ok' | 'no-frame' | 'closed', width, height, fps) for one camera index."""
+    """('ok' | 'no-frame' | 'closed', width, height, fps) for one camera index.
+    Reads are retried until `timeout_s` is used up: the iPhone (Continuity
+    Camera) opens at once but delivers its first frames only after seconds."""
     cap = cv2.VideoCapture(index)
     try:
         if not cap.isOpened():
             return "closed", 0, 0, 0.0
-        ok, frame = _read_with_timeout(cap, timeout_s)
-        if not ok or frame is None:
-            return "no-frame", 0, 0, cap.get(cv2.CAP_PROP_FPS) or 0.0
-        h, w = frame.shape[:2]
-        return "ok", w, h, cap.get(cv2.CAP_PROP_FPS) or 0.0
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return "no-frame", 0, 0, cap.get(cv2.CAP_PROP_FPS) or 0.0
+            ok, frame = _read_with_timeout(cap, min(2.0, remaining))
+            if ok and frame is not None:
+                h, w = frame.shape[:2]
+                return "ok", w, h, cap.get(cv2.CAP_PROP_FPS) or 0.0
+            time.sleep(0.3)
     finally:
         cap.release()
 
 
-def list_sources(max_index: int = 4) -> list[tuple[int, str, int, int, float]]:
+def list_sources(max_index: int = 4, timeout_s: float = 2.0) -> list[tuple[int, str, int, int, float]]:
     """(index, status, width, height, fps) for indices 0..max_index. On macOS the
     iPhone shows up as an extra index when Continuity Camera is active; it can
     open and still deliver nothing until the phone wakes up."""
-    return [(i, *probe_source(i)) for i in range(max_index + 1)]
+    return [(i, *probe_source(i, timeout_s)) for i in range(max_index + 1)]
 
 
-def auto_source(max_index: int = 4) -> int | None:
-    for i, status, _w, _h, _fps in list_sources(max_index):
+def auto_source(max_index: int = 4, timeout_s: float = 15.0) -> int | None:
+    """First index that delivers a frame, waiting up to `timeout_s` per index
+    (the phone needs a few seconds after waking)."""
+    for i in range(max_index + 1):
+        status, _w, _h, _fps = probe_source(i, timeout_s)
+        log.info("camera %d: %s", i, status)
         if status == "ok":
             return i
     return None
@@ -341,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
              "realtime" if realtime else "offline", stride)
 
     status = ""  # shown in the score bar when the source misbehaves
+    panel = None
     try:
         while True:
             fresh = True
@@ -398,7 +412,8 @@ def main(argv: list[str] | None = None) -> int:
             draw_score_bar(view, board, t, info, warning=bool(status))
             if flash:
                 draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
-            panel = minimap.render(worker.latest, worker.holder) if minimap else None
+            if minimap and (panel is None or frames_rendered % max(args.panel_every, 1) == 0):
+                panel = minimap.render(worker.latest, worker.holder)
             if args.minimap == "panel":
                 small = compose_side_by_side(view, panel, out_w, out_h)
             else:

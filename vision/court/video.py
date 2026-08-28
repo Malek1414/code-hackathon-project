@@ -16,13 +16,13 @@ def ffmpeg_exe() -> str:
 
 
 class FfmpegWriter:
-    def __init__(self, path: Path, width: int, height: int, fps: float, crf: int = 20):
+    def __init__(self, path: Path, width: int, height: int, fps: float, crf: int = 20, threads: int | None = None):
         self.width, self.height = width - width % 2, height - height % 2
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
                "-s", f"{self.width}x{self.height}", "-r", f"{fps:.3f}", "-i", "-",
                "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p",
-               "-movflags", "+faststart", str(path)]
+               "-movflags", "+faststart", *(["-threads", str(threads)] if threads else []), str(path)]
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         self.frames = 0
 

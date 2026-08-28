@@ -172,3 +172,13 @@ def test_find_calib_prefers_the_clip_file_and_checks_the_contract_copy(tmp_path)
     (tmp_path / "court_calib_dev60.json").write_text(json.dumps({"clip": "data/clips/dev60.mp4", "H_px_to_m": []}))
     assert find_calib("data/clips/dev60.mp4", tmp_path).name == "court_calib_dev60.json"
     assert find_calib("data/clips/dev60.mp4", tmp_path, str(tmp_path / "court_calib.json")).name == "court_calib.json"
+
+
+def test_fallback_distance_skips_uncertain_frames():
+    frames = synthetic_scenario("pass", duration_s=1.0)
+    for n, fr in enumerate(frames):
+        p = fr.players[0]
+        fr.players[0] = type(p)(id=p.id, bbox=p.bbox, foot=(p.foot[0] + n, p.foot[1]), team=p.team)
+    calib = {"H_px_to_m": [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 1]], "uncertain_frames": [[10, 29]]}
+    d = distances_m(frames, calib)
+    assert abs(d[1] - 0.28) < 1e-6  # 49 steps minus the 20 inside the stretch and the step out of it
