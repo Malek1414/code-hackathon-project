@@ -446,8 +446,12 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     if note:
         events["note"] = note
-    (out / "events.json").write_text(json.dumps(events, indent=1))
-    (out / "stats.json").write_text(json.dumps(stats, indent=1))
+    stem = Path(clip).stem if not args.fixture else None
+    for name, payload in (("events", events), ("stats", stats)):
+        text = json.dumps(payload, indent=1)
+        (out / f"{name}.json").write_text(text)  # contract path = latest build
+        if stem:
+            (out / f"{name}_{stem}.json").write_text(text)  # per-clip copy survives a clip switch
     print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'}, "
           f"calib {calib_path.name if calib_path else 'none'} -> {out / 'events.json'}, {out / 'stats.json'}")
     print(summary(events, stats))
