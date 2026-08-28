@@ -43,7 +43,10 @@ final class PanController: ObservableObject {
         lastUpdate = now
         let error = (centerX - 0.5) * (invert ? -1 : 1)
         if abs(error) > deadband {
-            angle = min(Self.maxAngle, max(Self.minAngle, angle + error * rateDegPerSec * dt))
+            let next = min(Self.maxAngle, max(Self.minAngle, angle + error * rateDegPerSec * dt))
+            // publish only on real change: pinned at 40/140 (or inside the
+            // deadband) the HUD must not re-render 60x/s for the same value
+            if abs(next - angle) > 0.01 { angle = next }
         }
         sendIfDue()
     }

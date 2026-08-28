@@ -113,7 +113,7 @@ struct ContentView: View {
         .onAppear {
             camera.onFrame = { pixelBuffer in
                 let box = tracker.track(in: pixelBuffer)   // Vision work stays off-main
-                let detected = tracker.frameIndex % 5 == 0 ? tracker.humans(in: pixelBuffer) : nil
+                let detected = tracker.frameIndex % 3 == 0 ? tracker.humans(in: pixelBuffer) : nil
                 DispatchQueue.main.async {
                     if let detected { players = detected }
                     handleFrame(box: box)
@@ -181,6 +181,22 @@ struct ContentView: View {
                   detail: heart.bpm.map { "\($0)" }) {
                 heart.startScan()
             }
+            if tracker.isTracking {
+                Button {
+                    tracker.clear()
+                    subjectBox = nil
+                    lostFlashUntil = nil
+                    sweptRange = 90...90
+                    pan.recenter()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                        Text("LOCK")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundColor(.pla)
+                }
+            }
             Spacer()
             if let started = recordingStarted {
                 TimecodeView(since: started)
@@ -213,28 +229,6 @@ struct ContentView: View {
 
     private var bottomBar: some View {
         ZStack {
-            HStack {
-                if tracker.isTracking {
-                    Button {
-                        tracker.clear()
-                        subjectBox = nil
-                        lostFlashUntil = nil
-                        sweptRange = 90...90
-                        pan.recenter()
-                    } label: {
-                        Text("CLEAR TARGET")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.pla)
-                    }
-                } else {
-                    Text("TAP TO TARGET")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.chrome)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 28)
-
             RecordButton(isRecording: camera.isRecording) {
                 UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 if camera.isRecording {
@@ -512,7 +506,7 @@ struct CoverageWedge: View {
             ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)),
                      with: .color(.pla))
         }
-        .background(.black.opacity(0.45))
+        .background(.black.opacity(0.55))
     }
 }
 
