@@ -28,6 +28,7 @@ from .common import (
     TRACKS,
     FrameGrabber,
     band_label,
+    meta_for,
     put_text,
     qa_lock,
     read_json,
@@ -102,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     if not frames:
         print(f"{args.tracks}: no frames yet")
         return 1
-    meta = read_json(META) or {}
+    meta = meta_for(args.tracks)
     clip = resolve_clip(str(args.clip) if args.clip else None, meta.get("clip"))
     rng = random.Random(args.seed)
     # one player per frame while frames last, so the sample spans the clip

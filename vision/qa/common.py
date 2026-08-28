@@ -60,6 +60,12 @@ def read_json(path: Path) -> dict | None:
         return None
 
 
+def meta_for(tracks: Path) -> dict:
+    """tracks_meta.json next to the tracks file (archive dirs like out/dev60_v4/), else out/tracks_meta.json."""
+    local = tracks.with_name("tracks_meta.json")
+    return read_json(local) or (read_json(META) if tracks.resolve() == TRACKS.resolve() else None) or {}
+
+
 def resolve_clip(*candidates: str | None) -> Path:
     """First existing clip among the given paths (events.json, tracks_meta.json, default)."""
     for c in candidates:

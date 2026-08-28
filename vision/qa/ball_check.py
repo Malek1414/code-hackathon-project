@@ -27,16 +27,15 @@ import numpy as np
 from .common import (
     BALL_COLOR,
     HOOP_COLOR,
-    META,
     OUT,
     QA_DIR,
     ROOT,
     TRACKS,
     FrameGrabber,
     fmt_t,
+    meta_for,
     put_text,
     qa_lock,
-    read_json,
     read_tracks,
     resolve_clip,
 )
@@ -109,9 +108,10 @@ def main(argv: list[str] | None = None) -> int:
     if not frames:
         print(f"{args.tracks}: no frames yet")
         return 1
-    meta = read_json(META) or {}
+    meta = meta_for(args.tracks)
     clip = resolve_clip(str(args.clip) if args.clip else None, meta.get("clip"))
-    rejects_path = args.rejects or next((p for p in DEFAULT_REJECTS if p.exists()), None)
+    local_rejects = args.tracks.with_name("ball_rejects.jsonl")
+    rejects_path = args.rejects or next((p for p in (local_rejects, *DEFAULT_REJECTS) if p.exists()), None)
     rejects = read_rejects(rejects_path)
     grab = FrameGrabber(clip)
     stride = max(1, int(np.median(np.diff([f["frame"] for f in frames]))) if len(frames) > 1 else 1)
@@ -166,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     info = {
         "video": stamped.name,
+        "tracks": str(args.tracks.relative_to(ROOT)) if args.tracks.is_relative_to(ROOT) else str(args.tracks),
         "clip": clip_label,
         "frames": n,
         "ball_frames": n_ball,

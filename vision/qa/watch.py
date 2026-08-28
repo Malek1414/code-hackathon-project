@@ -19,7 +19,7 @@ from pathlib import Path
 from .clips import OVERLAY
 from .ball_check import DEFAULT_REJECTS
 from .numbers_sheet import IDENTITIES
-from .common import EVENTS, QA_DIR, ROOT, TRACKS
+from .common import EVENTS, OUT as OUT_DIR, QA_DIR, ROOT, TRACKS
 
 POLL_S, STABLE_S = 2.0, 4.0
 PY = sys.executable
@@ -47,9 +47,33 @@ def log(msg: str) -> None:
         fh.write(line + "\n")
 
 
-def run(module: str) -> None:
+ARCHIVE_GLOB = "*_v[0-9]*/tracks.jsonl"  # out/dev60_v4/tracks.jsonl -> out/qa/dev60_v4/
+ARCHIVE_JOBS = ("vision.qa.ball_check", "vision.qa.ball_recall")
+archive_done: dict[Path, tuple[float, int] | None] = {}
+archive_seen: dict[Path, tuple[tuple[float, int] | None, float]] = {}
+
+
+def run_archives() -> None:
+    """Ball sheets for archived runs (ORCH 13:39: contract paths stay game10, dev60 vN land in out/dev60_vN/)."""
+    now = time.time()
+    for tracks in sorted((OUT_DIR).glob(ARCHIVE_GLOB)):
+        cur = sig(tracks)
+        last, since = archive_seen.get(tracks, (None, now))
+        if cur != last:
+            archive_seen[tracks] = (cur, now)
+            continue
+        if cur is None or cur == archive_done.get(tracks) or now - since < STABLE_S:
+            continue
+        archive_done[tracks] = cur
+        out = QA_DIR / tracks.parent.name
+        log(f"archive {tracks.parent.name}: {tracks.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
+        for m in ARCHIVE_JOBS:
+            run(m, ["--tracks", str(tracks), "--out", str(out)])
+
+
+def run(module: str, extra: list[str] | None = None) -> None:
     t = time.time()
-    proc = subprocess.run([PY, "-m", module], cwd=ROOT, capture_output=True, text=True)
+    proc = subprocess.run([PY, "-m", module, *(extra or [])], cwd=ROOT, capture_output=True, text=True)
     tail = (proc.stdout.strip().splitlines() or [""])[-1]
     if proc.returncode != 0:
         err = (proc.stderr.strip().splitlines() or ["?"])[-1]
@@ -67,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.once:
         for m in JOBS:
             run(m)
+        run_archives()
         return 0
     done: dict[Path, tuple[float, int] | None] = {p: None for p in (TRACKS, EVENTS, OVERLAY, IDENTITIES, *DEFAULT_REJECTS)}  # signature last processed
     seen: dict[Path, tuple[tuple[float, int] | None, float]] = {p: (sig(p), 0.0) for p in done}  # (sig, since)
@@ -89,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
             for m, deps in JOBS.items():
                 if changed & set(deps):
                     run(m)
+                    run_archives()  # archived runs get their turn between the main jobs
+        run_archives()
         time.sleep(POLL_S)
 
 
