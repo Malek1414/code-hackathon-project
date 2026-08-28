@@ -20,8 +20,11 @@ Rule (docs/ORCHESTRATION.md, STATS milestone 12:45), adapted to sparse tracks
   `made_window_s` after the ball dropped.
 * vanished: the ball was last seen near the rim (`near_rim_*`) and then not
   at all for `vanish_window_s` (typical on dev60: the detector loses the ball
-  at the ring). Attempt counts; made = the last two samples extrapolated to
-  the rim line cross it inside the rim; `made_confirmed` is False.
+  at the ring). The attempt counts as a miss with `made_confirmed` False;
+  `made_hint` says whether the last two samples extrapolate into the
+  central 50 % of the rim. Only a hint: from a side camera the 2D crossing
+  cannot tell a swish from a front-iron rattle-out (dev60 57 s: crossing
+  0.1 widths from the center, rattled out, verified on video).
 * shooter: holder of the last possession before the "up" sighting; release =
   first frame in which the ball is more than one bbox width from his bbox.
 
@@ -46,6 +49,7 @@ class ShotParams:
     rim_frac: float = 0.0  # rim line = y1 + rim_frac * hoop height (TRACK: box = rim + net)
     net_depth: tuple[float, float] = (0.5, 2.0)  # "in the net" = this many hoop heights below the rim (generous: sparse samples)
     rim_inner_frac: float = 0.8  # central share of the rim width that counts as "through"
+    rim_inner_frac_extrapolated: float = 0.5  # stricter when the crossing is only extrapolated (rim hits rattle out)
     arc_window_s: float = 1.0
     arc_min_rise_hoops: float = 1.0  # ball must have climbed this many hoop heights before the apex
     arc_min_samples: int = 3  # fewer samples in the window: the rise test is skipped, not failed
@@ -73,7 +77,8 @@ class ShotEvent:
     shooter_confirmed: bool
     release_frame: int | None = None
     decided_t: float | None = None  # when the made/miss verdict became final (live latency)
-    made_confirmed: bool = True  # False: ball vanished at the rim, verdict extrapolated from the arc
+    made_confirmed: bool = True  # False: ball vanished at the rim, result unknown (counted as miss)
+    made_hint: bool | None = None  # vanished attempts: did the extrapolated arc aim at the middle of the rim?
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +91,7 @@ class ShotEvent:
             "hoop_bbox": [round(v, 1) for v in self.hoop_bbox],
             "shooter_confirmed": self.shooter_confirmed,
             "made_confirmed": self.made_confirmed,
+            "made_hint": self.made_hint,
             "release_frame": self.release_frame,
         }
 
@@ -120,8 +126,9 @@ def in_net(ball: Point, h: BBox, p: ShotParams) -> bool:
     return h[0] <= ball[0] <= h[2] and lo < ball[1] <= hi
 
 
-def crosses_rim(above: Point, below: Point, h: BBox, p: ShotParams) -> bool:
-    """Does the segment above→below cross the rim line inside the rim?"""
+def crosses_rim(above: Point, below: Point, h: BBox, p: ShotParams, inner_frac: float | None = None) -> bool:
+    """Does the line above→below cross the rim line inside the central
+    `inner_frac` of the rim? (Extended beyond `below` if needed.)"""
     rim = rim_y(h, p)
     dy = below[1] - above[1]
     if dy <= 0:
@@ -129,7 +136,8 @@ def crosses_rim(above: Point, below: Point, h: BBox, p: ShotParams) -> bool:
     s = (rim - above[1]) / dy
     x = above[0] + (below[0] - above[0]) * s
     cx, w = (h[0] + h[2]) / 2, h[2] - h[0]
-    return abs(x - cx) <= p.rim_inner_frac * w / 2
+    frac = p.rim_inner_frac if inner_frac is None else inner_frac
+    return abs(x - cx) <= frac * w / 2
 
 
 def match_hoop(fr: Frame, ref: BBox, p: ShotParams) -> BBox | None:
@@ -292,7 +300,7 @@ class ShotDetector:
         if not near:
             self._up_k = self._last_above_k = None
             return []
-        made = False
+        hint = None
         if la_k - 1 >= self._floor_k:
             prev = self.frames[self._ball_idx[la_k - 1]]
             prev_hoop = match_hoop(prev, hoop, p)
@@ -300,20 +308,21 @@ class ShotDetector:
                 local = (0.0, 0.0, w, hh)
                 a, b = _rel(prev, prev_hoop), _rel(la, hoop)
                 if b[1] > a[1]:  # descending: extend the segment to the rim line
-                    made = crosses_rim(a, b, local, p)
+                    hint = crosses_rim(a, b, local, p, p.rim_inner_frac_extrapolated)
         shooter, foot, release, confirmed = self._shooter(self._ball_idx[self._up_k])
         ev = ShotEvent(
             frame=la.frame,
             t=la.t,
             player_id=shooter.player_id if shooter else None,
             team=shooter.team if shooter else -1,
-            made=made,
+            made=False,
             shooter_foot=foot,
             hoop_bbox=hoop,
             shooter_confirmed=confirmed,
             release_frame=release,
             decided_t=t_now,
             made_confirmed=False,
+            made_hint=hint,
         )
         self._last_event_t = t_now
         self._up_k = self._last_above_k = None
@@ -388,7 +397,7 @@ class ShotDetector:
                 release_index = i
                 break
         if release_index is None:
-            release_index = last_held if last_held is not None else seg.end_index
+            release_index = last_held if last_held is not None else min(seg.end_index, up_index)
 
         foot = _foot_at(frames, seg.player_id, release_index, seg.start_index)
         return seg, foot, frames[release_index].frame, True

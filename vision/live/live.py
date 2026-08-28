@@ -73,6 +73,21 @@ def open_source(src: str) -> tuple[cv2.VideoCapture, bool, float]:
     return cap, is_cam, fps
 
 
+HOTKEYS = {ord("1"): (0, 2), ord("2"): (1, 2), ord("3"): (0, 3), ord("4"): (1, 3)}
+
+
+def handle_key(key: int, board: ScoreBoard, t: float) -> tuple[str, bool] | None:
+    """Apply a hotkey to the board; returns (flash label, made-style) or None.
+    1/2 = +2 team A/B, 3/4 = +3, z = undo."""
+    if key in HOTKEYS:
+        team, pts = HOTKEYS[key]
+        return board.manual(team, pts, t).label, True
+    if key == ord("z"):
+        act = board.undo(t)
+        return (act.label, False) if act else None
+    return None
+
+
 class Worker(threading.Thread):
     """Takes the newest frame, runs the tracker + engine, publishes the result."""
 
@@ -227,15 +242,9 @@ def main(argv: list[str] | None = None) -> int:
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
-                if key in (ord("1"), ord("2"), ord("3"), ord("4")):
-                    team = 0 if key in (ord("1"), ord("3")) else 1
-                    pts = 2 if key in (ord("1"), ord("2")) else 3
-                    act = board.manual(team, pts, t)
-                    flash = (act.label, True, t)
-                elif key == ord("z"):
-                    act = board.undo(t)
-                    if act:
-                        flash = (act.label, False, t)
+                hit = handle_key(key, board, t)
+                if hit:
+                    flash = (hit[0], hit[1], t)
             idx += 1
     finally:
         worker.stop = True

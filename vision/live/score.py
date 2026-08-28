@@ -40,8 +40,17 @@ class ScoreBoard:
     unassigned: int = 0  # made baskets the system saw but could not attribute
 
     def auto_shot(self, ev: ShotEvent, t: float) -> Action:
+        """Points only for a confirmed basket with a known team; an
+        unconfirmed verdict (ball lost at the rim) is a question to the human."""
         team = ev.team if ev.team in self.teams else -1
-        if team == -1:
+        if not ev.made_confirmed:
+            name = TEAM_NAMES.get(team, "?")
+            likely = bool(ev.made_hint)
+            label = f"SHOT team {name}: looked in, press 1 or 2" if likely else f"SHOT team {name}: result unclear"
+            act = Action("auto", team, 0, 1 if team >= 0 else 0, 0, t, label)
+            if likely:
+                self.unassigned += 1
+        elif team == -1:
             label = "BASKET? press 1 or 2" if ev.made else "miss (team unknown)"
             act = Action("auto", -1, 0, 0, 0, t, label)
             if ev.made:
@@ -71,7 +80,7 @@ class ScoreBoard:
             ts.points += sign * act.points
             ts.fga += sign * act.fga
             ts.fgm += sign * act.fgm
-        elif act.points == 0 and act.fga == 0 and sign < 0 and act.label.startswith("BASKET?"):
+        if sign < 0 and act.points == 0 and act.fgm == 0 and "press 1 or 2" in act.label:
             self.unassigned -= 1
         if record:
             self.history.append(act)

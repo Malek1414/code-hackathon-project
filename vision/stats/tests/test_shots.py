@@ -125,8 +125,18 @@ def test_ball_vanishing_at_the_rim_counts_as_unconfirmed_attempt():
     assert len(shots) == 1
     s = shots[0]
     assert s.made_confirmed is False and s.player_id == FIXTURE_SHOOTER_ID
-    assert s.made is True  # the arc was heading into the rim
+    assert s.made is False and s.made_hint is True  # counted as miss; the arc aimed at the middle
     assert s.decided_t - s.t <= 0.7
+
+    # heading for the front iron: extrapolated verdict is a miss
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t >= 3.66:
+            fr.ball = None
+        elif fr.ball is not None and fr.t >= 3.3:
+            fr.ball = Ball(center=(fr.ball.center[0] - 40.0, fr.ball.center[1]), conf=0.6)
+    shots = detect_shots(frames, track_possession(frames))
+    assert len(shots) == 1 and shots[0].made is False and shots[0].made_hint is False
 
     # ball vanishing far from the rim (lost in the crowd) is not an attempt
     frames = synthetic_scenario("made")
