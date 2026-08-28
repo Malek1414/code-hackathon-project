@@ -13,3 +13,6 @@ Sources: out/pitch/analytics_segment.mp4 (the full 37 s analytics block, parts i
 out/pitch/court_lines_10s.mp4 (camera pans, court model follows, 10 s, not in 02 for length).
 Numbers on screen and in the script are human-checked: 24 attempts, 10 made, attempt precision 96 percent,
 made or miss verdict 73 percent (docs/RESULTS.md).
+
+05_problem_14s.mp4     14.0 s   Raw game10 footage, 143 to 157 s (no boxes), 1280x720, 25 fps, no audio.
+                                Loops muted under the red Problem slide of pitch/deck/index.html.
