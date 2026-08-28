@@ -4,7 +4,7 @@ Sami's track at the hackathon: **video → labeled players/ball/hoop → 2D cour
 model → per-player stats (shots, FG%)**. This is the "analytics platform" half
 of the pitch; the servo rig is the capture half (Malek).
 
-Eight Claude Code sessions work in parallel on this directory. Each session
+Nine Claude Code sessions work in parallel on this directory. Each session
 owns ONE role below, works only inside its owned paths, and reports to the
 orchestrator session (`samimagdouli-61`) via SendMessage when a milestone is
 done or it is blocked. Sami can talk to any session directly in its terminal.
@@ -20,6 +20,7 @@ done or it is blocked. Sami can talk to any session directly in its terminal.
 | **MONITOR** (added 11:57) | `vision/monitor/` | local status board at 127.0.0.1:8600: labeling progress + latest labeled frame, training curve, tracking progress, shots, calibration state, log tails |
 | **FRONTEND** (added 11:57, takes `vision/dashboard/` from COURT) | `vision/dashboard/`, `out/dashboard.html` | coach-facing analytics page for the judges: score, timeline, shot chart, player table, overlay + minimap side by side |
 | **QA** (added 11:57) | `vision/qa/`, `out/qa/` | human verification sheets: per-shot frame strips with verdict checkboxes, ball recall sample, team assignment sample |
+| **NUMBERS** (added 12:05) | `vision/numbers/`, `out/identities.json` | jersey-number recognition per track, vote over time, merge track ids into real players (team + number) so stats are per player, not per track id |
 
 Hard rules:
 1. Python env: `.venv/bin/python` in this repo (torch 2.13 + MPS, ultralytics
@@ -71,6 +72,17 @@ Hard rules:
 ```
 `distance_m` is filled by COURT once `court_calib.json` exists (STATS calls
 the same projection helper); `null` until then.
+
+### `out/identities.json` — track id → real player (NUMBERS writes, STATS/FRONTEND/TRACK read)
+```json
+{"clip": "data/clips/dev60.mp4",
+ "tracks": {"7": {"team": 0, "number": 12, "conf": 0.83, "votes": {"12": 9, "17": 1}, "reads": 10}},
+ "players": [{"key": "A12", "team": 0, "number": 12, "track_ids": [7, 41, 88], "first_t": 0.0, "last_t": 58.2}]}
+```
+`key` = team letter (A = team 0, B = team 1) + number, e.g. `A12`. A track without a
+confident number keeps its own key `A?7` (team letter, `?`, track id). STATS
+aggregates `stats.json` per `key` (adds `"number"` and `"key"` to each player row)
+and events carry `"player_key"`; FRONTEND shows `#12` instead of track ids.
 
 ### `out/court_calib.json` — homography (COURT writes, everyone reads)
 ```json
