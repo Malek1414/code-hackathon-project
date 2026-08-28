@@ -63,8 +63,12 @@ def shot_points(events: dict | None, cal) -> tuple[dict[str, dict], list[dict]]:
         if cal is not None and s.get("shooter_foot") and frame is not None:
             p = cal.project(int(frame), [s["shooter_foot"]])[0]
             xy = p if np.isfinite(p).all() and cal.on_court(p, 1.5)[0] else None
-        three = is_three(xy)
-        pts = (3 if three else 2) if s.get("made") else 0
+        if s.get("points") is not None:  # STATS' rule is the single source of truth when present
+            pts = int(s["points"])
+            three = bool(s.get("three_estimated")) if s.get("three_estimated") is not None else (pts == 3)
+        else:
+            three = is_three(xy)
+            pts = (3 if three else 2) if s.get("made") else 0
         row = per_key.setdefault(key, {"pts": 0, "threes": 0, "fga": 0, "fgm": 0})
         row["fga"] += 1
         row["fgm"] += 1 if s.get("made") else 0
@@ -90,7 +94,7 @@ def build(stats: dict, events: dict | None, cal, teams: dict[int, dict], clip: s
         sp = per_key.get(key, {})
         fga = int(p.get("fga") or sp.get("fga", 0))
         fgm = int(p.get("fgm") or sp.get("fgm", 0))
-        pts = int(sp.get("pts", 2 * fgm))
+        pts = int(p["pts"]) if p.get("pts") is not None else int(sp.get("pts", 2 * fgm))
         poss = float(p.get("possession_s") or 0.0)
         dist = float(p.get("distance_m") or 0.0)
         tr = team_rows[t]
@@ -113,6 +117,13 @@ def build(stats: dict, events: dict | None, cal, teams: dict[int, dict], clip: s
     for pl in players:
         tot = team_rows[pl["team"]]["possession_s"]
         pl["possession_share"] = round(pl["possession_s"] / tot, 3) if tot else None
+    for st in stats.get("teams", []):  # STATS' team totals win over the per-player sum
+        t = int(st.get("team", -1))
+        if t in team_rows:
+            if st.get("score") is not None:
+                team_rows[t]["pts"] = int(st["score"])
+            if st.get("fga") is not None:
+                team_rows[t]["fga"], team_rows[t]["fgm"] = int(st["fga"]), int(st.get("fgm") or 0)
     for tr in team_rows.values():
         tr["fg_pct"] = round(tr["fgm"] / tr["fga"], 3) if tr["fga"] else None
         tr["possession_s"] = round(tr["possession_s"], 1)
@@ -128,7 +139,7 @@ def build(stats: dict, events: dict | None, cal, teams: dict[int, dict], clip: s
         "shots": shots,
         "columns": ["pts", "fga", "fgm", "fg_pct", "possession_share", "distance_m"],
         "notes": [
-            "points: 2 per made shot, 3 when the projected shot position lies outside the three-point line (three_estimated, depth accuracy about 0.5 m)",
+            "points come from STATS (events.json shots[].points, stats.json teams[].score / players[].pts); the local 2/3 rule is only a fallback when those fields are missing",
             "possession_share is the player's share of the team's possession seconds",
             "distance_m comes from stats.json (calibrated tracks, uncertain camera stretches excluded)",
             "unidentified tracks with a shot keep their track key (A?661); tracks without a shot are folded into the others row",
