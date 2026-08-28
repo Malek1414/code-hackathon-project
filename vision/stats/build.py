@@ -19,7 +19,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .court import distances_m
+from .court import distances_m, shot_points
 from .engine import StatsEngine
 from .io import Frame, infer_fps, median_dt, read_tracks, synthetic_scenario
 from .possession import PossessionParams, PossessionResult, possession_seconds
@@ -63,6 +63,10 @@ def build(
         if s.player_id in ident and ident[s.player_id].team >= 0:
             s.team = ident[s.player_id].team
             s.team_source = "identity"
+    points: dict[int, tuple[int, bool]] = {}  # shot index -> (points, three_estimated): ONE rule for every consumer
+    for i, s in enumerate(shots):
+        frame_no = s.release_frame if s.release_frame is not None else s.frame
+        points[i] = shot_points(calib, frame_no, s.shooter_foot, bool(s.made and s.made_confirmed))
 
     def key_of(pid: int | None, team: int) -> str | None:
         if pid is None:
@@ -76,7 +80,8 @@ def build(
         "clip": clip,
         "cuts": sorted(set(int(c) for c in (cuts or []))),
         "off_court_track_ids": sorted(engine.removed_ids),
-        "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team)} for s in shots],
+        "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team), "points": points[i][0],
+                   "three_estimated": points[i][1]} for i, s in enumerate(shots)],
         "possessions": [
             {
                 "player_id": s.player_id,
@@ -90,7 +95,8 @@ def build(
             for s in possession.segments
         ],
     }
-    stats = player_stats(frames, possession, shots, calib=calib, distances=distances, identities=ident)
+    stats = player_stats(frames, possession, shots, calib=calib, distances=distances, identities=ident,
+                         points=[points[i][0] for i in range(len(shots))])
     return events, stats
 
 
@@ -158,6 +164,28 @@ def identities_match_tracks(ident: dict[int, Identity], frames: list[Frame], min
     return agree >= min_agree * len(present)
 
 
+def find_calib(clip: str, out_dir: Path, explicit: str | None = None) -> Path | None:
+    """The calibration for this clip: --calib if given, else out/court_calib_<stem>.json,
+    else the contract copy out/court_calib.json when its "clip" is this clip
+    (COURT keeps one file per clip; the contract copy points at the latest)."""
+    stem = Path(clip).stem
+    if explicit:
+        return Path(explicit) if Path(explicit).exists() else None  # the caller's choice is not second-guessed
+    for path in (out_dir / f"court_calib_{stem}.json", out_dir / "court_calib.json"):
+        if not path.exists():
+            continue
+        try:
+            d = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        own = d.get("clip")
+        if own and Path(own).stem != stem and path.name == "court_calib.json":
+            print(f"{path} is for {own}, not {clip}: ignoring it", file=sys.stderr)
+            continue
+        return path
+    return None
+
+
 def find_cuts(clip: str, out_dir: Path) -> list[int]:
     """COURT's cut list for this clip, if any: out/cuts_<stem>.json (list of
     frames, or {"cuts": [...]} / {"frames": [...]} with ints or {"frame": n}),
@@ -196,9 +224,11 @@ def player_stats(
     calib: dict | None = None,
     distances: dict[int, float] | None = None,
     identities: dict[int, Identity] | None = None,
+    points: list[int] | None = None,
 ) -> dict:
     """One row per real player when identities are known (track ids merged
-    under their `key`), else one row per track id with key `A?<id>`."""
+    under their `key`), else one row per track id with key `A?<id>`.
+    `points` per shot (same order as `shots`) feeds player pts and team score."""
     dt = median_dt(frames)
     ident = identities or {}
     seen: Counter[int] = Counter()
@@ -211,27 +241,36 @@ def player_stats(
 
     fga: Counter[int] = Counter()
     fgm: Counter[int] = Counter()
-    for s in shots:
+    pts: Counter[int] = Counter()
+    pts_list = points if points is not None else [2 if s.made else 0 for s in shots]
+    for s, pt in zip(shots, pts_list):
         if s.player_id is not None:
             fga[s.player_id] += 1
             fgm[s.player_id] += int(s.made)
+            pts[s.player_id] += pt
     poss_s = possession_seconds(frames, possession)
     distance = distances if distances is not None else (distances_m(frames, calib) if calib else {})
 
+    shot_team: dict[int, int] = {}  # a shooter's team as the event decided it (nearby players etc.)
+    for s in shots:
+        if s.player_id is not None and s.team >= 0:
+            shot_team.setdefault(s.player_id, s.team)
+
     rows: dict[str, dict] = {}
     for pid, n in seen.items():
-        track_team = teams[pid].most_common(1)[0][0] if teams[pid] else -1
+        track_team = teams[pid].most_common(1)[0][0] if teams[pid] else shot_team.get(pid, -1)
         if pid in ident:
             key, team, number = ident[pid].key, ident[pid].team, ident[pid].number
         else:
             key, team, number = f"{TEAM_LETTER.get(track_team, '?')}?{pid}", track_team, None
         row = rows.setdefault(
             key,
-            {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "fga": 0, "fgm": 0,
+            {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "pts": 0, "fga": 0, "fgm": 0,
              "fg_pct": None, "possession_s": 0.0, "distance_m": None, "_seen": 0},
         )
         row["id"] = min(row["id"], pid)
         row["track_ids"].append(pid)
+        row["pts"] += pts[pid]
         row["fga"] += fga[pid]
         row["fgm"] += fgm[pid]
         row["possession_s"] += poss_s.get(pid, 0.0)
@@ -250,15 +289,17 @@ def player_stats(
         if row["distance_m"] is not None:
             row["distance_m"] = round(row["distance_m"], 1)
         players.append(row)
-    players.sort(key=lambda p: (-p["fga"], -p["possession_s"], p["id"]))
+    players.sort(key=lambda p: (-p["pts"], -p["fga"], -p["possession_s"], p["id"]))
 
     team_fga: Counter[int] = Counter()
     team_fgm: Counter[int] = Counter()
-    for s in shots:
+    team_pts: Counter[int] = Counter()
+    for s, pt in zip(shots, pts_list):
         team_fga[s.team] += 1
         team_fgm[s.team] += int(s.made)
+        team_pts[s.team] += pt
     team_ids = sorted({0, 1} | {t for t in team_fga if t >= 0} | ({-1} if team_fga[-1] else set()))
-    team_rows = [{"team": t, "fga": team_fga[t], "fgm": team_fgm[t]} for t in team_ids]
+    team_rows = [{"team": t, "score": team_pts[t], "fga": team_fga[t], "fgm": team_fgm[t]} for t in team_ids]
     return {"players": players, "teams": team_rows}
 
 
@@ -344,7 +385,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tracks", default="out/tracks.jsonl")
     ap.add_argument("--clip", default="data/clips/game10.mp4")
     ap.add_argument("--fps", type=float, default=None, help="default: inferred from tracks")
-    ap.add_argument("--calib", default="out/court_calib.json", help="used if the file exists")
+    ap.add_argument("--calib", default=None,
+                    help="default: out/court_calib_<clip>.json, else out/court_calib.json if it is for this clip")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
     ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
@@ -358,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
     args = ap.parse_args(argv)
     note = args.note
+    tracks_dir = Path(args.tracks).parent  # archived runs: out/<clip>_vN/; cuts and calibration may still live in out/
 
     image_height = 1080.0
     if args.fixture:
@@ -376,15 +419,17 @@ def main(argv: list[str] | None = None) -> int:
 
     calib = None
     distances = None
-    calib_path = Path(args.calib)
-    if calib_path.exists():
+    calib_path = None if args.fixture else (find_calib(clip, tracks_dir, args.calib) or find_calib(clip, Path("out")))
+    if calib_path is not None:
         calib = json.loads(calib_path.read_text())
-        if not args.fixture:
-            distances = court_distances(calib_path, Path(args.tracks))
+        distances = court_distances(calib_path, Path(args.tracks))
 
     out = Path(args.out_dir)
-    tracks_dir = Path(args.tracks).parent  # cuts/identities live next to the tracks, not in --out-dir
-    cuts = load_cuts(Path(args.cuts)) if args.cuts else (find_cuts(clip, tracks_dir) if not args.fixture else [])
+    cuts = []
+    if args.cuts:
+        cuts = load_cuts(Path(args.cuts))
+    elif not args.fixture:
+        cuts = find_cuts(clip, tracks_dir) or find_cuts(clip, Path("out"))
     identities = None
     ident_path = Path(args.identities)
     if ident_path.exists() and not args.fixture:
@@ -419,10 +464,14 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     if note:
         events["note"] = note
-    (out / "events.json").write_text(json.dumps(events, indent=1))
-    (out / "stats.json").write_text(json.dumps(stats, indent=1))
-    print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'} "
-          f"-> {out / 'events.json'}, {out / 'stats.json'}")
+    stem = Path(clip).stem if not args.fixture else None
+    for name, payload in (("events", events), ("stats", stats)):
+        text = json.dumps(payload, indent=1)
+        (out / f"{name}.json").write_text(text)  # contract path = latest build
+        if stem:
+            (out / f"{name}_{stem}.json").write_text(text)  # per-clip copy survives a clip switch
+    print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'}, "
+          f"calib {calib_path.name if calib_path else 'none'} -> {out / 'events.json'}, {out / 'stats.json'}")
     print(summary(events, stats))
     return 0
 

@@ -82,8 +82,12 @@ class Identities:
     """Track id -> jersey number, from out/identities.json (NUMBERS). Rows that
     already carry `key`/`number` (STATS) win; this only fills the gaps."""
 
-    def __init__(self, data: dict | None):
+    def __init__(self, data: dict | None, clip: str | None = None):
         self.by_track: dict[int, tuple[str, int | None]] = {}
+        self.clip = Path(str((data or {}).get("clip") or "")).stem
+        if clip and self.clip and self.clip != Path(str(clip)).stem:
+            print(f"identities.json is for {self.clip}, events are {Path(str(clip)).stem}, jersey numbers ignored", file=sys.stderr)
+            data = None
         for pl in (data or {}).get("players") or []:
             for tid in pl.get("track_ids") or []:
                 self.by_track[int(tid)] = (str(pl.get("key") or ""), pl.get("number"))
@@ -105,6 +109,14 @@ class Identities:
         if number is not None:
             return f"#{int(number)}" + (f" (track {variant})" if variant else ""), int(number), (str(key) if key else None)
         return (f"track {track_id}" if track_id is not None else "shooter unknown"), None, (str(key) if key else None)
+
+
+MIN_POSSESSION_S = 3.0  # a track without a shot needs this much ball time to make the table
+TABLE_PER_TEAM = 10  # rows shown per team before "show more"
+
+
+def is_active(r: dict) -> bool:
+    return bool(r["fga"] or (r["possession_s"] or 0) >= MIN_POSSESSION_S)
 
 
 def merge_by_identity(rows: list[dict]) -> list[dict]:
@@ -130,7 +142,7 @@ def merge_by_identity(rows: list[dict]) -> list[dict]:
                 m[f] = round((m[f] or 0) + r[f], 1)
     for m in merged.values():
         m["fg_pct"] = round(m["fgm"] / m["fga"], 3) if m["fga"] else None
-        m["active"] = bool(m["fga"] or (m["possession_s"] or 0) >= 0.5 or (m["distance_m"] or 0) >= 20)
+        m["active"] = is_active(m)
     return out
 
 
@@ -145,6 +157,7 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
     """Shots with `court_m` (metres, None without calibration) and `points`."""
     if not events:
         return []
+    unc = uncertain_ranges(cal)
     shots = []
     for raw in events.get("shots", []):
         s = {
@@ -166,6 +179,12 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             if np.isfinite(xy).all() and cal.on_court(xy)[0]:
                 s["court_m"] = [round(float(xy[0]), 2), round(float(xy[1]), 2)]
         s["estimated"] = False
+        s["uncertain"] = False
+        if s["court_m"] is not None and raw.get("frame") is not None:
+            fr = int(raw["frame"])
+            if any(a <= fr <= b for a, b in unc):
+                s["uncertain"] = True
+                s["flags"].append("position uncertain, camera drift")
         s["no_shooter"] = not foot
         if s["court_m"] is None:
             est = estimate_court_m(foot, raw.get("hoop_bbox"), s["team"])
@@ -207,8 +226,26 @@ def estimate_court_m(foot, hoop_bbox, team: int) -> list[float] | None:
     return [round(x, 2), round(y, 2)]
 
 
-def score(shots: list[dict]) -> dict[int, int]:
+def uncertain_ranges(cal: Calibration | None) -> list[tuple[int, int]]:
+    """Frame ranges where COURT flags camera-tracking drift (court_calib.json
+    "uncertain_frames": [[start, end], ...] or [{"start": .., "end": ..}, ...])."""
+    out = []
+    for r in ((cal.meta if cal else {}) or {}).get("uncertain_frames") or []:
+        try:
+            a, b = (r["start"], r["end"]) if isinstance(r, dict) else (r[0], r[1])
+            out.append((int(a), int(b)))
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return out
+
+
+def score(shots: list[dict], stats: dict | None = None) -> dict[int, int]:
+    """Team score: stats.json teams[].score when STATS writes it, else the per-shot
+    points from events.json (2 per made basket when a shot carries no points)."""
     out = {0: 0, 1: 0}
+    from_stats = {int(t["team"]): int(t["score"]) for t in (stats or {}).get("teams") or [] if t.get("score") is not None and int(t.get("team", -1)) in out}
+    if len(from_stats) == 2:
+        return from_stats
     for s in shots:
         if s["team"] in out:
             out[s["team"]] += s["points"]
@@ -235,7 +272,11 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
         track_id = p.get("id") if isinstance(p.get("id"), int) or str(p.get("id")).isdigit() else None
         label, number, ident = ids.resolve(track_id, p.get("key"), p.get("number"))
         fg = (fgm / fga) if fga else None
-        dist = p.get("distance_m") if p.get("distance_m") is not None else (distances.get(int(track_id)) if track_id is not None else None)
+        dist = p.get("distance_m")
+        if dist is None:
+            tids = [int(t) for t in (p.get("track_ids") or ([track_id] if track_id is not None else [])) if str(t).lstrip("-").isdigit()]
+            found = [distances[t] for t in tids if t in distances]
+            dist = round(sum(found), 1) if found else None
         rows.append({
             "id": p.get("id"), "label": label, "number": number, "ident": ident, "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
             "fg_pct": None if fg is None else round(float(fg), 3),
@@ -243,10 +284,16 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
             "distance_m": None if dist is None else round(float(dist), 1),
         })
         r = rows[-1]
-        r["active"] = bool(r["fga"] or (r["possession_s"] or 0) >= 0.5 or (r["distance_m"] or 0) >= 20)
+        r["active"] = is_active(r)
     if not any(p.get("key") for p in (stats or {}).get("players") or []) or not any(p.get("number") is not None for p in (stats or {}).get("players") or []):
         rows = merge_by_identity(rows)
     rows.sort(key=lambda r: (r["team"] if r["team"] >= 0 else 9, -r["fga"], -(r["possession_s"] or 0), r["number"] is None, r["number"] or 0, str(r["id"])))
+    shown: dict[int, int] = {}
+    for r in rows:
+        if r["active"]:
+            shown[r["team"]] = shown.get(r["team"], 0) + 1
+            if shown[r["team"]] > TABLE_PER_TEAM and not r["fga"]:
+                r["active"] = False
     return rows
 
 
@@ -303,6 +350,27 @@ def court_geometry() -> dict:
         "lines": [np.asarray(p, float).round(3).tolist() for p in polylines(FIBA)],
         "hoops": [list(h) for h in FIBA.hoops],
     }
+
+
+def video_duration_s(path: Path) -> float | None:
+    """Duration via the bundled ffmpeg, None when it cannot be read."""
+    try:
+        import re as _re
+        import subprocess
+        import imageio_ffmpeg
+        out = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+                             capture_output=True, text=True, timeout=20).stderr
+        m = _re.search(r"Duration: (\d+):(\d+):(\d+\.?\d*)", out)
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else None
+    except Exception:  # noqa: BLE001, a probe failure must not take the page down
+        return None
+
+
+def same_length(a: Path, b: Path, tolerance: float = 0.15) -> bool | None:
+    da, db = video_duration_s(a), video_duration_s(b)
+    if da is None or db is None:
+        return None
+    return abs(da - db) <= tolerance * max(da, db, 1.0)
 
 
 def fmt_clock(seconds: float) -> str:
@@ -423,7 +491,7 @@ JS = r"""
       D.shots.filter(function(s){return String(s.team)===tk&&!s.made}).forEach(function(s){var m=el('line',{x1:x(s.t),x2:x(s.t),y1:base-9,y2:base-1,stroke:tm.color,'class':'tl-miss','data-team':tk},svg);bindTip(m,function(){return shotTip(s)});m.addEventListener('click',function(){seekTo(s.t)})});
       pts=0;made.forEach(function(s){pts+=s.points;var c=el('circle',{cx:x(s.t),cy:y(pts),r:5.5,fill:tm.color,'class':'tl-dot','data-team':tk},svg);bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
     });
-    (D.cuts||[]).forEach(function(c){if(c<=0||c>=dur)return;var l=el('line',{x1:x(c),x2:x(c),y1:T,y2:base,'class':'tl-cut'},svg);bindTip(l,function(){return '<b>Camera cut</b><br><span class="sub">at '+clock(c)+'</span>'})});
+    ((D.cuts||[]).length<=20?D.cuts:[]).forEach(function(c){if(c<=0||c>=dur)return;var l=el('line',{x1:x(c),x2:x(c),y1:T,y2:base,'class':'tl-cut'},svg);bindTip(l,function(){return '<b>Camera cut</b><br><span class="sub">at '+clock(c)+'</span>'})});
     var play=el('line',{x1:x(0),x2:x(0),y1:T,y2:base,'class':'tl-play'},svg);
     if(canSeek){overlay.addEventListener('timeupdate',function(){var t=overlay.currentTime+D.video_offset_s;play.setAttribute('x1',x(Math.min(t,dur)));play.setAttribute('x2',x(Math.min(t,dur)));play.style.opacity=overlay.paused&&overlay.currentTime===0?0:1})}
   })();
@@ -437,7 +505,7 @@ JS = r"""
     C.lines.forEach(function(poly){el('polyline',{points:poly.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)}).join(' '),'class':'mark'},svg)});
     C.hoops.forEach(function(h){var bx=h[0]<C.length/2?h[0]-0.375:h[0]+0.375;el('line',{x1:X(bx),x2:X(bx),y1:Y(h[1]-0.9),y2:Y(h[1]+0.9),'class':'board'},svg);el('circle',{cx:X(h[0]),cy:Y(h[1]),r:(0.225*S).toFixed(1),'class':'rim'},svg)});
     D.shots.forEach(function(s){if(!s.court_m)return;var tm=team(s.team);
-      if(s.estimated)el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:14,'class':'shot-est','stroke':tm.color,'data-team':s.team},svg);
+      if(s.estimated||s.uncertain)el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:14,'class':'shot-est','stroke':tm.color,'data-team':s.team},svg);
       var c=el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:s.made?9.5:8.5,'class':'shot '+(s.made?'made':'miss')+(s.unconfirmed?' unconfirmed':''),'data-team':s.team},svg);
       if(s.made)c.setAttribute('fill',tm.color);else c.setAttribute('stroke',tm.color);
       bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
@@ -445,7 +513,7 @@ JS = r"""
   })();
 
   var tog=document.getElementById('toggle-inactive');
-  if(tog){tog.addEventListener('click',function(){var tb=tog.parentNode.querySelector('table');var on=tb.classList.toggle('all');tog.textContent=(on?'Hide ':'Show ')+tog.getAttribute('data-n')+' tracks without a shot or possession'})}
+  if(tog){tog.addEventListener('click',function(){var tb=tog.parentNode.querySelector('table');var on=tb.classList.toggle('all');tog.textContent=(on?'Hide ':'Show ')+tog.getAttribute('data-n')+' more tracks'})}
 
   /* team filter, shared by chart, chips, table, timeline */
   var buttons=document.querySelectorAll('[data-filter]');
@@ -462,7 +530,7 @@ JS = r"""
 
 def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, minimap, overlay, clip, calib_note,
           video_offset_s, source_meta) -> str:
-    sc = score(shots)
+    sc = score(shots, stats)
     has_events = bool(events)
     placed = sum(1 for s in shots if s.get("court_m"))
     has_distance = any(p["distance_m"] is not None for p in players)
@@ -478,7 +546,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     header = f"""
 <header>
   <h1 class="sr">{html.escape(T0['name'])} vs {html.escape(T1['name'])}, FollowCam coach report</h1>
-  <div class="kicker"><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span></div>
+  <div class="kicker"><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span>{'<span>shots human-checked</span>' if (events or {}).get("note") else ''}</div>
   <div class="team"><div class="name"><span class="swatch" style="background:{T0['color']}"></span>{T0['name']}</div><div class="line">{team_line(teams[0])}</div></div>
   <div class="scoreboard{'' if has_events else ' empty'}" aria-label="Final score"><span class="pts" style="color:{T0['color'] if has_events else 'inherit'}">{sc[0]}</span><span class="colon">:</span><span class="pts" style="color:{T1['color'] if has_events else 'inherit'}">{sc[1]}</span></div>
   <div class="team right"><div class="name"><span class="swatch" style="background:{T1['color']}"></span>{T1['name']}</div><div class="line">{team_line(teams[1])}</div></div>
@@ -489,7 +557,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     timeline = f"""
 <section><h2>Score timeline</h2>
 <svg id="timeline" class="chart" role="img" aria-label="Points over time for both teams"></svg>
-<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks are misses{', dotted lines are camera cuts' if cuts else ''}</span></div>
+<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks are misses{', dotted lines are camera cuts' if cuts and len(cuts) <= 20 else ''}</span></div>
 {tl_note}</section>"""
 
     # shot chart --------------------------------------------------------------
@@ -506,9 +574,14 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
                else "calibration pending" if not n_noshooter else f"{n_noshooter} without an identified shooter, the rest waits for calibration")
         chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position, {why}:</p><div class="pending">{"".join(items)}</div>'
     estimated = sum(1 for s in shots if s.get("estimated"))
+    uncertain = sum(1 for s in shots if s.get("uncertain"))
     notes = []
+    if uncertain:
+        notes.append(f"{uncertain} of {len(shots)} shot positions uncertain (dashed ring): the camera tracking drifted around that moment.")
     if estimated:
         notes.append(f"{estimated} of {len(shots)} shot positions estimated from the image (dashed ring): distance from the basket is roughly right, side is not. Team A is drawn at the left basket, Team B at the right one.")
+    if (events or {}).get("note"):
+        notes.append(str(events["note"]).rstrip(".") + ".")
     if not has_events:
         notes.append("Shot events not available yet.")
     elif not shots:
@@ -523,7 +596,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <section><h2>Shot chart</h2>
 <div class="toolbar"><button class="f on" data-filter="all">Both teams</button><button class="f" data-filter="0"><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</button><button class="f" data-filter="1"><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</button><span class="spacer"></span><span id="chart-count" class="muted small"></span></div>
 <svg id="court" class="court" role="img" aria-label="Shot chart on a top-down court"></svg>
-<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span>{f'<span><svg width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{T0["color"]}" stroke-width="1.5" stroke-dasharray="3 2"/></svg>position estimated from image, no calibration</span>' if estimated else ''}<span class="faint">hover a shot for time and player</span></div>
+<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span>{f'<span><svg width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{T0["color"]}" stroke-width="1.5" stroke-dasharray="3 2"/></svg>{"position estimated from image, no calibration" if estimated and not uncertain else "position uncertain, camera drift" if uncertain and not estimated else "position estimated or uncertain, see note"}</span>' if estimated or uncertain else ''}<span class="faint">hover a shot for time and player</span></div>
 {chips}
 {f'<p class="muted small" style="margin:12px 0 0">{" ".join(html.escape(n) for n in notes)}</p>' if notes else ''}
 </section>"""
@@ -549,19 +622,23 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <section><h2>Players</h2>
 <div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th>{'<th class="num">Distance</th>' if has_distance else ''}</tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
-{f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks without a shot or possession</button>' if n_inactive else ''}
-<p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{'' if has_distance else ' Distance follows once the court calibration exists.'}</p>
+{f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks</button>' if n_inactive else ''}
+<p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{' Distance counts only the seconds with a court calibration.' if has_distance and cal is not None and cal.mode != 'single' else '' if has_distance else ' Distance follows once the court calibration exists.'}</p>
 </section>"""
 
     # videos ------------------------------------------------------------------
     ov = (f'<video id="overlay" src="{html.escape(overlay)}" controls muted playsinline preload="metadata"></video>'
           if overlay else '<div class="placeholder">Tracking overlay arrives with overlay.mp4</div>')
+    meta_clip = Path(str((source_meta or {}).get("clip") or "")).name
+    ov_note = "ids, teams and ball trail on the broadcast frame"
+    if overlay and meta_clip and clip and meta_clip != clip:
+        ov_note = f"{html.escape(meta_clip)}, the stats above are from {html.escape(clip)}"
     mm = (f'<video id="minimap" src="{html.escape(minimap)}" controls muted playsinline preload="metadata"></video>'
-          if minimap else '<div class="placeholder">2D minimap arrives with the court calibration</div>')
+          if minimap else '<div class="placeholder">2D minimap for this clip is not rendered yet</div>')
     videos = f"""
 <section><h2>Video</h2>
 <div class="videos">
-  <div>{ov}<div class="vcap"><span>Tracking overlay</span><span>ids, teams and ball trail on the broadcast frame</span></div></div>
+  <div>{ov}<div class="vcap"><span>Tracking overlay</span><span>{ov_note}</span></div></div>
   <div>{mm}<div class="vcap"><span>Minimap</span><span>the same seconds on the 2D court</span></div></div>
 </div></section>"""
 
@@ -601,6 +678,27 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 """
 
 
+def pick_calibration(default: Path, events: dict | None):
+    """COURT writes one calibration per clip (out/court_calib_<clip>.json) and a
+    contract copy out/court_calib.json that may belong to a different clip.
+    Prefer the per-clip file for the events clip, fall back to the contract copy
+    only when its clip matches (or the clip is unknown)."""
+    clip = Path(str((events or {}).get("clip") or "")).stem
+    candidates = ([default.parent / f"court_calib_{clip}.json"] if clip else []) + [default]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            cal = load_calibration(path)
+        except Exception as exc:  # noqa: BLE001, a broken file must not take the page down
+            print(f"calibration {path.name} unreadable: {exc}", file=sys.stderr)
+            continue
+        cal_clip = Path(str(cal.meta.get("clip") or "")).stem
+        if not clip or not cal_clip or cal_clip == clip:
+            return cal, path
+    return None, None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--events", type=Path, default=ROOT / "out" / "events.json")
@@ -616,17 +714,46 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "dashboard.html")
     args = ap.parse_args(argv)
     set_team_names(args.team_a, args.team_b)
-    ids = Identities(load_json(args.identities))
 
     events, stats, meta = load_json(args.events), load_json(args.stats), load_json(args.tracks_meta)
-    cal = load_calibration(args.calib) if args.calib.exists() else None
+    clip_stem = Path(str((events or {}).get("clip") or "")).stem
+    clip_dir = args.out.parent / clip_stem if clip_stem else None
+
+    def other_clip(m: dict | None) -> bool:
+        return bool(m and clip_stem and Path(str(m.get("clip") or "")).stem != clip_stem)
+
+    # TRACK keeps one folder per clip (out/<clip>/); when the contract copies belong
+    # to another clip, fall back to that folder so the page never mixes clips.
+    if other_clip(meta) and clip_dir and (clip_dir / "tracks_meta.json").exists():
+        alt = load_json(clip_dir / "tracks_meta.json")
+        if not other_clip(alt):
+            print(f"tracks_meta.json is for {Path(str(meta.get('clip'))).stem}, using {clip_stem}/tracks_meta.json", file=sys.stderr)
+            meta = alt
+            if args.overlay and (clip_dir / "overlay.mp4").exists():
+                args.overlay = f"{clip_stem}/overlay.mp4"
+            if args.minimap and (clip_dir / "minimap.mp4").exists():
+                args.minimap = f"{clip_stem}/minimap.mp4"
+            elif args.minimap:
+                args.minimap = ""
+            if args.tracks == ROOT / "out" / "tracks.jsonl" and (clip_dir / "tracks.jsonl").exists():
+                args.tracks = clip_dir / "tracks.jsonl"
+    elif other_clip(meta):
+        print(f"tracks_meta.json is for another clip and no {clip_stem}/ folder exists, videos left out", file=sys.stderr)
+        meta, args.overlay, args.minimap = None, "", ""
+    ids = Identities(load_json(args.identities), (events or {}).get("clip"))
+    cal, calib_path = pick_calibration(args.calib, events)
     calib_note = ""
+    if cal is None and args.calib.exists():
+        calib_note = "Court calibration on disk belongs to another clip, not used."
     if cal is not None:
         calib_note = {"per_frame": "Court calibration per frame, the camera pan is tracked.",
                       "keyframes": f"Court calibration from {len(cal.keyframes)} keyframes, blended by time.",
                       "single": "One court calibration for the whole clip."}[cal.mode]
     minimap = args.minimap if args.minimap and (args.out.parent / args.minimap).exists() else None
     overlay = args.overlay if args.overlay and (args.out.parent / args.overlay).exists() else None
+    if minimap and overlay and same_length(args.out.parent / args.minimap, args.out.parent / args.overlay) is False:
+        print(f"minimap {args.minimap} has a different length than {args.overlay}, treated as another clip and left out", file=sys.stderr)
+        minimap = None
     clip = (events or {}).get("clip") or (meta or {}).get("clip") or (cal.meta.get("clip") if cal else "") or ""
 
     shots = place_shots(events, cal, ids)
@@ -653,7 +780,7 @@ def main(argv=None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page)
     print(f"saved: {args.out} ({len(page) // 1024} kB, events={'yes' if events else 'no'} shots={len(shots)} placed={sum(1 for s in shots if s.get('court_m'))}, "
-          f"stats={'yes' if stats else 'no'} players={len(players)} active={sum(1 for p in players if p['active'])} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode if cal else 'no'}, "
+          f"stats={'yes' if stats else 'no'} players={len(players)} active={sum(1 for p in players if p['active'])} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode + ' ' + calib_path.name if cal else 'no'}, "
           f"minimap={'yes' if minimap else 'no'}, overlay={'yes' if overlay else 'no'}, seek_offset={video_offset_s})")
     return 0
 

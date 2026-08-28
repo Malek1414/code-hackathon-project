@@ -28,7 +28,7 @@ class OnCourtFilter:
     """Drops bench players and spectators from a frame's player list.
 
     With a calibration: keep a player only while the foot point projects
-    inside the court plus `margin_m`. Without: a track is off court while,
+    inside the court plus `margin_m` (0.5 m). Without: a track is off court while,
     over the trailing `window_s`, its median bbox height is below
     `min_height_ratio` of the median height of all detections in that window
     AND its median foot y lies in the top `top_frac` of the image (bench and
@@ -45,7 +45,7 @@ class OnCourtFilter:
         window_s: float = 5.0,
         min_height_ratio: float = 0.6,
         top_frac: float = 0.35,
-        margin_m: float = 1.0,
+        margin_m: float = 0.5,  # QA 13:25: 1.5 m keeps the bench on court, 0.5 m removes bench/table/spectators
         bench_line_frac: float = 0.0,
     ) -> None:
         self.calib = calib
@@ -175,14 +175,14 @@ class StatsEngine:
             while self._cuts and fr.frame >= self._cuts[0]:
                 self._cuts.pop(0)
             done += self.reset()
-        if fr.ball is not None and fr.ball.bbox is not None and not is_round_ball(fr.ball.bbox):
+        if fr.ball is not None and not fr.ball.predicted and fr.ball.bbox is not None and not is_round_ball(fr.ball.bbox):
             fr.ball = None
             self.dropped_balls += 1
         if self.court_filter is not None:
             self.court_filter.apply(fr)
-        if self.blacklist_rel:
+        if self.blacklist_rel and not (fr.ball is not None and fr.ball.predicted):
             self._apply_blacklist(fr)
-        if fr.ball is not None:
+        if fr.ball is not None and not fr.ball.predicted:
             self._raw.append((fr.t, fr.ball.center[0], fr.ball.center[1], _diam(fr)))
             while self._raw and fr.t - self._raw[0][0] > 2 * self.static_window_s + 1.0:
                 self._raw.popleft()
@@ -251,7 +251,7 @@ class StatsEngine:
         done: list[ShotEvent] = []
         while self._queue:
             head = self._queue[0]
-            if head.ball is None:
+            if head.ball is None or head.ball.predicted:  # nothing to judge (coasted points pass through)
                 done += self._process(self._queue.pop(0))
                 continue
             newest = self._queue[-1]
@@ -263,7 +263,7 @@ class StatsEngine:
                 self.dropped_static += 1
                 done += self._process(self._queue.pop(0))
                 continue
-            nxt = next((f for f in self._queue[1:] if f.ball is not None), None)
+            nxt = next((f for f in self._queue[1:] if f.ball is not None and not f.ball.predicted), None)
             ok_prev = self._last_kept is None or plausible_move(self._last_kept, head, self.max_gap_s)
             ok_next = nxt is None or plausible_move(head, nxt, self.max_gap_s)
             if not (ok_prev or ok_next):

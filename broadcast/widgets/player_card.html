@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>BBB player card</title>
+<style>
+:root{--glass:rgba(11,13,18,.74);--glass2:rgba(11,13,18,.58);--line:rgba(255,255,255,.14);--text:#F4F6FA;--muted:rgba(244,246,250,.66);--a:#2f6fdb;--b:#c8102e}
+*{box-sizing:border-box}html,body{margin:0;background:transparent}
+body{width:1920px;height:1080px;overflow:hidden;position:relative;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.w{position:absolute}
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:22px;-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)}
+.brand{font-weight:900;letter-spacing:.06em;font-size:28px;line-height:1}
+.brand small{display:block;font-weight:600;letter-spacing:.14em;font-size:14px;color:var(--muted);text-transform:uppercase;margin-top:6px}
+.name{font-weight:700;font-size:32px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num{font-weight:800;font-size:56px;letter-spacing:-.03em;line-height:1}
+.lbl{font-size:28px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.acc{width:10px;border-radius:6px;flex:none}
+.sw{width:18px;height:18px;border-radius:5px;flex:none}
+.row{display:flex;align-items:center;gap:18px}
+.stat{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.stat .v{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.stat .l{font-size:28px;color:var(--muted);font-weight:600}
+
+#card{left:48px;top:872px;width:480px;height:160px;display:grid;grid-template-columns:10px 132px 1fr;gap:14px;align-items:center;padding:0 14px 0 14px}
+#card .number{font-size:62px;font-weight:900;letter-spacing:-.04em;line-height:1;text-align:center}
+#card .body{display:flex;flex-direction:column;gap:4px;min-width:0}
+#card .team{font-size:28px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#card .stats{display:flex;gap:8px;align-items:baseline;white-space:nowrap;line-height:1.15}
+#card .stats b{font-size:32px;font-weight:800;letter-spacing:-.02em}
+#card .stats span{font-size:28px;color:var(--muted);font-weight:600}
+body.tpl [data-field]{visibility:hidden}
+</style></head>
+<body data-widget="player_card">
+
+<div id="card" class="w glass"><div class="acc" id="acc" style="height:120px"></div><div class="number" id="no" data-field="number" data-align="center"></div>
+<div class="body"><div class="team" id="team" data-field="team" data-align="left"></div><div class="stats"><b id="pts" data-field="pts" data-align="left"></b><span>PTS</span></div><div class="stats"><b id="fg" data-field="fg" data-align="left"></b><span>FG,</span><b id="pct" data-field="fg_pct" data-align="left"></b></div></div></div>
+
+<script id="bbb-state" type="application/json">{"brand": "Big Ball Baller", "example": true, "title": "Landesliga Berlin", "clip_or_source": "game10.mp4", "t": 312.4, "period": 1, "clock": "05:12", "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21}, {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}], "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}, {"key": "A44", "number": 44, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 11.4, "distance_m": 388}, {"key": "A24", "number": 24, "team": 0, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 10.1, "distance_m": 402}, {"key": "A55", "number": 55, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 20.2, "distance_m": 365}, {"key": "A23", "number": 23, "team": 0, "pts": 0, "fga": 2, "fgm": 0, "fg_pct": 0.0, "possession_s": 6.4, "distance_m": 290}, {"key": "B9", "number": 9, "team": 1, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 7.7, "distance_m": 351}, {"key": "B12", "number": 12, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 12.3, "distance_m": 377}, {"key": "B13", "number": 13, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 9.0, "distance_m": 340}, {"key": "B55", "number": 55, "team": 1, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 5.2, "distance_m": 298}, {"key": "B1", "number": 1, "team": 1, "pts": 0, "fga": 1, "fgm": 0, "fg_pct": 0.0, "possession_s": 4.4, "distance_m": 255}], "last_event": {"t": 310.2, "type": "made", "team": 0, "player_key": "A5", "points": 2}, "shots": [{"team": 0, "made": true, "court_m": [3.1, 7.4]}, {"team": 0, "made": false, "court_m": [6.8, 3.2]}, {"team": 0, "made": true, "court_m": [2.2, 9.1]}, {"team": 0, "made": false, "court_m": [7.6, 11.0]}, {"team": 0, "made": true, "court_m": [4.9, 5.0]}, {"team": 1, "made": true, "court_m": [25.0, 7.9]}, {"team": 1, "made": false, "court_m": [21.4, 4.1]}, {"team": 1, "made": true, "court_m": [26.1, 6.2]}, {"team": 1, "made": false, "court_m": [20.6, 10.7]}, {"team": 1, "made": true, "court_m": [23.3, 8.8]}], "heat_image": null, "pan_deg": 97, "camera": "ok"}</script>
+<script>
+function bbbState(){
+  var s=null;
+  try{var h=location.hash;if(h&&h.length>1){s=JSON.parse(decodeURIComponent(h.slice(1)));}}catch(e){}
+  if(!s&&window.BBB_STATE)s=window.BBB_STATE;
+  if(!s)s=JSON.parse(document.getElementById('bbb-state').textContent);
+  var teams=s.teams||[];while(teams.length<2)teams.push({id:teams.length,name:'Team '+(teams.length?'B':'A'),color:teams.length?'#c8102e':'#2f6fdb',score:0,fga:0,fgm:0,fg_pct:0,possessions:0});
+  s.teams=teams;s.players=s.players||[];
+  document.documentElement.style.setProperty('--a',teams[0].color||'#2f6fdb');
+  document.documentElement.style.setProperty('--b',teams[1].color||'#c8102e');
+  return s;
+}
+function pct(v){return (v==null||isNaN(v))?'':Math.round(100*v)+'%'}
+function esc(t){return String(t==null?'':t).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function label(p){if(p.others)return 'others, no number read';if(p.number!=null)return '#'+p.number;return '?'}
+function teamOf(s,i){return s.teams[i]||s.teams[0]}
+function topScorer(s,team){var ps=s.players.filter(function(p){return p.team===team});ps.sort(function(a,b){return (b.pts||0)-(a.pts||0)||(b.fgm||0)-(a.fgm||0)||(b.possession_s||0)-(a.possession_s||0)});return ps[0]}
+function findPlayer(s,key){for(var i=0;i<s.players.length;i++)if(s.players[i].key===key)return s.players[i];return null}
+
+
+function bbbLayout(s){
+  if(!s.template&&!s.layout)return;
+  document.body.classList.add(s.template?'tpl':'x');
+  var out={};
+  document.querySelectorAll('[data-field]').forEach(function(el){
+    var r=el.getBoundingClientRect();var cs=getComputedStyle(el);var size=parseFloat(cs.fontSize);
+    var align=el.getAttribute('data-align')||'left';
+    var x=align==='right'?r.right:(align==='center'?(r.left+r.right)/2:r.left);
+    out[el.getAttribute('data-field')]={x:Math.round(x),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+      baseline:Math.round(r.top+(r.height+size*0.7)/2),size:Math.round(size),weight:parseInt(cs.fontWeight,10)||400,
+      align:align,color:cs.color,box:[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)],example:el.textContent.trim()};
+  });
+  var pre=document.createElement('pre');pre.id='bbb-layout';pre.style.display='none';pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
+}
+(function(){var s=bbbState();
+var ev=s.last_event||{};var p=(ev.player_key&&findPlayer(s,ev.player_key))||topScorer(s,ev.team!=null?ev.team:0)||s.players[0]||{key:'A?',team:(ev.team!=null?ev.team:0),pts:0,fga:0,fgm:0};if(ev.team!=null&&p.team!==ev.team)p=Object.assign({},p,{team:ev.team});
+var T=teamOf(s,p.team||0);document.getElementById('acc').style.background=T.color;
+document.getElementById('no').textContent=label(p);document.getElementById('team').textContent=(p.name?p.name+', ':'')+T.name+(p.number==null?', no number read':'');
+document.getElementById('pts').textContent=p.pts!=null?p.pts:(2*(p.fgm||0));
+document.getElementById('fg').textContent=(p.fgm||0)+'/'+(p.fga||0);
+document.getElementById('pct').textContent=(pct(p.fg_pct!=null?p.fg_pct:(p.fga?p.fgm/p.fga:null))||'0%');
+bbbLayout(s);})();
+</script></body></html>

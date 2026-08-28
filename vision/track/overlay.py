@@ -8,13 +8,14 @@ ball trail, hoop, shot flashes. Runs standalone on CPU, no re-detection:
 
 What is drawn, and why:
 * players: only those on the court. With out/court_calib.json the foot point
-  is projected (vision.court.draw.on_court_px, court plus 1 m tolerance);
+  is projected (Calibration.project, court plus 1.5 m, NaN projections kept);
   without it, STATS's "off_court_track_ids" from events.json are hidden.
   Bench, coaches and spectators otherwise get boxes too. `--court-lines`
   additionally draws COURT's calibrated court lines.
 * label: jersey number from out/identities.json as "#12" in the team color;
   tracks without a number get a small grey track id.
-* ball: circle only when a ball is in this line, never a stale point. Trail =
+* ball: circle only when a ball is in this line (thin hollow circle while
+  the tracker coasts on its prediction, "predicted": true). Trail =
   last 25 positions, broken at gaps > 0.5 s and at cuts, so it never draws a
   straight line across the hall.
 * hoop: green box; shot flashes ("MADE"/"MISS") from events.json for 1 s.
@@ -50,7 +51,18 @@ BALL_COLOR = (0, 220, 255)
 HOOP_COLOR = (0, 255, 120)
 TRAIL_LEN = 25
 TRAIL_GAP_S = 0.5
+TRAIL_JUMP_PX = 300  # never draw a segment across the hall (ball → wall panel)
 FLASH_S = 1.0
+COURT_TOLERANCE_M = 1.5  # for DRAWING only: generous, so no on-court player vanishes on a
+# frame with a rough homography (STATS keeps its own strict 0.5 m for eligibility). Players whose
+# projection is NaN (uncalibrated or uncertain frame) are always drawn.
+
+
+def default_calib(video: Path, calib: Path | None) -> Path | None:
+    if calib is not None:
+        return calib
+    per_clip = Path("out") / f"court_calib_{video.stem}.json"
+    return per_clip if per_clip.exists() else Path("out") / "court_calib.json"
 
 
 def load_json(path: Path | None) -> dict:
@@ -80,12 +92,13 @@ class OverlayWriter:
                  events: Path | None = None, identities: Path | None = None,
                  calib: Path | None = None, cuts: Path | None = None,
                  source_fps: float = 50.0, court_lines: bool = False,
-                 latest_path: Path | None = None) -> None:
+                 latest_path: Path | None = None, threads: int | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.raw_path = path.with_name(path.stem + "_raw.mp4")
         self.latest_path = latest_path or path.with_name("overlay_latest.jpg")
         self.latest_path.parent.mkdir(parents=True, exist_ok=True)
+        self.threads = threads  # ffmpeg threads for the transcode (None = all)
         self.latest_every = 100
         self.writer = cv2.VideoWriter(
             str(self.raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
@@ -121,7 +134,10 @@ class OverlayWriter:
         if self.calib is not None and players:
             feet = np.array([p["foot"] for p in players], np.float64)
             try:
-                ok = self._court.on_court_px(self.calib, record["frame"], feet)
+                xy = self.calib.project(record["frame"], feet)
+                ok = self.calib.on_court(xy, COURT_TOLERANCE_M) | ~np.isfinite(xy).all(axis=1)
+                if ok.sum() * 2 < len(players):
+                    return players  # more than half "off court" = the homography is off, not the players
                 return [p for p, keep in zip(players, ok) if keep]
             except Exception as e:  # noqa: BLE001
                 log.debug("projection failed at frame %d: %s", record["frame"], e)
@@ -172,9 +188,13 @@ class OverlayWriter:
         for i in range(1, len(pts)):
             if pts[i][0] - pts[i - 1][0] > TRAIL_GAP_S:
                 continue
+            if abs(pts[i][1][0] - pts[i - 1][1][0]) + abs(pts[i][1][1] - pts[i - 1][1][1]) > TRAIL_JUMP_PX:
+                continue
             a = (i + 1) / len(pts)
             cv2.line(img, pts[i - 1][1], pts[i][1], BALL_COLOR, max(1, int(4 * a)))
-        if ball:
+        if ball and ball.get("predicted"):
+            cv2.circle(img, pts[-1][1], 10, BALL_COLOR, 1)  # coasting on the prediction: hollow, thin
+        elif ball:
             cv2.circle(img, pts[-1][1], 8, BALL_COLOR, 2)
 
         self._flash(img, t)
@@ -231,7 +251,7 @@ class OverlayWriter:
         tmp = self.path.with_name(self.path.stem + "_h264.tmp.mp4")
         cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(self.raw_path), "-c:v", "libx264",
                "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-               "-an", str(tmp)]
+               "-an"] + (["-threads", str(self.threads)] if self.threads else []) + [str(tmp)]
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0 or not tmp.exists():
             log.warning("transcode failed: %s; keeping mp4v overlay", res.stderr.strip()[:300])
@@ -245,10 +265,14 @@ class OverlayWriter:
 # ----- standalone re-render ---------------------------------------------------
 def render(video: Path, tracks: Path, out: Path, *, identities: Path | None, calib: Path | None,
            events: Path | None, cuts: Path | None, max_frames: int = 0,
-           court_lines: bool = False) -> int:
+           court_lines: bool = False, start_frame: int = 0, end_frame: int = 0,
+           threads: int | None = None) -> int:
     records = [json.loads(l) for l in tracks.read_text().splitlines() if l.strip()]
+    if start_frame or end_frame:
+        records = [r for r in records if r["frame"] >= start_frame
+                   and (not end_frame or r["frame"] < end_frame)]
     if not records:
-        raise SystemExit(f"{tracks} is empty")
+        raise SystemExit(f"{tracks} has no lines in the requested range")
     meta = load_json(tracks.with_name("tracks_meta.json"))
     cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
@@ -258,9 +282,11 @@ def render(video: Path, tracks: Path, out: Path, *, identities: Path | None, cal
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     if cuts is None:
         cuts = Path("out") / f"cuts_{video.stem}.json"
+    calib = default_calib(video, calib)
     w = OverlayWriter(out, width=width, height=height, fps=source_fps / stride, events=events,
                       identities=identities, calib=calib, cuts=cuts, source_fps=source_fps,
-                      court_lines=court_lines)
+                      court_lines=court_lines, latest_path=out.with_suffix(".latest.jpg"),
+                      threads=threads)
     by_frame = {r["frame"]: r for r in records}
     first, last = records[0]["frame"], records[-1]["frame"]
     if first:
@@ -291,14 +317,19 @@ def main() -> None:
     p.add_argument("--tracks", type=Path, default=Path("out/tracks.jsonl"))
     p.add_argument("--out", type=Path, default=Path("out/overlay.mp4"))
     p.add_argument("--identities", type=Path, default=Path("out/identities.json"))
-    p.add_argument("--calib", type=Path, default=Path("out/court_calib.json"))
+    p.add_argument("--calib", type=Path, default=None,
+                   help="default out/court_calib_<clip>.json, else out/court_calib.json")
     p.add_argument("--events", type=Path, default=Path("out/events.json"))
     p.add_argument("--cuts", type=Path, default=None, help="default out/cuts_<clip>.json")
     p.add_argument("--max-frames", type=int, default=0)
     p.add_argument("--court-lines", action="store_true", help="draw COURT's calibrated lines")
+    p.add_argument("--start-frame", type=int, default=0, help="first source frame to render")
+    p.add_argument("--end-frame", type=int, default=0, help="render up to (excl.) this source frame")
+    p.add_argument("--threads", type=int, default=None, help="ffmpeg threads for the transcode")
     a = p.parse_args()
     render(a.video, a.tracks, a.out, identities=a.identities, calib=a.calib, events=a.events,
-           cuts=a.cuts, max_frames=a.max_frames, court_lines=a.court_lines)
+           cuts=a.cuts, max_frames=a.max_frames, court_lines=a.court_lines,
+           start_frame=a.start_frame, end_frame=a.end_frame, threads=a.threads)
 
 
 if __name__ == "__main__":

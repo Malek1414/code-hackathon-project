@@ -53,11 +53,22 @@ def read_tracks(path: Path = TRACKS) -> list[dict]:
     return frames
 
 
+def is_predicted(ball: dict | None) -> bool:
+    """Kalman coasting point (contract 14:07: "predicted": true, conf 0), never a detection."""
+    return bool(ball) and bool(ball.get("predicted"))
+
+
 def read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def meta_for(tracks: Path) -> dict:
+    """tracks_meta.json next to the tracks file (archive dirs like out/dev60_v4/), else out/tracks_meta.json."""
+    local = tracks.with_name("tracks_meta.json")
+    return read_json(local) or (read_json(META) if tracks.resolve() == TRACKS.resolve() else None) or {}
 
 
 def resolve_clip(*candidates: str | None) -> Path:

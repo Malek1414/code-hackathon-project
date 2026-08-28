@@ -39,9 +39,10 @@ log = logging.getLogger("numbers")
 ROOT = Path(__file__).resolve().parents[2]
 TRACKS = ROOT / "out" / "tracks.jsonl"
 META = ROOT / "out" / "tracks_meta.json"
-READS_OUT = ROOT / "out" / "numbers_reads.json"
-PREVIEW_OUT = ROOT / "out" / "numbers_preview.jpg"
-CACHE = ROOT / "out" / "numbers_cache_v3.json"  # v3: {"reads": [...], "team": 0/1/-1, "mode": "orig"|"red"} per crop
+# outputs live next to the tracks file: out/ for the contract paths, out/game10/ for an archive copy
+READS_NAME = "numbers_reads.json"
+PREVIEW_NAME = "numbers_preview.jpg"
+CACHE_NAME = "numbers_cache_v3.json"  # v3: {"reads": [...], "team": 0/1/-1, "mode": "orig"|"red"} per crop
 
 MAX_CROPS = 6  # per track, spread over its lifetime, tallest box per bin
 # (min track length s, crops) per pass, long tracks first so identities.json is useful early; cache makes each
@@ -51,7 +52,7 @@ TORSO_TOP, TORSO_BOTTOM = 0.15, 0.60
 TORSO_X0, TORSO_X1 = 0.05, 0.95  # middle 90 % of the width: neighbours out, a 55 still whole (80 % cut it to 5)
 SWITCH_MIN_CROPS = 2  # crops of the final color after >= 1 crop of the other color = id switch
 MAX_SIDE = 256  # px, longest side of the crop fed to the OCR
-CPU_THREADS = 4
+CPU_THREADS = int(__import__("os").environ.get("NUMBERS_THREADS", "2"))  # ORCH: keep the OCR at ~2 cores while LABEL trains
 MIN_CONF = 0.4
 MIN_READS = 2
 STRONG_READ = 0.9  # a single read this sure with no competing read is enough (measured: 1.00 reads were all right)
@@ -144,6 +145,7 @@ def get_reader():
     import torch
 
     torch.set_num_threads(CPU_THREADS)
+    cv2.setNumThreads(1)
     return easyocr.Reader(["en"], gpu=False, verbose=False)
 
 
@@ -165,11 +167,17 @@ def red_channel(img: np.ndarray) -> np.ndarray:
 
 def ocr_crop(reader, img: np.ndarray, team: int) -> tuple[list[tuple[str, float]], str]:
     """Reads for one crop by jersey color: blue (0) plain image; black/red (1) red
-    channel, plain as fallback; unknown (-1) plain, red channel as fallback."""
+    channel, plain as fallback; unknown (-1) both images, reads joined."""
     if team == 1:
         order = ("red", "orig")
+    elif team == 0:
+        order = ("orig",)
     else:
-        order = ("orig", "red") if team == -1 else ("orig",)
+        # unknown color (white undershirt, shadow): both images, union of the reads; measured on
+        # game10 4288/2423 (black #9, #77): the plain pass returned a wrong low read and the red
+        # channel was never tried
+        reads = ocr_digits(reader, img) + ocr_digits(reader, red_channel(img))
+        return reads, "both"
     for mode in order:
         reads = ocr_digits(reader, red_channel(img) if mode == "red" else img)
         if reads:
@@ -238,10 +246,10 @@ def vote(reads: list[tuple[str, float]]) -> tuple[int | None, float, dict[str, f
     return None, round(share, 3), dict(mass), dict(count)
 
 
-def load_cache() -> dict:
-    if CACHE.exists():
+def load_cache(cache_path: Path) -> dict:
+    if cache_path.exists():
         try:
-            return json.load(open(CACHE))
+            return json.load(open(cache_path))
         except json.JSONDecodeError:
             pass
     return {}
@@ -296,22 +304,42 @@ def track_seconds(rows: list[dict]) -> float:
     return rows[-1]["t"] - rows[0]["t"]
 
 
+def shooter_ids(tracks_path: Path) -> set[int]:
+    """STATS' shooter track ids from the events.json next to the tracks file (empty if none)."""
+    events = tracks_path.parent / "events.json"
+    if not events.exists():
+        return set()
+    try:
+        return {int(s["player_id"]) for s in json.load(open(events)).get("shots", []) if s.get("player_id") is not None}
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return set()
+
+
 def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = True,
-        min_track_s: float = 0.0, max_crops: int = MAX_CROPS) -> dict:
+        min_track_s: float = 0.0, max_crops: int = MAX_CROPS, only_ids: set[int] | None = None,
+        priority_ids: set[int] | None = None) -> dict:
     """OCR + vote. Tracks shorter than min_track_s get no crops (they stay in the
     output without a number) unless the cache already holds reads for them."""
     t0 = time.time()
     tracks, clip, n_frames = load_tracks(tracks_path)
     video = video or (ROOT / clip)
-    cache = load_cache()
+    out_dir = tracks_path.parent
+    cache_path, reads_out, preview_out = out_dir / CACHE_NAME, out_dir / READS_NAME, out_dir / PREVIEW_NAME
+    cache = load_cache(cache_path)
 
     # which crops do we need
     plan: dict[int, list[dict]] = {}
     for tid, rows in tracks.items():
-        samples = pick_samples(rows, max_crops)
-        if track_seconds(rows) < min_track_s:
-            samples = [r for r in samples if crop_key(clip, r["frame"], r["bbox"]) in cache]
-        plan[tid] = samples
+        fresh = pick_samples(rows, max_crops)
+        if track_seconds(rows) < min_track_s or (only_ids is not None and tid not in only_ids):
+            fresh = []  # not OCR'd in this pass
+        # every crop of this track that an earlier pass already read counts too (the shooters
+        # pass samples 2x MAX_CROPS, a later 6-crop pass must not drop those reads)
+        seen: dict[str, dict] = {}
+        for r in fresh + [r for k in (max_crops, MAX_CROPS, 2 * MAX_CROPS) for r in pick_samples(rows, k)
+                          if crop_key(clip, r["frame"], r["bbox"]) in cache]:
+            seen.setdefault(crop_key(clip, r["frame"], r["bbox"]), r)
+        plan[tid] = sorted(seen.values(), key=lambda r: r["frame"])
     wanted_frames: set[int] = set()
     todo: dict[str, list[tuple[int, dict]]] = defaultdict(list)  # key -> [(tid, row)]
     for tid, rows in plan.items():
@@ -344,15 +372,17 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
                 else:
                     crops[k] = crop
                     color[k] = crop_team(frame, bbox)
-        order = sorted((k for k in need_ocr if k in crops), key=lambda k: -len(tracks[todo[k][0][0]]))
+        prio = priority_ids or set()  # shooters first (ORCH), then the longest tracks
+        order = sorted((k for k in need_ocr if k in crops),
+                       key=lambda k: (todo[k][0][0] not in prio, -len(tracks[todo[k][0][0]])))
         for k in order:
             reads, mode = ocr_crop(reader, crops[k], color[k])
             cache[k] = {"reads": reads, "team": color[k], "mode": mode}
             n_done += 1
             if n_done % 100 == 0:
                 log.info("ocr %d/%d  %.1f s", n_done, len(order), time.time() - t0)
-                json.dump(cache, open(CACHE, "w"))
-        json.dump(cache, open(CACHE, "w"))
+                json.dump(cache, open(cache_path, "w"))
+        json.dump(cache, open(cache_path, "w"))
 
     # vote
     result_tracks: dict[str, dict] = {}
@@ -395,7 +425,7 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
                 continue  # fragment without crops: no row on the sheet
             for i, (k, r, rd, ct) in enumerate(per_crop[:max_crops]):
                 mode = cache.get(k, {}).get("mode", "orig")
-                foot = ("AB"[ct] if ct in (0, 1) else "?") + ("r " if mode == "red" else " ") + \
+                foot = ("AB"[ct] if ct in (0, 1) else "?") + {"red": "r ", "both": "b "}.get(mode, " ") + \
                     (" ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-")
                 tiles.append((crops.get(k), head if i == 0 else f"f{r['frame']}", foot))
             for _ in range(len(per_crop), max_crops):
@@ -408,13 +438,13 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
            "params": {"max_crops": max_crops, "min_track_s": min_track_s, "min_conf": MIN_CONF,
                       "min_reads": MIN_READS, "win_share": WIN_SHARE},
            "n_tracks": len(tracks), "n_assigned": assigned, "tracks": result_tracks}
-    tmp = READS_OUT.with_suffix(".tmp")
+    tmp = reads_out.with_suffix(".tmp")
     json.dump(out, open(tmp, "w"), indent=1)
-    tmp.replace(READS_OUT)
+    tmp.replace(reads_out)
     if preview:
-        build_preview(tiles, PREVIEW_OUT, cols=max_crops)
+        build_preview(tiles, preview_out, cols=max_crops)
     log.info("numbers: %d/%d tracks got a number (%.0f%%)  %.1f s  -> %s",
-             assigned, len(tracks), 100 * assigned / max(1, len(tracks)), time.time() - t0, READS_OUT)
+             assigned, len(tracks), 100 * assigned / max(1, len(tracks)), time.time() - t0, reads_out)
     return out
 
 
@@ -425,10 +455,12 @@ def main(argv=None) -> int:
     ap.add_argument("--no-preview", action="store_true")
     ap.add_argument("--min-s", type=float, default=0.0, help="only OCR tracks at least this long (s)")
     ap.add_argument("--max-crops", type=int, default=MAX_CROPS)
+    ap.add_argument("--ids", type=int, nargs="*", default=None, help="OCR only these track ids (others from cache)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
                         stream=sys.stdout)
-    run(a.tracks, a.video, preview=not a.no_preview, min_track_s=a.min_s, max_crops=a.max_crops)
+    run(a.tracks, a.video, preview=not a.no_preview, min_track_s=a.min_s, max_crops=a.max_crops,
+        only_ids=set(a.ids) if a.ids else None)
     return 0
 
 

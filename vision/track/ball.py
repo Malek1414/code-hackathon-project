@@ -12,12 +12,15 @@ them. What separates them is time and motion:
   and the blacklist is handed from segment to segment. A candidate whose
   offset recurred within `rel_tol` hoop widths in at least `rel_min` earlier
   frames of the last `rel_window` processed frames, spread over at least
-  `rel_span` frames (0.6 s), is static and dropped and its offset is
+  `rel_span` frames (0.3 s), is static and dropped and its offset is
   blacklisted. A ball held still for that long loses those frames, nothing
-  else. Measured on dev60 v3: without the hand-over, the fixture won the
+  else; Sami's call (28.08. 13:59): strict against the fixtures even at the
+  cost of a still ball. A run can be seeded with the offsets of an earlier
+  run in the same hall (`blacklist_rel`, hoop widths), so the fixtures are
+  known from frame 0. Measured on dev60 v3: without the hand-over, the fixture won the
   first 0.6 s after the cut at 2798 and the real shot arc (0.83-0.88) was
   gated out.
-* static takeover: when the last 8 accepted positions did not move (< 8 px)
+* static takeover: when the last 5 accepted positions did not move (< 8 px)
   the gate opens fully and confidence alone decides, so a high-confidence
   candidate anywhere beats what is by then most likely a fixture (a ball held
   still keeps winning as long as it scores higher than the alternatives).
@@ -42,16 +45,16 @@ them. What separates them is time and motion:
   ball was already there. High-confidence candidates are exempt on purpose:
   measured on dev60 frame 2336 the rule threw away the ball at the release
   of a shot (0.87 conf, above the shooter's hands, top of his box).
-* trajectory: the ball's next position is extrapolated from the last two
-  accepted positions (damped). Candidates within `near_px` (+ growth per
-  missed frame) of that prediction form the first tier and always beat
-  candidates outside it, whatever their confidence: measured on dev60 57.0 s,
-  a 0.75 fixture 320 px away must not outscore a 0.5 ball on the rim. Inside a
-  tier, confidence minus a distance penalty decides.
-* gate: a candidate must lie within `base + per_frame * gap` px of the last
-  accepted ball; the gate grows with the gap, so a lost ball (out of frame,
-  occluded) is re-acquired anywhere, but a wall object while the ball is in
-  view is not.
+* prediction first, Kalman style (Sami's spec, 28.08. 14:02/14:08): the ball
+  has its own constant-velocity Kalman filter (x, y, vx, vy) with a gravity
+  term on vy. Each processed frame the filter predicts; a detection is
+  accepted only inside the gate around the prediction (`near_px`, growing
+  with the frames since the last update), the filter updates on a hit and
+  COASTS on the prediction for up to `coast_frames` (0.5 s) on a miss: the
+  predicted point is emitted with predicted=True (drawn hollow). After that
+  the ball is lost and may be re-acquired anywhere (occlusion, out of frame),
+  which re-initialises the filter. A far high-confidence detection can never
+  win while the filter is alive, so wall objects do not "take the video".
 
 Every reject is recorded with its reason (`rejects`, one list per step) so
 run.py can write out/<clip>/ball_rejects.jsonl for QA.
@@ -73,10 +76,12 @@ class BallGate:
     def __init__(self, *, base_px: float = 120.0, per_frame_px: float = 80.0,
                  max_gate_px: float = 900.0, near_px: float = 120.0, near_grow_px: float = 40.0,
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
-                 rel_tol: float = 0.12, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
+                 rel_tol: float = 0.12, rel_min: int = 3, rel_window: int = 150, rel_span: int = 8,
                  radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
                  head_conf: float = 0.75, wall_hoop_widths: float = 2.5, wall_player_px: float = 150.0,
-                 pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 8,
+                 coast_frames: int = 12, gravity_px: float = 2.5, process_noise: float = 4.0,
+                 measurement_noise: float = 6.0,
+                 pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 5,
                  takeover_px: float = 8.0, counts: dict | None = None,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
         self.base_px, self.per_frame_px, self.max_gate_px = base_px, per_frame_px, max_gate_px
@@ -86,6 +91,11 @@ class BallGate:
         self.takeover_frames, self.takeover_px = takeover_frames, takeover_px
         self.radius_frac, self.head_frac, self.head_conf = radius_frac, head_frac, head_conf
         self.wall_hoop_widths, self.wall_player_px = wall_hoop_widths, wall_player_px
+        self.coast_frames, self.gravity_px = coast_frames, gravity_px
+        self.q, self.r_meas = process_noise, measurement_noise
+        self.kf_x: np.ndarray | None = None  # [x, y, vx, vy]
+        self.kf_P: np.ndarray | None = None
+        self.misses = 0
         self.pan_px, self.still_px = pan_px, still_px
 
         self.step_no = 0
@@ -104,7 +114,8 @@ class BallGate:
         self.rejects: list[dict] = []
         self.counts = counts if counts is not None else {  # shared across cut resets
             "gate": 0, "static_rel": 0, "blacklist_abs": 0, "blacklist_rel": 0,
-            "radius": 0, "head": 0, "wall": 0, "static_abs": 0, "accepted_near_blacklist": 0}
+            "radius": 0, "head": 0, "wall": 0, "far": 0, "static_abs": 0, "accepted_near_blacklist": 0}
+        self.coasted = 0
         self.accepted_near_blacklist = 0
 
     # ----- helpers -------------------------------------------------------------
@@ -135,7 +146,7 @@ class BallGate:
     def _is_head(self, c: np.ndarray, conf: float, players) -> bool:
         if conf >= self.head_conf:
             return False  # a confident ball above the hands is a shot, not a head
-        if self.last is not None and float(np.linalg.norm(c - self.last)) < 60:
+        if self.last is not None and self.kf_x is not None and float(np.linalg.norm(c - self.last)) < 60:
             return False  # ball was already there (held overhead)
         for b in players:
             w = b[2] - b[0]
@@ -182,15 +193,42 @@ class BallGate:
         pts = np.stack(list(self.history)[-self.takeover_frames:])
         return float(np.ptp(pts, axis=0).max()) < self.takeover_px
 
-    def predict(self, gap: int) -> np.ndarray | None:
-        """Where the ball should be `gap` processed frames after the last fix."""
-        if self.last is None:
+    # ----- Kalman filter -------------------------------------------------------
+    def _kf_init(self, c: np.ndarray) -> None:
+        self.kf_x = np.array([c[0], c[1], 0.0, 0.0], dtype=np.float64)
+        self.kf_P = np.diag([self.r_meas ** 2, self.r_meas ** 2, 400.0, 400.0])
+        self.misses = 0
+
+    def _kf_predict(self) -> None:
+        """One processed frame ahead: constant velocity plus gravity on vy."""
+        if self.kf_x is None:
+            return
+        F = np.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        self.kf_x = F @ self.kf_x + np.array([0.0, 0.5 * self.gravity_px, 0.0, self.gravity_px])
+        Q = np.diag([self.q ** 2, self.q ** 2, (2 * self.q) ** 2, (2 * self.q) ** 2])
+        self.kf_P = F @ self.kf_P @ F.T + Q
+
+    def _kf_update(self, c: np.ndarray) -> None:
+        if self.kf_x is None:
+            self._kf_init(c)
+            return
+        H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], dtype=np.float64)
+        R = np.eye(2) * self.r_meas ** 2
+        S = H @ self.kf_P @ H.T + R
+        K = self.kf_P @ H.T @ np.linalg.inv(S)
+        self.kf_x = self.kf_x + K @ (np.asarray(c, dtype=np.float64) - H @ self.kf_x)
+        self.kf_P = (np.eye(4) - K @ H) @ self.kf_P
+        self.misses = 0
+
+    def predict(self, gap: int = 0) -> np.ndarray | None:
+        """Predicted ball position for the current frame (after begin_step)."""
+        if self.kf_x is None:
             return None
-        if self.prev is None or self.last_step - self.prev_step > 3:
-            return self.last
-        v = (self.last - self.prev) / (self.last_step - self.prev_step)
-        # Damped: a bouncing or caught ball does not keep its velocity for long.
-        return self.last + v * min(gap, 4) * 0.7
+        return self.kf_x[:2].astype(np.float32)
+
+    @property
+    def velocity(self) -> np.ndarray | None:
+        return None if self.kf_x is None else self.kf_x[2:].astype(np.float32)
 
     @property
     def gap(self) -> int:
@@ -201,6 +239,10 @@ class BallGate:
         """Call once per processed frame, before pick()."""
         self.step_no += 1
         self.rejects = []
+        if self.kf_x is not None:
+            self._kf_predict()
+            if self.misses >= self.coast_frames:
+                self.kf_x, self.kf_P = None, None  # coast expired: lost
         while self.rel_seen and self.step_no - self.rel_seen[0][0] > self.rel_window:
             self.rel_seen.popleft()
         hoop_c = _center(hoop) if hoop else None
@@ -214,19 +256,17 @@ class BallGate:
         self.prev_hoop_c = hoop_c
 
     def pick(self, candidates: list[tuple[float, list[float]]],
-             hoop: list[float] | None = None, players=()) -> tuple[float, list[float]] | None:
+             hoop: list[float] | None = None, players=()) -> tuple[float, list[float], bool] | None:
         """candidates = [(conf, [x1,y1,x2,y2])], players = player boxes; may be
-        called more than once per step (crop re-detection). Returns the
-        accepted candidate or None."""
+        called more than once per step (crop re-detection). Returns
+        (conf, box, predicted) for an accepted detection, (0, box, True) while
+        coasting on the prediction, None when lost."""
         hoop_c = _center(hoop) if hoop else None
         hoop_w = max(float(hoop[2] - hoop[0]), 1.0) if hoop else 1.0
-        gap = self.gap
-        pred = self.predict(gap)
-        gate = min(self.base_px + self.per_frame_px * gap, self.max_gate_px)
+        pred = self.predict()
         stuck = self._stuck()
-        if stuck:
-            gate = float("inf")  # the "ball" is not moving: let a real one take over from anywhere
-        near = self.near_px + self.near_grow_px * min(gap, 10)
+        gate = float("inf") if stuck else float("inf")  # the KF gate below replaces the old distance gate
+        near = self.near_px + self.near_grow_px * min(self.misses, 10)
 
         tier1, tier2 = [], []
         for conf, box in candidates:
@@ -253,21 +293,22 @@ class BallGate:
             if not on_track and self._is_wall(c, hoop, players):
                 self._reject(box, conf, "wall")
                 continue
-            if pred is None:
-                tier2.append((conf, conf, box, c))
-                continue
-            dist_last = float(np.linalg.norm(c - self.last))
-            if dist_last > gate:
-                self._reject(box, conf, "gate")
+            if pred is None or stuck:
+                tier2.append((conf, conf, box, c))  # lost or parked: confidence decides
                 continue
             dist_pred = float(np.linalg.norm(c - pred))
-            if stuck:
-                tier2.append((conf, conf, box, c))
+            if dist_pred > near:
+                self._reject(box, conf, "far")  # prediction first: coast, never jump
                 continue
-            score = conf - 0.5 * dist_pred / gate
-            (tier1 if dist_pred <= near else tier2).append((score, conf, box, c))
+            tier1.append((conf - 0.5 * dist_pred / near, conf, box, c))
         pool = tier1 or tier2
         if not pool:
+            if pred is not None:
+                self.misses += 1
+                self.coasted += 1
+                r = float(np.median(self.radii)) if self.radii else 15.0
+                box = [float(pred[0] - r), float(pred[1] - r), float(pred[0] + r), float(pred[1] + r)]
+                return 0.0, box, True  # coasting on the prediction
             return None
         _s, conf, box, c = max(pool, key=lambda x: x[0])
 
@@ -280,19 +321,25 @@ class BallGate:
                     self.blacklist_rel.append((pts.mean(axis=0) - hoop_c) / hoop_w)
                 self.history.clear()
                 self.last, self.last_step, self.prev = None, -10**9, None
+                self.kf_x, self.kf_P = None, None
                 self._reject(box, conf, "static_abs")
                 return None
         if self._near_blacklist(c, hoop_c, hoop_w):
             self.accepted_near_blacklist += 1
             self.counts["accepted_near_blacklist"] += 1
+        if stuck and self.last is not None and float(np.linalg.norm(c - self.last)) > 60:
+            self._kf_init(c)  # takeover: the old track was a parked object
+        else:
+            self._kf_update(c)
         self.prev, self.prev_step = self.last, self.last_step
         self.last, self.last_step = c, self.step_no
         self.last_known = c
         self.radii.append(max(box[2] - box[0], box[3] - box[1]) / 2)
-        return conf, box
+        return conf, box, False
 
     def summary(self) -> dict:
         return {"ball_rejected": {k: v for k, v in self.counts.items() if k != "accepted_near_blacklist"},
+                "ball_coasted_frames": self.coasted,
                 "ball_accepted_near_blacklist": self.counts["accepted_near_blacklist"],
                 "ball_blacklist_abs": [b.round(1).tolist() for b in self.blacklist_abs],
                 "ball_blacklist_rel_hoopwidths": [b.round(2).tolist() for b in self.blacklist_rel]}

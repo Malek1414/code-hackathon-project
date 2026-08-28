@@ -8,9 +8,11 @@ and the overlay (vision/track/overlay.py) and prints progress.
 
 Consumers (STATS, NUMBERS, COURT, the dashboard) watch the contract paths in
 out/, so a 20-minute run must not truncate them in place: everything is
-written to out/<clip>/ (kept as an archive) and copied onto the contract
-paths atomically (os.replace) only when the run is complete, meta last. Live
-progress for the monitor board is out/overlay_latest.jpg plus the log.
+written to out/<clip>_vN/ (kept as an archive, never overwritten) and only
+with --publish copied onto the contract paths atomically (os.replace) when
+the run is complete, meta last. The contract paths hold the pitch material
+(game10); dev60 runs are read from their archives. Live progress for the
+monitor board is out/overlay_latest.jpg plus the log.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import sys
@@ -30,7 +33,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from vision.track.overlay import OverlayWriter  # noqa: E402
+from vision.track.overlay import OverlayWriter, default_calib  # noqa: E402
 from vision.track.tracker import TRACKERS, Tracker  # noqa: E402,F401
 
 log = logging.getLogger("track")
@@ -52,16 +55,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--overlay", type=Path, default=Path("out/overlay.mp4"),
                    help="contract path, written atomically at the end")
     p.add_argument("--work-dir", type=Path, default=None,
-                   help="where the run writes while running (default out/<clip>/)")
-    p.add_argument("--no-publish", action="store_true",
-                   help="leave the results in the work dir, do not touch the contract paths")
+                   help="where the run writes while running (default out/<clip>_vN/, N = next "
+                        "free number; older runs are never overwritten)")
+    p.add_argument("--publish", action="store_true",
+                   help="copy the results onto the contract paths (out/tracks.jsonl etc.) when "
+                        "complete; default is archive only, the contract paths are the pitch "
+                        "material (game10) and are replaced on purpose only")
     p.add_argument("--no-overlay", action="store_true")
     p.add_argument("--events", type=Path, default=Path("out/events.json"),
                    help="STATS output; shot flashes + off_court ids are used if it exists")
     p.add_argument("--identities", type=Path, default=Path("out/identities.json"),
                    help="NUMBERS output; jersey numbers as labels if it exists")
-    p.add_argument("--calib", type=Path, default=Path("out/court_calib.json"),
-                   help="COURT output; only players on the court are drawn if it exists")
+    p.add_argument("--calib", type=Path, default=None,
+                   help="COURT output (default out/court_calib_<clip>.json, else out/court_calib.json); "
+                        "only players on the court are drawn if it exists")
     p.add_argument("--device", default="mps")
     p.add_argument("--conf-player", type=float, default=0.3)
     p.add_argument("--conf-ball", type=float, default=0.45)
@@ -78,6 +85,9 @@ def parse_args() -> argparse.Namespace:
                         "kmeans = generic two-color split")
     p.add_argument("--team-samples", type=int, default=24,
                    help="kmeans mode: frames sampled across the clip for the fit")
+    p.add_argument("--ball-blacklist", type=Path, default=None,
+                   help="track_summary.json of an earlier run in the same hall; its "
+                        "ball_blacklist_rel_hoopwidths seeds the fixture blacklist")
     p.add_argument("--cuts", type=Path, default=None,
                    help="COURT's cut list (default out/cuts_<clip>.json if present); "
                         "tracker state is reset at every cut frame")
@@ -138,11 +148,24 @@ def publish(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
+def next_work_dir(clip: Path) -> Path:
+    """out/<clip>_vN with the next free N; every run keeps its own archive."""
+    out = Path("out")
+    used = [1] if (out / clip.stem).exists() else [0]
+    for d in out.glob(f"{clip.stem}_v*"):
+        m = re.fullmatch(r"v(\d+)", d.name[len(clip.stem) + 1:])
+        if m:
+            used.append(int(m.group(1)))
+    return out / f"{clip.stem}_v{max(used) + 1}"
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
     a = parse_args()
-    work = a.work_dir or Path("out") / a.video.stem
+    work = a.work_dir or next_work_dir(a.video)
+    if work.exists() and any(work.iterdir()):
+        raise SystemExit(f"{work} exists and is not empty; runs never overwrite each other")
     work.mkdir(parents=True, exist_ok=True)
     w_tracks, w_meta = work / "tracks.jsonl", work / "tracks_meta.json"
     w_summary, w_overlay = work / "track_summary.json", work / "overlay.mp4"
@@ -153,7 +176,11 @@ def main() -> None:
     log.info("%s: %dx%d @ %.2f fps, %d frames, processing %d..%d stride %d",
              a.video, width, height, fps, n_frames, first, last, a.stride)
 
+    seed = []
+    if a.ball_blacklist and a.ball_blacklist.exists():
+        seed = json.loads(a.ball_blacklist.read_text()).get("ball_blacklist_rel_hoopwidths", [])
     tr = Tracker(a.person_weights, a.ball_weights, a.device, weights=a.weights,
+                 ball_blacklist_rel=seed,
                  person_imgsz=a.person_imgsz, ball_imgsz=a.ball_imgsz, imgsz=a.imgsz,
                  conf_player=a.conf_player, conf_ball=a.conf_ball, conf_hoop=a.conf_hoop,
                  ball_max_px=a.ball_max_px, hoop_hold=a.hoop_hold, tracker=a.tracker,
@@ -167,7 +194,8 @@ def main() -> None:
     writer = None
     if not a.no_overlay:
         writer = OverlayWriter(w_overlay, width=width, height=height, fps=fps / a.stride,
-                               events=a.events, identities=a.identities, calib=a.calib,
+                               events=a.events, identities=a.identities,
+                               calib=default_calib(a.video, a.calib),
                                cuts=a.cuts or Path("out") / f"cuts_{a.video.stem}.json",
                                source_fps=fps, latest_path=a.overlay.with_name("overlay_latest.jpg"))
 
@@ -229,7 +257,7 @@ def main() -> None:
                "stopped_early_at": idx if (stop["flag"] or stop_file.exists()) else None,
                "overlay": None if a.no_overlay else str(a.overlay)}
     w_summary.write_text(json.dumps(summary, indent=1))
-    if not a.no_publish:
+    if a.publish:
         publish(w_tracks, a.out)
         publish(w_summary, a.out.parent / "track_summary.json")
         if writer:

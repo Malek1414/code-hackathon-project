@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>BBB score bug</title>
+<style>
+:root{--glass:rgba(11,13,18,.74);--glass2:rgba(11,13,18,.58);--line:rgba(255,255,255,.14);--text:#F4F6FA;--muted:rgba(244,246,250,.66);--a:#2f6fdb;--b:#c8102e}
+*{box-sizing:border-box}html,body{margin:0;background:transparent}
+body{width:1920px;height:1080px;overflow:hidden;position:relative;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.w{position:absolute}
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:22px;-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)}
+.brand{font-weight:900;letter-spacing:.06em;font-size:28px;line-height:1}
+.brand small{display:block;font-weight:600;letter-spacing:.14em;font-size:14px;color:var(--muted);text-transform:uppercase;margin-top:6px}
+.name{font-weight:700;font-size:32px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num{font-weight:800;font-size:56px;letter-spacing:-.03em;line-height:1}
+.lbl{font-size:28px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.acc{width:10px;border-radius:6px;flex:none}
+.sw{width:18px;height:18px;border-radius:5px;flex:none}
+.row{display:flex;align-items:center;gap:18px}
+.stat{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.stat .v{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.stat .l{font-size:28px;color:var(--muted);font-weight:600}
+
+#bug{left:700px;top:64px;width:520px;height:88px;display:grid;grid-template-columns:10px 1fr auto 1fr 10px;align-items:center;gap:14px;padding:0 14px;border-radius:18px}
+#bug .side{display:flex;align-items:center;gap:12px;min-width:0}
+#bug .side.r{flex-direction:row-reverse;text-align:right}
+#bug .score{display:flex;align-items:center;gap:10px}
+#bug .score .num{font-size:52px}
+#bug .colon{font-size:36px;color:var(--muted);font-weight:300;transform:translateY(-3px)}
+#bug .clock{position:absolute;left:50%;top:-1px;transform:translate(-50%,-100%);font-size:28px;font-weight:700;color:var(--text);background:var(--glass2);border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;padding:2px 14px 0;letter-spacing:.04em;line-height:1.2}
+body.tpl [data-field]{visibility:hidden}
+</style></head>
+<body data-widget="score_bug">
+
+<div id="bug" class="w glass">
+  <div class="acc" style="background:var(--a);height:60px"></div>
+  <div class="side"><div class="name" id="na" data-field="team_a_name" data-align="left"></div></div>
+  <div class="score"><span class="num" id="sa" data-field="score_a" data-align="right"></span><span class="colon">:</span><span class="num" id="sb" data-field="score_b" data-align="left"></span></div>
+  <div class="side r"><div class="name" id="nb" data-field="team_b_name" data-align="right"></div></div>
+  <div class="acc" style="background:var(--b);height:60px"></div>
+  <div class="clock" id="clock" data-field="clock" data-align="center"></div>
+</div>
+<script id="bbb-state" type="application/json">{"brand": "Big Ball Baller", "example": true, "title": "Landesliga Berlin", "clip_or_source": "game10.mp4", "t": 312.4, "period": 1, "clock": "05:12", "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21}, {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}], "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}, {"key": "A44", "number": 44, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 11.4, "distance_m": 388}, {"key": "A24", "number": 24, "team": 0, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 10.1, "distance_m": 402}, {"key": "A55", "number": 55, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 20.2, "distance_m": 365}, {"key": "A23", "number": 23, "team": 0, "pts": 0, "fga": 2, "fgm": 0, "fg_pct": 0.0, "possession_s": 6.4, "distance_m": 290}, {"key": "B9", "number": 9, "team": 1, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 7.7, "distance_m": 351}, {"key": "B12", "number": 12, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 12.3, "distance_m": 377}, {"key": "B13", "number": 13, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 9.0, "distance_m": 340}, {"key": "B55", "number": 55, "team": 1, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 5.2, "distance_m": 298}, {"key": "B1", "number": 1, "team": 1, "pts": 0, "fga": 1, "fgm": 0, "fg_pct": 0.0, "possession_s": 4.4, "distance_m": 255}], "last_event": {"t": 310.2, "type": "made", "team": 0, "player_key": "A5", "points": 2}, "shots": [{"team": 0, "made": true, "court_m": [3.1, 7.4]}, {"team": 0, "made": false, "court_m": [6.8, 3.2]}, {"team": 0, "made": true, "court_m": [2.2, 9.1]}, {"team": 0, "made": false, "court_m": [7.6, 11.0]}, {"team": 0, "made": true, "court_m": [4.9, 5.0]}, {"team": 1, "made": true, "court_m": [25.0, 7.9]}, {"team": 1, "made": false, "court_m": [21.4, 4.1]}, {"team": 1, "made": true, "court_m": [26.1, 6.2]}, {"team": 1, "made": false, "court_m": [20.6, 10.7]}, {"team": 1, "made": true, "court_m": [23.3, 8.8]}], "heat_image": null, "pan_deg": 97, "camera": "ok"}</script>
+<script>
+function bbbState(){
+  var s=null;
+  try{var h=location.hash;if(h&&h.length>1){s=JSON.parse(decodeURIComponent(h.slice(1)));}}catch(e){}
+  if(!s&&window.BBB_STATE)s=window.BBB_STATE;
+  if(!s)s=JSON.parse(document.getElementById('bbb-state').textContent);
+  var teams=s.teams||[];while(teams.length<2)teams.push({id:teams.length,name:'Team '+(teams.length?'B':'A'),color:teams.length?'#c8102e':'#2f6fdb',score:0,fga:0,fgm:0,fg_pct:0,possessions:0});
+  s.teams=teams;s.players=s.players||[];
+  document.documentElement.style.setProperty('--a',teams[0].color||'#2f6fdb');
+  document.documentElement.style.setProperty('--b',teams[1].color||'#c8102e');
+  return s;
+}
+function pct(v){return (v==null||isNaN(v))?'':Math.round(100*v)+'%'}
+function esc(t){return String(t==null?'':t).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function label(p){if(p.others)return 'others, no number read';if(p.number!=null)return '#'+p.number;return '?'}
+function teamOf(s,i){return s.teams[i]||s.teams[0]}
+function topScorer(s,team){var ps=s.players.filter(function(p){return p.team===team});ps.sort(function(a,b){return (b.pts||0)-(a.pts||0)||(b.fgm||0)-(a.fgm||0)||(b.possession_s||0)-(a.possession_s||0)});return ps[0]}
+function findPlayer(s,key){for(var i=0;i<s.players.length;i++)if(s.players[i].key===key)return s.players[i];return null}
+
+
+function bbbLayout(s){
+  if(!s.template&&!s.layout)return;
+  document.body.classList.add(s.template?'tpl':'x');
+  var out={};
+  document.querySelectorAll('[data-field]').forEach(function(el){
+    var r=el.getBoundingClientRect();var cs=getComputedStyle(el);var size=parseFloat(cs.fontSize);
+    var align=el.getAttribute('data-align')||'left';
+    var x=align==='right'?r.right:(align==='center'?(r.left+r.right)/2:r.left);
+    out[el.getAttribute('data-field')]={x:Math.round(x),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+      baseline:Math.round(r.top+(r.height+size*0.7)/2),size:Math.round(size),weight:parseInt(cs.fontWeight,10)||400,
+      align:align,color:cs.color,box:[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)],example:el.textContent.trim()};
+  });
+  var pre=document.createElement('pre');pre.id='bbb-layout';pre.style.display='none';pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
+}
+(function(){var s=bbbState();
+var A=teamOf(s,0),B=teamOf(s,1);
+document.getElementById('na').textContent=A.name;document.getElementById('nb').textContent=B.name;
+document.getElementById('sa').textContent=A.score||0;document.getElementById('sb').textContent=B.score||0;
+document.getElementById('clock').textContent=(s.period?('P'+s.period+'  '):'')+(s.clock||'');
+bbbLayout(s);})();
+</script></body></html>

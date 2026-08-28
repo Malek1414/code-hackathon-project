@@ -22,13 +22,21 @@ The camera that follows the ball is the camera that keeps the stats.
    Payoff in tracking (measured by TRACK on 526 frames): 25 % fewer id switches
    than the COCO model (101 instead of 134 track ids), spectators and referees
    no longer counted as players (9.3 instead of 12.5 per frame).
+   Second payoff: false balls on wall objects from 67 to 12 percent of frames
+   after 12 minutes of training on the coach's own labels (80 frames the coach
+   labeled on the laptop; held-out check: false positives 36 to 8 in 40
+   frames, recall 43 to 53 percent). Inside the full pipeline on the 10 minute
+   game, checked against the coach's 120 labels: ball recall 31 to 53 percent,
+   precision 62 to 96 percent, false balls 17 to 2.
 3. Tracked every player with ByteTrack: 10.6 players per frame, 258 track ids over
    60 s, team by jersey color, jersey numbers read and merged into 
    player identities (`out/identities.json`).
 4. Projected feet onto a 2D court (homography, one click per court landmark) and
    rendered a minimap next to the video.
 5. Shot events from ball and hoop geometry, per-player FGA / FGM / FG% table.
-   {SHOTS_FOUND} = 1 shot attempt found in the 60 s dev clip (game10 number at 14:30).
+   {SHOTS_FOUND} = 24 shot attempts, 10 made, in the 10 minute game10 clip (Team A 3 of 9, 6 points; Team B 7 of 15, 15 points).
+   Human-checked by the coach: 22 of 23 called attempts were real (96 %),
+   made or miss right in 16 of 22 (73 %), shooter's team right in 77 %.
 6. Live mode: same models on the phone stream at about 10 fps, running score bar,
    auto +2 with human veto by hotkey, MJPEG and RTMP push out.
 
@@ -56,10 +64,17 @@ analytics for coaches, and the scoreboard for the volunteer at the table.
 | Val mAP50 player / hoop / referee / ball | 0.957 / 0.973 / 0.755 / 0.207 | `docs/RESULTS.md` |
 | Players per frame tracked | 10.6 (COCO run), 9.3 with best.pt persons | `out/track_summary.json`, `out/compare/` |
 | Track ids on 526 frames, COCO vs best.pt persons | 134 vs 101 (25 % fewer switches) | `out/compare/` (TRACK) |
+| Ball fine-tune on 80 coach-labeled frames, 12 min | false balls 67 % to 12 % of frames (TRACK, 120 frames); held-out: FP 36 to 8, recall 43 % to 53 % | `docs/RESULTS.md` |
+| Ball v2 inside TRACK on the full game10 (QA vs 120 hand labels) | recall 31 % to 53 %, precision 62 % to 96 %, false balls 17 to 2 | QA, 14:50 |
 | Ball seen in frames | 41% | `out/track_summary.json` |
 | Tracking speed | 0.56 s per frame at 1080p on MPS (yolo11s + ball model) | `out/track_summary.json` |
 | Live detection rate | about 10 fps | `vision/live/live.py` |
-| Shots found (dev 60 s) | 1 attempt, 0 made | `out/events.json` |
+| Shots found (dev 60 s) | 1 attempt, 0 made | `out/dev60_v2/` |
+| Shots found (game10, 10 min, frozen human-verified list) | 24 attempts, 10 made; Team A 3 of 9, 6 points; Team B 7 of 15, 15 points (one estimated three at 268.4 s) | `out/events.json` (v1 tracks, human-verified) |
+| Human check of the shots (Sami) | attempts precision 96 % (22 of 23), made/miss 73 % (16 of 22), shooter team 77 %, shooter person 40 % (6 of 15) | `out/qa/stats_eval_game10.json`, `out/qa/verdicts_game10.json` |
+| Possessions, players with distance, cuts handled (game10) | 235, 616, 48 | STATS |
+| Live mode on the phone | 1080p30 in, 14 fps overlay with detection under full load | LIVE test 14:10 |
+| game10 tracking | 15,001 frames, 7.8 players/frame, ball in 34 % of frames, 2850 ids | `out/game10/track_summary.json` |
 
 ## Proposed change to `pitch/pitch.md` (for ORCH to pass to Malek)
 

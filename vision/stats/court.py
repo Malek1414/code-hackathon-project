@@ -12,12 +12,57 @@ from .io import Frame, Point
 MAX_PLAYER_SPEED_MS = 12.0  # steps faster than this are id swaps, not running
 
 
+def _as_px_to_m(entry) -> list[list[float]] | None:
+    """A keyframe entry is either a bare 3x3 H_px_to_m or COURT's dict with
+    H_px_to_m and/or H_m_to_px."""
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        if entry.get("H_px_to_m"):
+            return entry["H_px_to_m"]
+        if entry.get("H_m_to_px"):
+            import numpy as np
+
+            return np.linalg.inv(np.asarray(entry["H_m_to_px"], float)).tolist()
+        return None
+    return entry
+
+
 def homography_for(calib: dict, frame_no: int) -> list[list[float]] | None:
+    """Nearest keyframe's H_px_to_m, else the top-level one. COURT's
+    vision.court.project blends keyframes; this is the dependency-free
+    fallback used when that module is not importable."""
     per_frame = calib.get("frames")
     if per_frame:
         nearest = min(per_frame, key=lambda k: abs(int(k) - frame_no))
-        return per_frame[nearest]
+        H = _as_px_to_m(per_frame[nearest])
+        if H is not None:
+            return H
     return calib.get("H_px_to_m")
+
+
+_COURT_CAL = {}
+
+
+def _court_calibration(calib: dict):
+    """COURT's Calibration object for this calib dict (cached), or None."""
+    key = id(calib)
+    if key in _COURT_CAL:
+        return _COURT_CAL[key]
+    cal = None
+    try:
+        import json as _json
+        import tempfile
+
+        from vision.court.project import load_calibration
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            _json.dump(calib, fh)
+        cal = load_calibration(fh.name)
+    except Exception:  # noqa: BLE001 - fall back to the local homography helper
+        cal = None
+    _COURT_CAL[key] = cal
+    return cal
 
 
 def project(H: list[list[float]], p: Point) -> Point:
@@ -33,9 +78,18 @@ def court_size(calib: dict) -> tuple[float, float]:
     return float(c.get("length", 28.0)), float(c.get("width", 15.0))
 
 
-def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 1.0) -> bool | None:
+def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 0.5) -> bool | None:
     """True/False if the foot point projects inside the court (+margin);
-    None when no homography applies to this frame."""
+    None when no homography applies to this frame. Uses COURT's
+    Calibration (keyframe blending, per-frame npz) when available."""
+    cal = _court_calibration(calib)
+    if cal is not None:
+        xy = cal.project(frame_no, [list(foot)])[0]
+        if not (math.isfinite(xy[0]) and math.isfinite(xy[1])):
+            return None  # no homography for this frame (segment without keyframe)
+        x, y = float(xy[0]), float(xy[1])
+        length, width = court_size(calib)
+        return -margin_m <= x <= length + margin_m and -margin_m <= y <= width + margin_m
     H = homography_for(calib, frame_no)
     if H is None:
         return None
@@ -46,13 +100,34 @@ def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 1.0) -> 
     return -margin_m <= x <= length + margin_m and -margin_m <= y <= width + margin_m
 
 
+def uncertain_ranges(calib: dict) -> list[tuple[int, int]]:
+    """COURT's "uncertain_frames": stretches where the homography is a guess;
+    distance steps inside them are skipped (cal.player_distances does the same)."""
+    out = []
+    for r in calib.get("uncertain_frames") or []:
+        if isinstance(r, dict):
+            a, b = r.get("start", r.get("from")), r.get("end", r.get("to"))
+        else:
+            a, b = r[0], r[1]
+        if a is not None and b is not None:
+            out.append((int(a), int(b)))
+    return out
+
+
+def is_uncertain(ranges: list[tuple[int, int]], frame_no: int) -> bool:
+    return any(a <= frame_no <= b for a, b in ranges)
+
+
 def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
-    """Path length of every player's projected foot point, in metres."""
+    """Path length of every player's projected foot point, in metres
+    (fallback when COURT's player_distances is not importable)."""
     last: dict[int, tuple[float, Point]] = {}
     total: dict[int, float] = defaultdict(float)
+    unsure = uncertain_ranges(calib)
     for fr in frames:
         H = homography_for(calib, fr.frame)
-        if H is None:
+        if H is None or is_uncertain(unsure, fr.frame):
+            last.clear()
             continue
         for p in fr.players:
             m = project(H, p.foot)
@@ -66,3 +141,42 @@ def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
                     total[p.id] += d
             last[p.id] = (fr.t, m)
     return dict(total)
+
+
+THREE_POINT_M = 6.75  # FIBA arc radius from the basket centre
+THREE_CORNER_M = 6.60  # straight part along the sidelines (0.9 m from the sideline)
+
+
+def hoops_m(calib: dict) -> list[Point]:
+    """Basket centres in court metres (FIBA: 1.575 m from each baseline, mid-width)."""
+    length, width = court_size(calib)
+    return [(1.575, width / 2), (length - 1.575, width / 2)]
+
+
+def shot_points(calib: dict | None, frame_no: int | None, foot: Point | None, made: bool) -> tuple[int, bool]:
+    """(points, three_estimated) for a shot: 0 for a miss, 2 by default, 3 when
+    the shooter's projected foot lies beyond the three-point line of the
+    nearest basket — an estimate (release foot, +-0.5 m calibration depth)."""
+    if not made:
+        return 0, False
+    if calib is None or foot is None or frame_no is None:
+        return 2, False
+    cal = _court_calibration(calib)
+    if cal is not None:
+        xy = cal.project(frame_no, [list(foot)])[0]
+        x, y = float(xy[0]), float(xy[1])
+    else:
+        H = homography_for(calib, frame_no)
+        if H is None:
+            return 2, False
+        x, y = project(H, foot)
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return 2, False
+    length, width = court_size(calib)
+    hx, hy = min(hoops_m(calib), key=lambda h: math.hypot(h[0] - x, h[1] - y))
+    d = math.hypot(x - hx, y - hy)
+    near_sideline = min(y, width - y) < 0.9 + 0.5  # corner: straight line at 6.60 m along the sideline
+    limit = THREE_CORNER_M if near_sideline else THREE_POINT_M
+    if d >= limit and 0 <= x <= length and 0 <= y <= width:
+        return 3, True
+    return 2, False

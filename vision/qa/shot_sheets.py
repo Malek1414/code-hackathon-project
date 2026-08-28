@@ -21,7 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .clips import render_clip
+from .clips import OVERLAY, render_clip
 from .numbers_sheet import IDENTITIES, build_number_cards
 from .common import (
     ROOT,
@@ -146,6 +146,27 @@ def key_number(key: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def shot_signature(n: int, shot: dict, tracks: Path) -> str:
+    """What a sheet depends on: the shot's own fields plus the tracks and overlay versions.
+    events.json is rewritten often without changing a shot, so its mtime is deliberately not part of it."""
+    fields = {k: shot.get(k) for k in ("t", "frame", "player_id", "team", "made", "shooter_foot", "hoop_bbox", "shooter_confirmed", "player_key")}
+    versions = [int(pth.stat().st_mtime) if pth.exists() else 0 for pth in (tracks, OVERLAY)]
+    return json.dumps([n, fields, versions], sort_keys=True)
+
+
+KNOWN = QA_DIR / "known_shots.json"  # snapshot of an earlier events version (its "shots" with "t"); shots not in it are "neu, bitte pruefen"
+KNOWN_MATCH_S = 1.5
+
+
+def mark_new(sheets: list[dict], known_path: Path = KNOWN) -> int:
+    known = [float(m["t"]) for m in ((read_json(known_path) or {}).get("shots") or []) if m.get("t") is not None]
+    n_new = 0
+    for m in sheets:
+        m["is_new"] = bool(known) and not any(abs(m["t"] - t) <= KNOWN_MATCH_S for t in known)
+        n_new += m["is_new"]
+    return n_new
+
+
 def _shot_block(s: dict) -> str:
     n = s["n"]
     letter = TEAM_LETTER.get(s["team"])
@@ -170,9 +191,10 @@ def _shot_block(s: dict) -> str:
     else:
         video = f"""
   <div class="cap">{html.escape(s.get('video_caption_de', 'kein Video'))}</div>"""
+    badge = '<span class="badge">neu, bitte pruefen</span>' if s.get("is_new") else ""
     return f"""
-<section class="shot" id="shot-{n}" data-n="{n}">
-  <h2>{html.escape(title)}</h2>{video}
+<section class="shot{' new' if s.get('is_new') else ''}" id="shot-{n}" data-n="{n}">
+  <h2>{html.escape(title)} {badge}</h2>{video}
   <div class="cap">Bildstreifen, 1,5 s vor bis 1,0 s nach dem Ereignis. Gelb = Ball, gruen = Korb, farbige Box = markierter Werfer, weisser Kreis = Standpunkt des Werfers.</div>
   <a href="{s['file']}" target="_blank"><img src="{s['file']}" alt="{html.escape(title)}" loading="lazy"></a>
   <div class="q">
@@ -252,7 +274,7 @@ def _ball_section(out: Path) -> str:
 </div>"""
 
 
-def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
+def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int, known_path: Path = KNOWN) -> Path:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     made = sum(1 for s in sheets if s["made"])
     stored = read_json(verdicts_file(out, clip)) or {}
@@ -261,8 +283,26 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
         if stored.get("shots") or stored.get("numbers")
         else "Noch keine gespeicherten Antworten."
     )
-    shots_html = "".join(_shot_block(s) for s in sheets) if sheets else '<div class="empty">Noch keine Wuerfe in events.json.</div>'
-    cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers)) if numbers else '<div class="empty">Noch keine identities.json.</div>'
+    n_new = mark_new(sheets, known_path)
+    ordered = sorted(sheets, key=lambda m: (not m.get("is_new"), m["t"]))
+    if not sheets:
+        shots_html = '<div class="empty">Noch keine Wuerfe in events.json.</div>'
+    elif n_new:
+        new_part = "".join(_shot_block(m) for m in ordered if m.get("is_new"))
+        old_part = "".join(_shot_block(m) for m in ordered if not m.get("is_new"))
+        shots_html = (
+            f'<h3 class="sub">Neu, bitte pruefen ({n_new})</h3>{new_part}'
+            f'<h3 class="sub">Bereits bewertet ({len(sheets) - n_new})</h3>{old_part}'
+        )
+    else:
+        shots_html = "".join(_shot_block(m) for m in ordered)
+    ident = read_json(IDENTITIES) or {}
+    if numbers:
+        cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers))
+    elif ident.get("clip") and Path(ident["clip"]).name != Path(clip).name:
+        cards_html = f'<div class="empty">identities.json gehoert noch zu {html.escape(Path(ident["clip"]).name)}, der Nummern-Check fuer {html.escape(Path(clip).name)} kommt, sobald NUMBERS nachzieht.</div>'
+    else:
+        cards_html = '<div class="empty">Noch keine identities.json.</div>'
     chk = read_json(out / "ball_check.json") or {}
     ball_video = {k: chk.get(k) for k in ("video", "generated", "ball_frames", "frames", "rejects", "rejects_file")}
     manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers, "ball_video": ball_video})
@@ -270,7 +310,8 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
     page = PAGE.replace("{{BALL}}", _ball_section(out)).replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
         "{{META}}",
         f"{len(sheets)} Wuerfe vom System erkannt ({made} Treffer, {len(sheets) - made} Fehlwuerfe), {tracks_n} verfolgte Frames, "
-        f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}",
+        f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}"
+        + (f" {n_new} Wuerfe sind neu gegenueber der letzten Bewertungsrunde und stehen oben." if n_new else ""),
     ).replace("{{SHOTS}}", shots_html).replace("{{CARDS}}", cards_html).replace("{{MANIFEST}}", manifest).replace("{{STORED}}", stored_js)
     path = out / "index.html"
     tmp = path.with_suffix(".tmp.html")
@@ -322,6 +363,10 @@ PAGE = r"""<!doctype html>
   .bar button.primary { background: #ffd23f; color: #111; border-color: #ffd23f; font-weight: 600; }
   #summary { color: #bbb; }
   .empty { padding: 30px 0; color: #999; }
+  h3.sub { font-size: 16px; color: #ffd23f; margin: 24px 0 4px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; color: #111; background: #ffd23f; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
+  .shot.new { border-left: 3px solid #ffd23f; padding-left: 10px; }
+  .badge.flip { background: #ff8a5c; }
   .ball video { display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }
   .ball .links { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
   .ball a { color: #ffd23f; }
@@ -350,7 +395,7 @@ PAGE = r"""<!doctype html>
 const MANIFEST = {{MANIFEST}};
 const STORED = {{STORED}};
 const KEY = "followcam-qa-verdicts:" + MANIFEST.clip;
-const MATCH_S = 0.5;
+const MATCH_S = 1.5;  // event times shift a little between track versions
 const $ = (sel) => document.querySelector(sel);
 function radio(name) { const r = $('input[name="' + name + '"]:checked'); return r ? r.value : null; }
 function setRadio(name, value) { if (value === null || value === undefined) return; const r = $('input[name="' + name + '"][value="' + value + '"]'); if (r) r.checked = true; }
@@ -394,7 +439,12 @@ function summary() {
   try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
 }
 function applyShot(s, v) {
-  if (v.shot) setRadio("s" + s.n, v.shot);
+  const flipped = typeof v.made === "boolean" && typeof s.made === "boolean" && v.made !== s.made;
+  if (flipped) {  // the system call changed since this verdict: shooter, number and note carry over, the shot answer does not
+    const h = document.querySelector('#shot-' + s.n + ' h2');
+    if (h && !h.querySelector(".flip")) { const b = document.createElement("span"); b.className = "badge flip"; b.textContent = "Wertung geaendert, bitte neu pruefen"; h.appendChild(b); }
+  }
+  if (v.shot && !flipped) setRadio("s" + s.n, v.shot);
   else if (v.verdict) { // legacy correct / wrong / missed_shooter
     if (v.verdict === "correct") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "yes"); }
     if (v.verdict === "missed_shooter") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "no"); }
@@ -490,27 +540,53 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--identities", type=Path, default=IDENTITIES)
     ap.add_argument("--clip", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=QA_DIR)
+    ap.add_argument("--known", type=Path, default=None, help="events/sheets json of an earlier round; shots not in it are 'neu' (default out/qa/known_shots.json)")
+    ap.add_argument("--only-new", action="store_true", help="render only the shots flagged new (quick first page)")
+    ap.add_argument("--no-video", action="store_true", help="strips only, no clip cut (videos can be added by a later run)")
+    ap.add_argument("--no-numbers", action="store_true", help="skip the number cards")
     args = ap.parse_args(argv)
+    known_path = args.known or KNOWN
 
     events = read_json(args.events)
     meta = read_json(META) or {}
     frames = read_tracks(args.tracks)
-    index = TrackIndex(frames)
     shots = (events or {}).get("shots", [])
     if events is None:
         print(f"{args.events} missing or unreadable, writing an empty index")
     clip = resolve_clip(str(args.clip) if args.clip else None, (events or {}).get("clip"), meta.get("clip"))
+    if events and meta.get("clip") and Path(events.get("clip", "")).name != Path(meta["clip"]).name:
+        # events.json (STATS) and tracks.jsonl (TRACK) belong to different clips while the pipeline
+        # moves from one clip to the next: draw the sheets from events only, no boxes from foreign tracks
+        print(f"events.json is {events.get('clip')} but tracks.jsonl is {meta['clip']}: sheets without track boxes")
+        frames = []
+    index = TrackIndex(frames)
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
-    for old in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
-        old.unlink()
-    sheets = []
+    sheets = []  # files are replaced per shot; stale ones are pruned only after a complete run (an interrupted run must not empty the page)
+    previous = {m.get("sig"): m for m in ((read_json(args.out / "sheets.json") or {}).get("shots") or []) if m.get("sig")}
+    reused = 0
+    known_t = [float(m["t"]) for m in ((read_json(known_path) or {}).get("shots") or []) if m.get("t") is not None]
+    skipped = []
     for n, shot in enumerate(shots, 1):
+        is_new = bool(known_t) and not any(abs(float(shot["t"]) - t) <= KNOWN_MATCH_S for t in known_t)
+        if args.only_new and not is_new:
+            skipped.append(n)
+            continue
+        sig = shot_signature(n, shot, args.tracks) + ("" if not args.no_video else "|novideo")
+        prev = previous.get(sig)
+        prev_files = [args.out / prev[k] for k in ("file", "video", "video_half") if prev.get(k)] if prev else []
+        if prev and len(prev_files) == (1 if args.no_video else 3) and all(f.exists() for f in prev_files):
+            sheets.append(prev)  # same shot, same tracks and overlay, files present: nothing to redo
+            reused += 1
+            continue
         img, m = render_shot(n, shot, grab, index)
+        m["sig"] = sig
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
         m["number_prefill"] = key_number(m.get("player_key"))
         save_jpg(args.out / m["file"], img)
         try:
+            if args.no_video:
+                raise RuntimeError("Video folgt im naechsten Durchlauf")
             m.update(render_clip(n, m["t"], clip, args.out))
         except RuntimeError as exc:
             print(f"  shot {n}: no video ({exc})")
@@ -520,15 +596,27 @@ def main(argv: list[str] | None = None) -> int:
             if m.get("video_source") == "overlay"
             else f"Video aus dem Rohclip ohne Boxen ({m.get('video_reason', 'kein Overlay')}), 2,0 s vor bis 1,5 s nach dem Ereignis"
             if m.get("video_source") == "raw"
-            else f"Kein Video: {m.get('video_caption')}"
+            else f"{m.get('video_caption')}"
         )
         sheets.append(m)
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
-    numbers = build_number_cards(frames, grab, args.out, args.identities)
+    numbers = [] if args.no_numbers else build_number_cards(frames, grab, args.out, args.identities, clip)
+    if not numbers and not args.no_numbers:
+        for stale in args.out.glob("num_*.jpg"):
+            stale.unlink()
     grab.close()
+    if reused:
+        print(f"  {reused} of {len(shots)} sheets reused (files newer than events, tracks and overlay)")
+    if not args.only_new:
+        keep = {m["file"] for m in sheets} | {m.get("video") for m in sheets} | {m.get("video_half") for m in sheets}
+        for stale in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
+            if stale.name not in keep:
+                stale.unlink()
+    if skipped:
+        print(f"  {len(skipped)} known shots skipped (--only-new)")
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets, "numbers": numbers}, indent=1))
-    page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames))
+    page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames), known_path)
     print(f"{len(sheets)} sheets, {len(numbers)} number cards -> {args.out}, index {page}")
     return 0
 

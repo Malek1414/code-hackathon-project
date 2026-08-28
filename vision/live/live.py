@@ -2,7 +2,7 @@
 
     .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime
     .venv/bin/python -m vision.live.live --source 0            # camera index (Continuity Camera)
-    .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/tracks.jsonl
+    .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v5/tracks.jsonl
 
 Detection runs in a worker thread at whatever rate the models allow (~10 fps
 on MPS) using TRACK's per-frame API (vision.track.tracker.Tracker.step);
@@ -11,7 +11,13 @@ StatsEngine gets one tracks line per processed frame and reports made /
 missed shots at most 0.5 s after the ball dropped; the scoreboard auto-calls
 +2 for the shooter's team, a human vetoes with hotkeys.
 
-Hotkeys (window focused): 1/2 = +2 team A/B, 3/4 = +3, z = undo, q = quit.
+Hotkeys (window focused): 1/2 = +2 team A/B, 3/4 = +3, z = undo, t = team
+overview (6 s), b = lower third (6 s), e = end summary / heat map (toggle),
+q = quit.
+Broadcast package "Big Ball Baller": widgets from broadcast/assets/<id>.png
+(placeholders until FRONTEND delivers), out/live_state.json every second and
+127.0.0.1:8501/state.json; team names/colors from --team-a/--team-b/
+--color-a/--color-b or broadcast/config.json (never guessed).
 2D court (--minimap panel|window|off): COURT's minimap renderer on the last
 tracks line, projected with out/court_calib.json (static calibration from one
 frame: a pan breaks it, the panel says so), jersey numbers from
@@ -27,6 +33,7 @@ import argparse
 import json
 import logging
 import queue
+import signal
 import sys
 import threading
 import time
@@ -39,6 +46,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `python vision/l
 from vision.live.env import load_dotenv, rtmp_url
 from vision.live.minimap import MiniMap, compose_side_by_side, load_numbers, try_load_calibration
 from vision.live.overlay import draw_flash, draw_score_bar, draw_tracks
+from vision.live.pan import PanController
+from vision.live.state import LiveStats, build_state, load_team_config, write_state
+from vision.live.widgets import Assets, WidgetScheduler
 
 try:  # COURT's court overlay (vision/court/draw.py); optional so live never depends on it
     from vision.court.draw import court_lines
@@ -60,10 +70,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--list-sources", action="store_true",
                     help="probe camera indices 0-4 (one frame each, 2 s timeout), print ok/no-frame, exit")
     ap.add_argument("--realtime", action="store_true", help="pace a video file like a live camera")
+    ap.add_argument("--loop", action="store_true", help="video file: start over at the end (stage demo loop)")
     ap.add_argument("--device", default="mps")
     ap.add_argument("--process-fps", type=float, default=10.0, help="target detection rate")
     ap.add_argument("--out-width", type=int, default=1280, help="MJPEG / RTMP frame width")
     ap.add_argument("--mjpeg-port", type=int, default=8501)
+    ap.add_argument("--bind", default="127.0.0.1", help="MJPEG/state server address; 0.0.0.0 for a phone on the same Wi-Fi")
     ap.add_argument("--no-mjpeg", action="store_true")
     ap.add_argument("--no-window", action="store_true")
     ap.add_argument("--max-seconds", type=float, default=0, help="stop after this much source time (tests)")
@@ -73,12 +85,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights", default=None, help="single contract model (LABEL's best.pt)")
     ap.add_argument("--replay", default=None,
                     help="tracks.jsonl to replay instead of running the models; must be the tracks of the SAME clip "
-                         "as --source (e.g. --source data/clips/dev60.mp4 --replay out/dev60/tracks.jsonl)")
+                         "as --source (stage fallback: --source data/clips/dev60.mp4 --replay out/dev60_v5/tracks.jsonl)")
     ap.add_argument("--minimap", choices=["panel", "window", "off"], default="panel",
                     help="2D court: right third of the output (panel), its own window, or off")
-    ap.add_argument("--calib", default="out/court_calib.json")
+    ap.add_argument("--calib", default=None,
+                    help="default: out/court_calib_<source stem>.json, else out/court_calib.json")
     ap.add_argument("--identities", default="out/identities.json")
     ap.add_argument("--no-court-lines", action="store_true", help="do not draw the court on the video")
+    ap.add_argument("--serial", default=None, help="pan servo port, e.g. /dev/cu.usbserial-XXXX (ls /dev/cu.usb*)")
+    ap.add_argument("--dry-serial", action="store_true", help="print the servo commands instead of sending them")
+    ap.add_argument("--invert-pan", action="store_true", help="flip the pan direction if the camera runs away from the ball")
+    ap.add_argument("--team-a", default=None, help="team A name (else broadcast/config.json, else 'Team A')")
+    ap.add_argument("--team-b", default=None)
+    ap.add_argument("--color-a", default=None, help="hex like #2f6fdb")
+    ap.add_argument("--color-b", default=None)
+    ap.add_argument("--title", default="", help="game title for the lower third")
+    ap.add_argument("--widgets", choices=["on", "off"], default="on", help="Big Ball Baller widgets (off = plain score bar)")
+    ap.add_argument("--assets", default="broadcast/assets")
+    ap.add_argument("--state-out", default="out/live_state.json")
+    ap.add_argument("--overview-every", type=float, default=300.0, help="team overview interval in seconds")
+    ap.add_argument("--ball-blacklist", default=None,
+                    help="track_summary.json of a known gym: seeds TRACK's hoop-relative wall-fixture blacklist (default none)")
+    ap.add_argument("--snapshot-at", action="append", default=[], metavar="T:PATH",
+                    help="save the composed frame at video time T seconds to PATH (repeatable; tests)")
+    ap.add_argument("--panel-every", type=int, default=3,
+                    help="render the court panel every Nth frame and reuse it in between (render rate)")
     return ap.parse_args(argv)
 
 
@@ -98,29 +129,40 @@ def _read_with_timeout(cap: cv2.VideoCapture, timeout_s: float):
 
 
 def probe_source(index: int, timeout_s: float = 2.0) -> tuple[str, int, int, float]:
-    """('ok' | 'no-frame' | 'closed', width, height, fps) for one camera index."""
+    """('ok' | 'no-frame' | 'closed', width, height, fps) for one camera index.
+    Reads are retried until `timeout_s` is used up: the iPhone (Continuity
+    Camera) opens at once but delivers its first frames only after seconds."""
     cap = cv2.VideoCapture(index)
     try:
         if not cap.isOpened():
             return "closed", 0, 0, 0.0
-        ok, frame = _read_with_timeout(cap, timeout_s)
-        if not ok or frame is None:
-            return "no-frame", 0, 0, cap.get(cv2.CAP_PROP_FPS) or 0.0
-        h, w = frame.shape[:2]
-        return "ok", w, h, cap.get(cv2.CAP_PROP_FPS) or 0.0
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return "no-frame", 0, 0, cap.get(cv2.CAP_PROP_FPS) or 0.0
+            ok, frame = _read_with_timeout(cap, min(2.0, remaining))
+            if ok and frame is not None:
+                h, w = frame.shape[:2]
+                return "ok", w, h, cap.get(cv2.CAP_PROP_FPS) or 0.0
+            time.sleep(0.3)
     finally:
         cap.release()
 
 
-def list_sources(max_index: int = 4) -> list[tuple[int, str, int, int, float]]:
+def list_sources(max_index: int = 4, timeout_s: float = 2.0) -> list[tuple[int, str, int, int, float]]:
     """(index, status, width, height, fps) for indices 0..max_index. On macOS the
     iPhone shows up as an extra index when Continuity Camera is active; it can
     open and still deliver nothing until the phone wakes up."""
-    return [(i, *probe_source(i)) for i in range(max_index + 1)]
+    return [(i, *probe_source(i, timeout_s)) for i in range(max_index + 1)]
 
 
-def auto_source(max_index: int = 4) -> int | None:
-    for i, status, _w, _h, _fps in list_sources(max_index):
+def auto_source(max_index: int = 4, timeout_s: float = 15.0) -> int | None:
+    """Highest index that delivers a frame (the phone/external camera sits
+    above the built-in one at 0), waiting up to `timeout_s` per index."""
+    for i in range(max_index, -1, -1):
+        status, _w, _h, _fps = probe_source(i, timeout_s)
+        log.info("camera %d: %s", i, status)
         if status == "ok":
             return i
     return None
@@ -278,7 +320,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from vision.track.tracker import Tracker  # TRACK's per-frame API (loads torch/ultralytics)
 
-        tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps)
+        blacklist = None
+        if args.ball_blacklist:
+            try:
+                blacklist = json.loads(Path(args.ball_blacklist).read_text()).get("ball_blacklist_rel_hoopwidths") or None
+                log.info("ball blacklist seeded from %s: %d fixtures", args.ball_blacklist, len(blacklist or []))
+            except (OSError, json.JSONDecodeError) as exc:
+                log.warning("ball blacklist %s unusable: %s", args.ball_blacklist, exc)
+        tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps,
+                          ball_blacklist_rel=blacklist)
     engine = StatsEngine(dt=1.0 / args.process_fps, fps=src_fps)
     events: queue.Queue = queue.Queue()
     worker = Worker(tracker, engine, events)
@@ -286,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
     board = ScoreBoard()
 
     frame = None
-    for _ in range(20):  # a camera may need a moment; a file must deliver at once
+    for _ in range(60 if is_cam else 20):  # the iPhone needs up to ~15 s for its first frame; a file delivers at once
         frame = cap.read()
         if frame is not None:
             break
@@ -298,15 +348,19 @@ def main(argv: list[str] | None = None) -> int:
     out_h = int(round(h * out_w / w / 2) * 2)
     minimap = None
     if args.minimap != "off":
-        minimap = MiniMap(try_load_calibration(args.calib), numbers=load_numbers(args.identities))
+        calib_path = args.calib
+        if calib_path is None:
+            per_clip = Path("out") / f"court_calib_{Path(args.source).stem}.json"
+            calib_path = str(per_clip) if per_clip.exists() else "out/court_calib.json"
+        minimap = MiniMap(try_load_calibration(calib_path), numbers=load_numbers(args.identities))
         if minimap.cal is None:
-            log.info("no court calibration at %s: minimap shows 'uncalibrated'", args.calib)
+            log.info("no court calibration at %s: minimap shows 'uncalibrated'", calib_path)
     if args.minimap == "panel":  # video keeps its width, the panel adds a third on the right
         out_w = int(round(out_w * 1.5 / 2) * 2)
 
     mjpeg = None
     if not args.no_mjpeg:
-        mjpeg = MjpegServer(port=args.mjpeg_port)
+        mjpeg = MjpegServer(host=args.bind, port=args.mjpeg_port)
         mjpeg.start()
     pusher = None
     url = rtmp_url()
@@ -336,8 +390,48 @@ def main(argv: list[str] | None = None) -> int:
              "realtime" if realtime else "offline", stride)
 
     status = ""  # shown in the score bar when the source misbehaves
+    panel = None
+    team_cfg = load_team_config(team_a=args.team_a, team_b=args.team_b, color_a=args.color_a, color_b=args.color_b)
+    live_stats = LiveStats(numbers=load_numbers(args.identities))
+    widgets = WidgetScheduler(Assets(args.assets), title=args.title, overview_every_s=args.overview_every) if args.widgets == "on" else None
+    last_event: dict | None = None
+    last_state_t = -1.0
+    snapshots = []
+    for spec in args.snapshot_at:
+        ts, _, path = spec.partition(":")
+        snapshots.append([float(ts), path, False])
+    state_teams, state_players = [], []
+    pan = PanController(args.serial, dry=args.dry_serial, invert=args.invert_pan, frame_width=w) \
+        if (args.serial or args.dry_serial) else None
+    pan_deg = None
+    stop_flag = {"stop": False}
+
+    def _on_signal(signum, _frame):  # SIGINT/SIGTERM end the loop cleanly so the exit file gets written
+        stop_flag["stop"] = True
+
+    signal.signal(signal.SIGINT, _on_signal)
+    signal.signal(signal.SIGTERM, _on_signal)
+    last_dump = time.monotonic()
+
+    def dump(final: bool = False) -> None:
+        summary = {
+            "fps": src_fps,
+            "clip": args.source,
+            "shots": shots_log,
+            "score": {str(k): vars(v) for k, v in board.teams.items()},
+            "actions": [vars(a) for a in board.history],
+            "unassigned_baskets": board.unassigned,
+            "frames_rendered": frames_rendered,
+            "frames_processed": worker.processed,
+            "rtmp_frames": pusher.frames if pusher else 0,
+            "source_reopens": cap.reopens,
+            "pan_commands": pan.commands if pan else 0,
+            "final": final,
+        }
+        Path(args.events_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.events_out).write_text(json.dumps(summary, indent=1))
     try:
-        while True:
+        while not stop_flag["stop"]:
             fresh = True
             if idx > 0:
                 if realtime and not is_cam and not cap.eof:
@@ -351,6 +445,15 @@ def main(argv: list[str] | None = None) -> int:
                     if lag < 0:
                         time.sleep(-lag)
                 nxt = None if cap.eof else cap.read()
+                if nxt is None and cap.eof and args.loop and not is_cam:
+                    cap.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    cap.eof = False
+                    idx = 0
+                    t_start = time.monotonic()
+                    engine.reset()
+                    worker.latest, worker.holder = None, None
+                    nxt = cap.read()
+                    log.info("loop: file restarted")
                 if nxt is None:
                     fresh = False  # keep showing the last frame; never leave the stage dark
                     if cap.eof:
@@ -381,23 +484,65 @@ def main(argv: list[str] | None = None) -> int:
                 act = board.auto_shot(ev, t)
                 flash = (act.label, ev.made, t)
                 shots_log.append(ev.to_dict())
+                key = live_stats.key_of(ev.player_id, ev.team)
+                last_event = {"t": round(ev.t, 2), "type": "made" if ev.made and ev.made_confirmed else "miss",
+                              "team": ev.team, "player_key": key, "points": act.points}
+                last_state_t = -1.0  # refresh the state (and the cards) right now, not at the next second
+                if widgets:
+                    if ev.made and ev.made_confirmed:
+                        widgets.made(t, ev.team if ev.team in (0, 1) else None, key, act.label)
+                    elif "press 1 or 2" in act.label:
+                        widgets.flash = (act.label, None, t)
                 log.info("shot %s at %.1fs: %s", "MADE" if ev.made else "miss", ev.t, act.label)
 
+            if pan is not None:
+                rec = worker.latest
+                ball = rec.get("ball") if rec else None
+                pan_deg = pan.update(ball["center"][0] if ball and ball.get("center") else None)
+            if t - last_state_t >= 1.0 or last_state_t < 0:
+                state_teams = live_stats.teams(engine, board, team_cfg)
+                state_players = live_stats.players(engine, board)
+                state = build_state(source=args.source, t=t, teams=state_teams, players=state_players,
+                                    last_event=last_event, pan_deg=pan_deg, camera_ok=not status.startswith("Kamera"))
+                try:
+                    write_state(state, args.state_out)
+                except OSError as exc:
+                    log.warning("live_state.json: %s", exc)
+                if mjpeg:
+                    mjpeg.state_json = json.dumps(state).encode()
+                last_state_t = t
             view = frame.copy()
             if court_lines is not None and minimap is not None and minimap.cal is not None and not args.no_court_lines:
                 court_lines(view, None if is_cam else idx, minimap.cal)
             draw_tracks(view, worker.latest, worker.holder)
-            info = f"det {1 / max(worker.proc_dt, 1e-3):.1f} fps   1/2 +2  3/4 +3  z undo  q quit"
+            info = f"det {1 / max(worker.proc_dt, 1e-3):.1f} fps   1/2 +2  3/4 +3  z undo  t team  b brand  e end  q quit"
+            if pan_deg is not None:
+                info = f"pan {pan_deg:.0f} deg   |   {info}"
             if status:
                 info = f"{status}   |   {info}"
-            draw_score_bar(view, board, t, info, warning=bool(status))
-            if flash:
-                draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
-            panel = minimap.render(worker.latest, worker.holder) if minimap else None
+            if widgets:
+                if status == "Ende der Datei":
+                    widgets.end_of_file(t)
+                clock = f"{int(t // 60):02d}:{int(t % 60):02d}"
+                widgets.render(view, t, state_teams, state_players, clock, last_event=last_event)
+                color, scale_, thick = ((0, 200, 255), 0.8, 2) if status else ((200, 200, 200), 0.6, 1)
+                cv2.putText(view, info, (24, view.shape[0] - 16), cv2.FONT_HERSHEY_SIMPLEX, scale_, color, thick)
+            else:
+                draw_score_bar(view, board, t, info, warning=bool(status))
+                if flash:
+                    draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
+            if minimap and (panel is None or frames_rendered % max(args.panel_every, 1) == 0):
+                pan_note = None if pan_deg is None else (pan_deg - 90.0)  # calibration holds only at the centre
+                panel = minimap.render(worker.latest, worker.holder, pan_deg=pan_note)
             if args.minimap == "panel":
                 small = compose_side_by_side(view, panel, out_w, out_h)
             else:
                 small = cv2.resize(view, (out_w, out_h)) if out_w != w else view
+            for snap in snapshots:
+                if not snap[2] and t >= snap[0]:
+                    cv2.imwrite(snap[1], small)
+                    snap[2] = True
+                    log.info("snapshot at %.2fs -> %s", t, snap[1])
             if mjpeg:
                 ok_j, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok_j:
@@ -417,8 +562,19 @@ def main(argv: list[str] | None = None) -> int:
                 hit = handle_key(key, board, t)
                 if hit:
                     flash = (hit[0], hit[1], t)
+                    last_state_t = -1.0
+                    if widgets and hit[1]:
+                        team = 0 if key in (ord("1"), ord("3")) else 1
+                        widgets.manual(t, team, hit[0])
+                        last_event = {"t": round(t, 2), "type": "manual", "team": team, "player_key": None,
+                                      "points": 2 if key in (ord("1"), ord("2")) else 3}
+                if widgets and key in (ord("t"), ord("b"), ord("e")):
+                    widgets.hotkey(chr(key), t)
             if fresh:
                 idx += 1
+            if time.monotonic() - last_dump > 5.0:  # score survives a hard kill
+                dump()
+                last_dump = time.monotonic()
     finally:
         worker.stop = True
         cap.release()
@@ -431,19 +587,9 @@ def main(argv: list[str] | None = None) -> int:
             pusher.close()
         if mjpeg:
             mjpeg.stop()
-        summary = {
-            "fps": src_fps,
-            "clip": args.source,
-            "shots": shots_log,
-            "score": {str(k): vars(v) for k, v in board.teams.items()},
-            "unassigned_baskets": board.unassigned,
-            "frames_rendered": frames_rendered,
-            "frames_processed": worker.processed,
-            "rtmp_frames": pusher.frames if pusher else 0,
-            "source_reopens": cap.reopens,
-        }
-        Path(args.events_out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.events_out).write_text(json.dumps(summary, indent=1))
+        if pan is not None:
+            pan.close()
+        dump(final=True)
         log.info("done: rendered %d, processed %d, shots %d, score %s -> %s", frames_rendered,
                  worker.processed, len(shots_log), board.line(), args.events_out)
     return 0

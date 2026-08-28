@@ -120,3 +120,73 @@ def test_capture_survives_camera_silence(monkeypatch):
     frame = cap.read()  # reopen kicks in -> the second device delivers
     assert cap.reopens == 1 and frame is not None and cap.healthy
     assert FakeCap.instances == 2
+
+
+def test_pan_controller_adapter(capsys):
+    from vision.live.pan import PanController
+
+    pan = PanController(None, dry=True, frame_width=1920)
+    t = 0.0
+    angles = []
+    for _ in range(60):
+        angles.append(pan.update(1800.0, now=t))
+        t += 0.02
+    assert angles[0] < 90.0 and angles[-1] == 40.0 and all(40 <= a <= 140 for a in angles)
+    assert max(abs(b - a) for a, b in zip(angles, angles[1:])) <= 90 * 0.02 + 1e-6  # slew 90 deg/s
+    assert 0 < pan.commands <= 25  # 1.2 s at <= 20 Hz, only on >= 1 deg change
+    a0 = pan.update(960.0 + 10, now=t)
+    assert abs(pan.update(960.0 - 10, now=t + 0.05) - a0) < 1e-9  # deadband
+    pan.update(None, now=t + 3.5)
+    a1 = pan.update(None, now=t + 4.5)
+    assert abs(a1 - 90.0) < abs(a0 - 90.0)  # returns towards the centre after 3 s
+    assert "A" in capsys.readouterr().out
+    inv = PanController(None, dry=True, invert=True, frame_width=1920)
+    assert inv.update(1800.0, now=0.0) > 90.0
+
+
+def test_widget_scheduler_timing():
+    import numpy as np
+
+    from vision.live.state import DEFAULT_TEAMS
+    from vision.live.widgets import Assets, WidgetScheduler
+
+    teams = [dict(t, score=0, fga=0, fgm=0, fg_pct=None, possessions=0) for t in DEFAULT_TEAMS]
+    players = [{"key": "A5", "number": 5, "team": 0, "pts": 2, "fga": 1, "fgm": 1, "fg_pct": 1.0, "possession_s": 3.0,
+                "distance_m": None, "track_ids": [5]}]
+    ws = WidgetScheduler(Assets("/nonexistent"), title="Test")
+    frame = np.zeros((1080, 1920, 3), np.uint8)
+    ws.render(frame, 2.0, teams, players, "00:02")
+    assert frame[1020, 960].any()  # lower third visible in the first 10 s
+    frame[:] = 0
+    ws.render(frame, 20.0, teams, players, "00:20")
+    assert not frame[1020, 960].any() and frame[100, 960].any()  # lower third gone, score bug always
+    ws.made(30.0, 0, "A5", "BASKET Team A +2")
+    frame[:] = 0
+    ws.render(frame, 31.0, teams, players, "00:31")
+    assert frame[950, 100].any()  # player card lower left within 3 s
+    frame[:] = 0
+    ws.render(frame, 34.5, teams, players, "00:34")
+    assert not frame[950, 100].any()  # card gone after 3 s
+    ws.hotkey("t", 40.0)
+    frame[:] = 0
+    ws.render(frame, 42.0, teams, players, "00:42")
+    assert frame[540, 960].any()  # team overview centre for 6 s
+    ws.hotkey("e", 50.0)
+    frame[:] = 0
+    ws.render(frame, 51.0, teams, players, "00:51")
+    assert frame[100, 100].any() and frame[1000, 1800].any()  # end summary covers the frame
+
+
+def test_team_config_flags_win_over_menu(tmp_path):
+    import json
+
+    from vision.live.state import load_team_config
+
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"teams": [{"name": "Lions", "color": "#112233"}, {"name": "Wiesel", "color": "#445566"}]}))
+    t = load_team_config(cfg)
+    assert t[0]["name"] == "Lions" and t[1]["color"] == "#445566"
+    t = load_team_config(cfg, team_b="Gäste", color_a="#ffffff")
+    assert t[1]["name"] == "Gäste" and t[0]["color"] == "#ffffff" and t[0]["name"] == "Lions"
+    t = load_team_config(tmp_path / "missing.json")
+    assert [x["name"] for x in t] == ["Team A", "Team B"]

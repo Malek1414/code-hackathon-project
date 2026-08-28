@@ -59,6 +59,7 @@ class Ball:
     center: Point
     bbox: BBox | None = None
     conf: float = 0.0
+    predicted: bool = False  # TRACK's Kalman coasting (<= 0.5 s): fine for possession continuity, never for shots
 
 
 @dataclass
@@ -116,7 +117,8 @@ def frame_from_dict(d: dict, fps: float | None = None) -> Frame:
         if c is None and bbox is not None:
             c = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
         if c is not None:
-            ball = Ball(center=(float(c[0]), float(c[1])), bbox=bbox, conf=float(b.get("conf", 0.0)))
+            ball = Ball(center=(float(c[0]), float(c[1])), bbox=bbox, conf=float(b.get("conf", 0.0)),
+                        predicted=bool(b.get("predicted", False)))
 
     hoops = [_bbox(h["bbox"] if isinstance(h, dict) else h) for h in d.get("hoops") or []]
     # Each end has a small folded side hoop on the wall; the real one is the largest box.
@@ -237,6 +239,7 @@ def frame_to_dict(fr: Frame) -> dict:
                 "bbox": [round(v, 1) for v in fr.ball.bbox] if fr.ball.bbox else None,
                 "center": [round(v, 1) for v in fr.ball.center],
                 "conf": round(fr.ball.conf, 3),
+                "predicted": fr.ball.predicted,
             }
         ),
         "hoops": [{"bbox": [round(v, 1) for v in h]} for h in fr.hoops],

@@ -69,6 +69,7 @@ def cut(src: Path, start: float, dur: float, dst: Path, half: bool) -> None:
         "-an", "-filter:v", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", *rate,
+        "-threads", "2",  # ORCH 13:41: renders must not starve the training / tracking runs
         str(tmp),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)

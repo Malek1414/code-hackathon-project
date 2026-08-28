@@ -102,3 +102,27 @@ def test_hoop_relative_blacklist_drops_wall_fixture_even_without_hoop():
         engine.push(fr)
     engine.finish()
     assert engine.dropped_blacklist == 20
+
+
+def test_predicted_ball_points_keep_possession_but_never_decide_a_shot():
+    """TRACK's Kalman coasting: a predicted point in the net must not make a
+    basket; predicted points bridge a possession gap."""
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t >= 3.66 and fr.ball is not None:  # everything at/below the rim is only predicted
+            fr.ball = Ball(center=fr.ball.center, bbox=fr.ball.bbox, conf=0.0, predicted=True)
+    engine = StatsEngine(dt=0.02)
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    assert [(s.made, s.made_confirmed) for s in engine.shots] == [(False, False)]  # vanished attempt, not a make
+
+    frames = synthetic_scenario("pass")
+    for fr in frames:
+        if 2.0 <= fr.t < 2.4 and fr.ball is not None:
+            fr.ball = Ball(center=fr.ball.center, conf=0.0, predicted=True)
+    engine = StatsEngine(dt=0.02)
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    assert [s.player_id for s in engine.possession.segments] == [1, 2]  # no break during the coasted stretch

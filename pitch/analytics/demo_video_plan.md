@@ -10,6 +10,8 @@ when they exist under the same names.
 | `out/minimap.mp4` | 1200x680, 25 fps, 20 s, 2D court with team dots | exists, says "uncalibrated" until COURT's calibration lands |
 | `out/dashboard.html` | shot chart, per-player table, minimap embed | exists, screen-record it |
 | `out/results_labels.jpg` | 2x3 sheet, auto-labels vs fine-tuned predictions | exists |
+| `out/pitch/court_lines_10s.mp4` | game10 160 to 170 s, 1920x1080, 50 fps, projected court model drawn on the raw frames while the camera zooms and pans (COURT, 13:55) | exists, the "camera pans, court model follows" shot |
+| `out/pitch/analytics_segment.mp4` | the finished analytics block, about 41 s, 1920x1080 25 fps H.264: side by side game10 150 to 162 s (made shot at 151 s), court lines 8 s, dashboard 10 s (score, shot chart, players), live mode 9 s (replay of dev60 through live.py, captured from its MJPEG stream), end card 2 s | rendered 14:35, parts in `out/pitch/seg*.mp4` |
 | `out/label_preview.jpg` | 4x4 sheet of auto-labels | exists |
 | live mode | `vision/live/live.py` window with score bar | screen-record during the rehearsal |
 
@@ -19,7 +21,7 @@ when they exist under the same names.
 |---|---|---|---|---|
 | 1 | 0 to 8 | Side by side: overlay video left, minimap right, wide court play | `out/pitch/analytics_side_by_side.mp4` | "The rig films. The software watches." |
 | 2 | 8 to 18 | Auto-labels, then the fine-tuned model on frames it never saw (Ken Burns over the sheet, left column then right) | `out/results_labels.jpg` | "300 frames labeled by AI, no human drew a box. 25 minutes later the model finds every player and the hoop." |
-| 3 | 18 to 30 | Overlay video full frame, a possession with ids and jersey numbers visible | `out/overlay.mp4`, pick the window with the wide court | "Every player tracked, numbers read off the jerseys." |
+| 3 | 18 to 30 | Overlay video full frame, a possession with ids and jersey numbers visible; optionally cut to 6 s of `court_lines_10s.mp4` (camera pans, court lines stay on the floor) | `out/overlay.mp4` (wide-court window), `out/pitch/court_lines_10s.mp4` | "Every player tracked, numbers read off the jerseys. The court model follows the camera." |
 | 4 | 30 to 42 | Dashboard screen recording: shot chart, then the per-player table | `out/dashboard.html` in a browser, 1920x1080 window | "Shots, made and missed, per player. The table a coach never had for a Landesliga game." |
 | 5 | 42 to 55 | Live mode: score bar, a made shot flashes, a hotkey veto | screen recording of `vision/live/live.py` | "Live, the score keeps itself. One key to veto." |
 | 6 | 55 to 60 | Back to the rig following the ball (Malek's footage) | phone footage | "One tripod. One phone. The whole game, filmed, tracked, scored." |
@@ -83,6 +85,17 @@ $FF -hide_banner -y -f concat -safe 0 -i out/pitch/concat.txt -c:v libx264 -pres
 Screen recordings (dashboard and live mode) come from macOS: Shift+Cmd+5,
 record a 1920x1080 browser window, then trim with
 `$FF -ss 3 -t 12 -i recording.mov -vf scale=1920:1080,format=yuv420p -r 25 -an out/pitch/dashboard_12s.mp4`.
+
+## SHOOT LIST for Sami's phone (landscape, 8 to 10 s each, no zoom, phone held still or on a second tripod)
+
+| # | Clip | Framing | What must be visible |
+|---|---|---|---|
+| 1 | Rig follows the ball, wide | 3 to 4 m from the tripod, tripod and the walking player in frame, ball carried left to right and back | the camera head turning with the ball, the whole tripod |
+| 2 | Rig follows the ball, close on the servo | 30 cm from the printed clamp, phone above the servo, shallow angle | the fork arm pushing the pan handle, the servo moving, the printed part |
+| 3 | Phone screen with the live overlay | over the shoulder, the phone on the rig fills two thirds of the frame, the hall behind it | score bar, boxes on the players, the 2D panel; press 1 then z during the clip so the "+2" flash is on film |
+| 4 | The printed parts | on a table, both parts next to the servo and an Arduino, slow 10 s orbit by hand | the clamp, the fork arm, the layer lines (say "printed this morning") |
+
+Sound: the servo noise in clip 2 is the hook of the whole video, do not talk over it. Lock exposure on the phone (tap and hold) so the gym lights do not pump. Deliver the four clips to `out/pitch/phone/` by AirDrop; the analytics segment `out/pitch/analytics_segment.mp4` (about 41 s) is already cut and sits between clip 3 and the end.
 
 ## Fallbacks
 

@@ -1,0 +1,57 @@
+{
+ "clip": "data/clips/game10.mp4",
+ "source": "Sami's QA verdicts out/qa/verdicts_game10.json (reviewed 2026-08-28 12:20 UTC). Shots anchored by time via out/events.json (only shooter_ok = true, so the boxed track is the shooter); cards anchored by frame + box because ids change per TRACK run",
+ "shots": [
+  {
+   "t": 117.56,
+   "team": 0,
+   "number": 9,
+   "label": "blue #9 misses at 117.6 s",
+   "disputed": "Sami entered 9, the boxed track 2075 shows blue #24 on 4 of 6 crops (116-122 s); waiting for a re-check"
+  },
+  {
+   "t": 153.28,
+   "team": 0,
+   "number": 44,
+   "label": "blue #44 scores at 153.3 s"
+  },
+  {
+   "t": 315.84,
+   "team": 1,
+   "number": 4,
+   "label": "black #4 misses at 315.8 s"
+  },
+  {
+   "t": 366.0,
+   "team": 1,
+   "number": 12,
+   "label": "#12 scores at 366 s (crops show red 12 on black; Sami's team 0 was the prefilled event team)"
+  }
+ ],
+ "players": [
+  {
+   "label": "black #9, long track mid game",
+   "frame": 12498,
+   "box": [
+    545,
+    461,
+    646,
+    711
+   ],
+   "team": 1,
+   "number": 9
+  },
+  {
+   "label": "black #77",
+   "frame": 7534,
+   "box": [
+    901,
+    563,
+    1077,
+    916
+   ],
+   "team": 1,
+   "number": 77
+  }
+ ]
+}

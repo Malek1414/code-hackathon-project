@@ -56,7 +56,9 @@ Hard rules:
  "hoops": [{"bbox": [x1,y1,x2,y2]}]}
 ```
 `foot` = bottom-center of bbox in pixels (the point COURT projects). `team` is
-0/1 by jersey color, `-1` unknown. `ball` may be `null`. Optional per line
+0/1 by jersey color, `-1` unknown. `ball` may be `null`, or (from dev60 v5 / live on) a
+Kalman coasting point `{"bbox", "center", "conf": 0, "predicted": true}` for up to 0.5 s,
+which consumers must not treat as a detection. Optional per line
 (added 13:00): `"others": [{"bbox": [...], "cls": "referee"|"person"}]` = referee
 boxes and dropped person boxes (spectators, off-court), used by PRIVACY's blur.
 
@@ -118,6 +120,11 @@ a one-time Grounding DINO hoop box.
 - overlay: score bar (team A : team B, running clock), shot flash on a made basket,
   per-team FGA/FGM after a configurable interval; hotkeys `1`/`2` = +2 for team A/B,
   `3`/`4` = +3, `z` = undo (auto-with-veto: the system calls baskets, the human corrects).
+- **servo link (added 14:30, Sami):** `--serial <port>` sends Malek's `A<angle>\n` protocol
+  (115200, 40..140, centre 90) to the Arduino running `software/servo_pan/servo_pan.ino`,
+  control law from `software/pan_control.py` (KP 0.06 deg/px, deadband 25 px, EMA 0.35,
+  `--invert-pan`), max 20 commands/s, steer on Kalman prediction while coasting, hold then
+  return to 90 after 3 s lost; `--dry-serial` prints the commands. Port: `ls /dev/cu.usb*`.
 - outputs: OpenCV preview window + MJPEG at `http://127.0.0.1:8501/stream` (for OBS or
   a phone), and if env `FOLLOWCAM_RTMP_URL` is set (from `.env`, never in code or git)
   an ffmpeg subprocess (`imageio_ffmpeg`) pushes the rendered frames as H.264/FLV to
@@ -144,6 +151,39 @@ may run any time but at most one heavy one at a time. Before starting any job th
 loads a model: `ps -axo pid,command | grep .venv/bin/python` and if another model
 job is running, wait or ask ORCH.
 
+## Broadcast package "Big Ball Baller" (added 14:35, Sami)
+
+Product name for the broadcast layer: **Big Ball Baller** (BBB). Deliverables in `broadcast/`,
+spec for Malek's Swift app in `docs/BROADCAST.md`. Owners: FRONTEND = widget designs + start
+menu, COURT = heat map + end-of-game summary renderers, STATS/LIVE = `live_state.json` +
+compositing/timing in `live.py` (after the servo link), MONITOR/RISK = `docs/BROADCAST.md`.
+
+### `out/live_state.json` (LIVE writes every 1 s, also served at `127.0.0.1:8501/state.json`)
+```json
+{"brand": "Big Ball Baller", "clip_or_source": "...", "t": 312.4, "period": 1, "clock": "05:12",
+ "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21},
+           {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}],
+ "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}],
+ "last_event": {"t": 310.2, "type": "made"|"miss"|"manual", "team": 0, "player_key": "A5", "points": 2},
+ "pan_deg": 97, "camera": "ok"|"no-frame"}
+```
+Team names and colors come from the start menu (`--team-a/--team-b/--color-a/--color-b` or the
+menu json `broadcast/config.json`), never guessed.
+
+### Widgets (PNG with alpha on a 1920x1080 canvas, sources as HTML/SVG in `broadcast/widgets/`)
+| id | where | when (LIVE timing rule) |
+|---|---|---|
+| `score_bug` | top centre, 520x88 | always |
+| `made_flash` | over the score bug | 1.5 s after a made basket (auto or manual) |
+| `player_card` | lower left, 480x160 (widened 14:58 so #55 and 10/12 FG, 100% fit): number, name/key, PTS, FGM/FGA, FG% | 3 s after a made basket by that player; and the top scorer of each team every 3 min |
+| `team_overview` | centre, 900x420: both teams score, FG%, possessions, top scorer | every 5 min for 6 s, and on `--timeout` hotkey `t` |
+| `lower_third` | bottom, 1920x120: "Big Ball Baller" brand + game title | first 10 s and on demand hotkey `b` |
+| `end_summary` | full frame 1920x1080: efficiency table (pts, FGA, FGM, FG%, possession share) per player and team | on hotkey `e` or end of file |
+| `heat_map` | full frame or right panel: position density per team on the court (from tracks + calibration), plus shot chart made/missed | with `end_summary`, page 2 |
+
+Design: dark glass panels, team color as the only accent per team, BBB wordmark, no emojis,
+no dashes as bullets, large type readable on a phone stream (min 28 px at 1080p).
+
 ## Milestones and deadlines
 
 | Time | LABEL | TRACK | STATS | COURT |
@@ -162,6 +202,29 @@ the phone camera (Continuity Camera index) on the tripod rig.
 Fallbacks: no `best.pt` by 13:30 → COCO weights stay. Ball too unreliable for
 shots → shots from hoop-zone + player proximity only, flagged "unconfirmed".
 Panning camera → calibrate on 2–3 keyframes and interpolate H by time.
+
+## Freeze sequence (13:30 → 14:30, written 13:22)
+
+| When | Who | What |
+|---|---|---|
+| ~13:32 | TRACK | game10 published (out/game10_v1 archive), consumer lines sent, then dev60 v4 (~5 min) |
+| 13:32 → 13:45 | COURT, NUMBERS, STATS, QA, FRONTEND | game10: propagate + minimap_game10, identities (long tracks first), events/stats, shot videos + sheets, dashboard rebuild on game10 |
+| 13:45 → 14:00 | STATS/LIVE | live window test from file, then phone camera (`--source auto`), hotkeys; RISK second pass 13:40 |
+| 14:00 → 14:15 | PITCH (LABEL), DECK (FRONTEND) | side-by-side video from game10 overlay + minimap, slides numbers from game10 events/stats, deck screenshots |
+| 14:15 | DOCS (LABEL) | refresh VISION.md, README section, PR body with game10 numbers |
+| 14:30 | ORCH | **FREEZE**: `make demo CLIP=data/clips/game10.mp4` must pass from a clean state, PR body final, all model jobs killed at 15:50 for the live demo |
+
+Decision 15:00: contract `out/tracks.jsonl`, `overlay.mp4`, `minimap.mp4` = game10_v2 (ball v2, measured
+better against the hand labels); contract `out/events.json`, `stats.json` = game10 v1 shot list
+(human-verified: 24 attempts, 10 made) until Sami verifies v2's 10 new attempts; v2 list kept as
+`out/events_game10_v2.json`. Archives: `out/game10/` (v1), `out/game10_v2/`, `out/dev60_v2..v5/`.
+
+## Session directory (28.08., for SendMessage)
+
+ORCH samimagdouli-61 · LABEL/PITCH/PRIVACY/DOCS/RIG samimagdouli-14 · TRACK samimagdouli-ac ·
+STATS/LIVE samimagdouli-94 · COURT samimagdouli-25 · MONITOR/PIPELINE/RISK samimagdouli-aa ·
+FRONTEND/DECK samimagdouli-6b · QA samimagdouli-52 · NUMBERS samimagdouli-6d.
+Contract paths in `out/` = game10 from 13:38 on; dev60 runs live in `out/dev60_vN/` only.
 
 ## Reporting
 On every milestone, and on any blocker >10 min:

@@ -69,6 +69,7 @@ class Tracker:
                  conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.5,
                  ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
                  hoop_min_streak: int = 3, crop_px: int = 640, crop_after_gap: int = 2,
+                 ball_blacklist_rel: list | None = None,
                  tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
@@ -113,7 +114,10 @@ class Tracker:
                      weights_ballhoop, ball_imgsz, self.ball_model.names)
 
         self.teams = TeamClassifier(team_mode)
-        self.gate = BallGate()
+        seed = [np.asarray(b, dtype=np.float32) for b in (ball_blacklist_rel or [])]
+        self.gate = BallGate(blacklist_rel=seed)
+        if seed:
+            log.info("ball blacklist seeded with %d hoop-relative fixture offsets", len(seed))
         self.last_hoop: list[float] | None = None
         self.last_hoop_frame = -10**9
         self._auto_index = 0
@@ -196,7 +200,7 @@ class Tracker:
         return persons, balls, hoops
 
     def _crop_center(self, boxes) -> tuple[float, float] | None:
-        pred = self.gate.predict(self.gate.gap)
+        pred = self.gate.predict()
         if pred is not None:
             return float(pred[0]), float(pred[1])
         lk = self.gate.last_known
@@ -307,23 +311,31 @@ class Tracker:
         boxes = [p["bbox"] for p in players]
         self.gate.begin_step(self.last_hoop)
         picked = self.gate.pick(balls, self.last_hoop, boxes)
-        if picked is None and not self.single and self.gate.gap >= self.crop_after_gap:
+        if (picked is None or picked[2]) and not self.single \
+                and self.gate.misses + (1 if picked is None else 0) >= self.crop_after_gap:
             # Small-object trick: the ball model again on a native-resolution crop
             # around where the ball should be, or around the nearest player's chest.
             extra = self._crop_redetect(frame, boxes)
             if extra:
-                picked = self.gate.pick(extra, self.last_hoop, boxes)
-                self.crop_hits += picked is not None
+                again = self.gate.pick(extra, self.last_hoop, boxes)
+                if again is not None and not again[2]:
+                    if picked is not None and picked[2]:
+                        self.gate.misses = max(self.gate.misses - 1, 0)  # coast step undone by a hit
+                        self.gate.coasted -= 1
+                    picked = again
+                    self.crop_hits += 1
         self.last_rejects = self.gate.rejects
         if picked:
-            bconf, b = picked
+            bconf, b, predicted = picked
             b = _round(b)
             ball = {"bbox": b, "center": [round((b[0] + b[2]) / 2, 1), round((b[1] + b[3]) / 2, 1)],
                     "conf": round(bconf, 3)}
+            if predicted:
+                ball["predicted"] = True
 
         st = self.stats
         st["frames"] += 1
-        st["ball_frames"] += ball is not None
+        st["ball_frames"] += ball is not None and not ball.get("predicted")
         st["hoop_frames"] += bool(hoop_list)
         st["player_dets"] += len(players)
         st["ids"].update(p["id"] for p in players)

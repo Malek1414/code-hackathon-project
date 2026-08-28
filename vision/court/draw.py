@@ -71,6 +71,6 @@ def court_polygon_px(cal: Calibration, frame_index: int | None) -> np.ndarray | 
     return cal.court_polygon_px(frame_index)
 
 
-def on_court_px(cal: Calibration, frame_index: int | None, points_px, tolerance_m: float = 1.0) -> np.ndarray:
-    """Bool per pixel point: inside the court (with a metre of tolerance for the line itself)."""
+def on_court_px(cal: Calibration, frame_index: int | None, points_px, tolerance_m: float = 0.5) -> np.ndarray:
+    """Bool per pixel point: inside the court plus 0.5 m (a foot on the line counts, the bench does not)."""
     return cal.on_court(cal.project(frame_index, points_px), tolerance_m)

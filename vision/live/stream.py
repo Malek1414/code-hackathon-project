@@ -26,6 +26,7 @@ class MjpegServer:
         self._cond = threading.Condition()
         self._seq = 0
         self._server: ThreadingHTTPServer | None = None
+        self.state_json: bytes = b"{}"  # Big Ball Baller live state, served at /state.json
 
     def start(self) -> None:
         outer = self
@@ -53,6 +54,15 @@ class MjpegServer:
                             self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError):
                         return
+                elif self.path.startswith("/state.json"):
+                    body = outer.state_json
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                 elif self.path in ("/", "/index.html"):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")

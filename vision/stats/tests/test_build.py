@@ -161,3 +161,39 @@ def test_identities_mtime_stamp(tmp_path):
     assert identities_run_matches(ident, tracks) is False
     ident.write_text(json.dumps({"players": []}))
     assert identities_run_matches(ident, tracks) is None
+
+
+def test_find_calib_prefers_the_clip_file_and_checks_the_contract_copy(tmp_path):
+    from vision.stats.build import find_calib
+
+    (tmp_path / "court_calib.json").write_text(json.dumps({"clip": "data/clips/game10.mp4", "H_px_to_m": []}))
+    assert find_calib("data/clips/dev60.mp4", tmp_path) is None  # contract copy is for another clip
+    assert find_calib("data/clips/game10.mp4", tmp_path).name == "court_calib.json"
+    (tmp_path / "court_calib_dev60.json").write_text(json.dumps({"clip": "data/clips/dev60.mp4", "H_px_to_m": []}))
+    assert find_calib("data/clips/dev60.mp4", tmp_path).name == "court_calib_dev60.json"
+    assert find_calib("data/clips/dev60.mp4", tmp_path, str(tmp_path / "court_calib.json")).name == "court_calib.json"
+
+
+def test_fallback_distance_skips_uncertain_frames():
+    frames = synthetic_scenario("pass", duration_s=1.0)
+    for n, fr in enumerate(frames):
+        p = fr.players[0]
+        fr.players[0] = type(p)(id=p.id, bbox=p.bbox, foot=(p.foot[0] + n, p.foot[1]), team=p.team)
+    calib = {"H_px_to_m": [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 1]], "uncertain_frames": [[10, 29]]}
+    d = distances_m(frames, calib)
+    assert abs(d[1] - 0.28) < 1e-6  # 49 steps minus the 20 inside the stretch and the step out of it
+
+
+def test_points_rule_two_or_estimated_three():
+    from vision.stats.court import shot_points
+
+    calib = {"H_px_to_m": [[0.015, 0, 0], [0, 0.015, 0], [0, 0, 1]], "court_m": {"length": 28.0, "width": 15.0}}
+    assert shot_points(calib, 0, (100.0, 500.0), True) == (2, False)  # 1.5 m, 7.5 m: under the basket
+    assert shot_points(None, 0, (100.0, 500.0), True) == (2, False)  # no calibration: always 2
+    assert shot_points(calib, 0, (700.0, 375.0), True) == (3, True)  # 10.5 m, 5.6 m: 9.1 m from the basket
+    assert shot_points(calib, 0, (700.0, 375.0), False) == (0, False)
+    events, stats = build(synthetic_scenario("made"), fps=50, clip="x", calib=calib)
+    shot = events["shots"][0]
+    assert shot["points"] in (2, 3) and "three_estimated" in shot
+    team = next(t for t in stats["teams"] if t["team"] == 0)
+    assert team["score"] == shot["points"] and next(p for p in stats["players"] if p["id"] == 2)["pts"] == shot["points"]

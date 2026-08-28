@@ -248,7 +248,9 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
     out = np.full_like(C, np.nan)
     drift_px: dict[str, float] = {}
     report: list[dict] = []
-    corners = np.float64([[0, 0], [28, 0], [28, 15], [0, 15]])
+    # drift is measured on points that are actually in the picture (paint corners of both
+    # ends); court corners near the horizon would turn a 50 px error into thousands
+    probes = np.float64([[0, 5.05], [0, 9.95], [5.8, 5.05], [5.8, 9.95], [22.2, 5.05], [22.2, 9.95], [28, 5.05], [28, 9.95], [14, 7.5]])
     for seg_start, seg_end in segments:
         seg_keys = [k for k in keys if seg_start <= k < seg_end]
         report.append({"start": seg_start, "end": seg_end - 1, "keyframes": seg_keys})
@@ -270,8 +272,10 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
         # how far the forward chain is off when it reaches the next keyframe: the honest drift number
         for a, b in zip(seg_keys[:-1], seg_keys[1:]):
             est = carried(a, pos[b])
-            d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
-            mean = float(np.nanmean(d)) if np.isfinite(d).any() else None
+            truth = apply_h(keyframes[b], probes)
+            inside = np.isfinite(truth).all(axis=1) & (truth[:, 0] > 0) & (truth[:, 0] < 1920) & (truth[:, 1] > 0) & (truth[:, 1] < 1080)
+            d = np.linalg.norm(apply_h(est, probes) - truth, axis=1)[inside]
+            mean = float(np.nanmean(d)) if len(d) and np.isfinite(d).any() else None
             drift_px[f"{a}->{b}"] = round(mean, 1) if mean is not None else None
     return out, drift_px, report
 
@@ -308,10 +312,14 @@ def _match_h(kp_a, des_a, kp_b, des_b) -> tuple[np.ndarray | None, int, float]:
 
 
 def auto_anchors(clip: Path, frames: np.ndarray, keyframes: dict[int, np.ndarray], cuts: list[int],
-                 boxes: dict[int, np.ndarray], scale: float = 0.5, log=print) -> tuple[dict[int, np.ndarray], list[dict]]:
-    """One synthetic keyframe per segment that has no hand keyframe, found by matching a
-    frame of that segment directly against every hand keyframe image (same tripod, same
-    hall, so the static background relates any two wide shots by a homography)."""
+                 boxes: dict[int, np.ndarray], scale: float = 0.5, log=print, every: int = 100,
+                 keep_away: int = 40) -> tuple[dict[int, np.ndarray], list[dict]]:
+    """Synthetic keyframes found by matching frames directly against every hand keyframe
+    image (same tripod, same hall, so the static background relates any two wide shots by
+    a homography). One candidate every `every` frames in every segment, plus one near
+    each segment start and end; frames within `keep_away` of a hand keyframe are left to
+    the hand keyframe. Between anchors the optical-flow chain is blended, so chain drift
+    can only grow for `every` frames before the next direct match resets it."""
     cap = cv2.VideoCapture(str(clip))
     S = np.diag([scale, scale, 1.0])
     S_inv = np.linalg.inv(S)
@@ -335,33 +343,59 @@ def auto_anchors(clip: Path, frames: np.ndarray, keyframes: dict[int, np.ndarray
     bounds = sorted(set([int(frames[0])] + [c for c in cuts if frames[0] < c <= frames[-1]] + [int(frames[-1]) + 1]))
     anchors: dict[int, np.ndarray] = {}
     report: list[dict] = []
+    hand = sorted(keyframes)
     for a, b in zip(bounds[:-1], bounds[1:]):
-        if any(a <= k < b for k in keyframes):
-            continue
         length = b - a
-        cands = sorted({a + min(15, length // 3), a + length // 2, b - 1 - min(15, length // 3)})
-        cands = [c for c in cands if a <= c < b]
-        best = None
+        edge = min(15, max(length // 3, 1))
+        cands = {a + edge, b - 1 - edge, *range(a + edge, b - edge, every)}
+        cands = sorted(c for c in cands if a <= c < b and all(abs(c - k) > keep_away for k in hand))
+        found = []
         for cand in cands:
             grey, mask = read_small(cand)
             if grey is None:
                 continue
             kp, des = _sift_features(grey, mask)
+            best = None
             for k, (kp_r, des_r) in refs.items():
                 T, inl, ratio = _match_h(kp_r, des_r, kp, des)
                 if T is None or inl < AUTO_MIN_INLIERS or ratio < AUTO_MIN_RATIO:
                     continue
-                if best is None or inl > best[2]:
-                    best = (cand, k, inl, ratio, S_inv @ T @ S)
-        if best is None:
-            report.append({"start": a, "end": b - 1, "auto": None})
-            continue
-        cand, k, inl, ratio, T_full = best
-        anchors[cand] = _normalise(T_full @ keyframes[k])
-        report.append({"start": a, "end": b - 1, "auto": cand, "from_keyframe": k, "inliers": inl, "ratio": round(ratio, 2)})
-        log(f"  Segment {a}..{b - 1}: automatisch verankert über Frame {cand} an Keyframe {k} ({inl} Inlier, {ratio:.2f})")
+                if best is None or inl > best[1]:
+                    best = (k, inl, ratio, S_inv @ T @ S)
+            if best is None:
+                continue
+            k, inl, ratio, T_full = best
+            anchors[cand] = _normalise(T_full @ keyframes[k])
+            found.append({"frame": cand, "from_keyframe": k, "inliers": inl, "ratio": round(ratio, 2)})
+        seg_hand = [k for k in hand if a <= k < b]
+        report.append({"start": a, "end": b - 1, "hand": seg_hand, "auto": [f["frame"] for f in found], "matches": found})
+        if found or seg_hand:
+            log(f"  Segment {a}..{b - 1}: {len(seg_hand)} Hand-Keyframes, {len(found)} Auto-Anker"
+                + (f" ({min(f['inliers'] for f in found)} bis {max(f['inliers'] for f in found)} Inlier)" if found else ""))
     cap.release()
     return anchors, report
+
+
+UNCERTAIN_DRIFT_PX = 150.0
+
+
+def uncertain_ranges(drift: dict[str, float | None], threshold: float = UNCERTAIN_DRIFT_PX) -> list[list[int]]:
+    """Frame ranges between two anchors whose chained estimate missed the next anchor by
+    more than `threshold` px: positions inside are blended, but can be metres off."""
+    out = []
+    for key, px in drift.items():
+        if px is None or px <= threshold:
+            continue
+        a, b = (int(v) for v in key.split("->"))
+        out.append([a, b])
+    out.sort()
+    merged: list[list[int]] = []
+    for a, b in out:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged
 
 
 def write_cuts(clip: Path, frames: np.ndarray, cuts: list[int], threshold: float, out_dir: Path) -> Path:
@@ -423,7 +457,8 @@ def main(argv=None) -> int:
                     help="direkte Neuverankerung alle N Frames (0 = aus; bei geschnittenem Material aus lassen)")
     ap.add_argument("--no-cache", action="store_true", help="Kamerakette neu rechnen")
     ap.add_argument("--cut-threshold", type=float, default=CUT_THRESHOLD, help="Schnitt-Schwelle auf der ausgerichteten Differenz")
-    ap.add_argument("--no-auto", action="store_true", help="keine automatische Verankerung keyframeloser Segmente")
+    ap.add_argument("--no-auto", action="store_true", help="keine automatische Verankerung")
+    ap.add_argument("--anchor-every", type=int, default=100, help="Abstand der Auto-Anker in Frames")
     ap.add_argument("--chain-only", action="store_true", help="nur die Kamerakette cachen, keine Keyframes nötig")
     ap.add_argument("--preview", action="store_true", help="out/court_propagate_preview.mp4 mit Linien-Overlay schreiben")
     ap.add_argument("--preview-every", type=int, default=5)
@@ -472,10 +507,10 @@ def main(argv=None) -> int:
     if args.chain_only:
         print("nur Kamerakette berechnet.")
         return 0
-    anchors, auto_report = ({}, []) if args.no_auto else auto_anchors(args.clip, frames, keyframes, cuts, boxes, scale=args.scale)
+    anchors, auto_report = ({}, []) if args.no_auto else auto_anchors(args.clip, frames, keyframes, cuts, boxes, scale=args.scale, every=args.anchor_every)
     if not args.no_auto:
-        missing = [r for r in auto_report if r["auto"] is None]
-        print(f"{len(anchors)} Segmente automatisch verankert, {len(missing)} ohne Treffer (Nahaufnahmen?)")
+        missing = [r for r in auto_report if not r["auto"] and not r["hand"]]
+        print(f"{len(anchors)} Auto-Anker gesetzt, {len(missing)} Segmente ohne Treffer (Nahaufnahmen?)")
     H_m_to_px, drift, segments = per_frame_homographies(frames, C, {**keyframes, **anchors}, cuts)
     auto_frames = set(anchors)
     for seg in segments:
@@ -495,6 +530,7 @@ def main(argv=None) -> int:
     np.savez_compressed(args.out, frames=frames, H_m_to_px=H_m_to_px, H_px_to_m=H_px_to_m)
 
     data["per_frame"] = rel(args.out)
+    data["uncertain_frames"] = uncertain_ranges(drift)
     data["propagation"] = {"frames": int(len(frames)), "stride": args.stride, "scale": args.scale,
                            "failed_transitions": stats["failed"], "reanchors": stats["reanchors"],
                            "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),

@@ -20,11 +20,15 @@ def _identities():
     d = json.load(open(path))
     if d.get("clip") != LABELS["clip"]:
         pytest.skip(f"identities are for {d.get('clip')}, labels for {LABELS['clip']}")
+    tracks = ROOT / d.get("tracks_path", "out/tracks.jsonl")
+    if not tracks.exists() or round(tracks.stat().st_mtime, 3) != d.get("tracks_mtime"):
+        pytest.skip("out/tracks.jsonl is not the run identities.json was built from")
     return d
 
 
 def _id_at(frame: int, box: list[int]) -> int | None:
-    path = ROOT / "out" / "tracks.jsonl"
+    d = json.load(open(ROOT / "out" / "identities.json"))
+    path = ROOT / d.get("tracks_path", "out/tracks.jsonl")
     with open(path) as fh:
         for line in fh:
             d = json.loads(line)

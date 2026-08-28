@@ -11,17 +11,26 @@ only; two processes may share camera 0.
 2. 15:50 Kill every model job so the GPU is free for the demo:
    `ps -axo pid,command | grep .venv/bin/python`, then `kill` each vision/track,
    vision/label, run_all or smoke_test process (monitor, numbers.watch and
-   qa.watch are CPU only and may stay). The rig tracker runs on HSV
-   (`software/ball_tracker.py`) or `--device cpu` during the live demo, never a
-   second MPS model.
+   qa.watch are CPU only and may stay). Rig tracker: with every other model job
+   killed, start `software/ball_tracker_yolo.py --device mps` and read the fps
+   on its window once (target 20 fps; not measured yet, the GPU was never free
+   for it). Below 10 fps or any other MPS job alive: `--device cpu` (measured
+   6 fps under load) or Malek's HSV `software/ball_tracker.py`. Leave
+   `--hsv-fallback` off unless the ball is the only orange thing in view (the
+   mask fires on skin).
 3. 15:55 In Terminal.app (not another terminal, camera permission), repo root:
    `.venv/bin/python -m vision.live.live --list-sources` and pick the index
-   that reports frames. Expect 0 = laptop camera; the phone is 1 only if listed.
+   that reports frames. On this Mac the phone is `--source 1` (measured in the
+   14:10 live test: 1920x1080 at 30 fps in, 13 fps rendered under heavy load);
+   0 is the laptop camera, and an automatic choice would take the Mac camera.
 4. 15:59 Start live mode, window on the projector screen:
-   `.venv/bin/python -m vision.live.live --source <index> --minimap panel`
+   `.venv/bin/python -m vision.live.live --source 1 --minimap panel`
+   First action once the window is up, before the demo: press 1 once and see
+   "Team A +2" on the bar, then z to undo it. That proves focus and hotkeys.
    Camera dead: `--source 0` (laptop camera, verified). No camera at all:
-   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60/tracks.jsonl --minimap panel`
-   (out/dev60/tracks.jsonl matches dev60; out/tracks.jsonl is whatever TRACK ran last).
+   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v5/tracks.jsonl --minimap panel`
+   (out/dev60_v5: Kalman ball, the 57 s shot arc is real, no fixture ball; second
+   fallback out/dev60_v2/tracks.jsonl; out/tracks.jsonl is whatever TRACK ran last).
 5. Optional stream: `FOLLOWCAM_RTMP_URL` in `.env` (never on screen); MJPEG at
    http://127.0.0.1:8501/stream is loopback only, it does not reach a phone.
 6. Hotkeys work only with the OpenCV window focused (click it once): 1 = +2 team A,
