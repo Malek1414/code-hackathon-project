@@ -29,6 +29,7 @@ from .common import (
     fit_width,
     fmt_t,
     put_text,
+    qa_lock,
     read_json,
     read_tracks,
     resolve_clip,
@@ -117,4 +118,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    with qa_lock():
+        raise SystemExit(main())

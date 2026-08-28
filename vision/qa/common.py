@@ -7,7 +7,9 @@ imports TRACK's module while it is being edited).
 from __future__ import annotations
 
 import bisect
+import fcntl
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -208,3 +210,16 @@ class Sample:
     frame: int
     t: float
     line: dict
+
+
+@contextmanager
+def qa_lock(out: Path = QA_DIR):
+    """One QA writer at a time per output dir (the watcher and a manual run
+    would otherwise delete each other's half-written files)."""
+    out.mkdir(parents=True, exist_ok=True)
+    with (out / ".lock").open("w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)

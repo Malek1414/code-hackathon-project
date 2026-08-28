@@ -20,6 +20,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .clips import render_clip
 from .common import (
     ROOT,
     BALL_COLOR,
@@ -36,6 +37,7 @@ from .common import (
     fit_height,
     fmt_t,
     put_text,
+    qa_lock,
     read_json,
     read_tracks,
     resolve_clip,
@@ -124,10 +126,22 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
             f"{'MADE' if s['made'] else 'MISS'}  "
             + (f"shooter #{s['player_id']}" if s["player_id"] is not None else "shooter unknown")
         )
+        if s.get("video_half"):
+            video = f"""
+  <video controls muted loop autoplay playsinline preload="metadata" src="{s['video_half']}" data-normal="{s['video']}" data-half="{s['video_half']}"></video>
+  <div class="speed">
+    <button type="button" data-speed="half" class="on">half speed</button>
+    <button type="button" data-speed="normal">normal speed</button>
+    <span class="cap">{html.escape(s.get('video_caption', ''))}</span>
+  </div>"""
+        else:
+            video = f"""
+  <div class="cap">{html.escape(s.get('video_caption', 'no video'))}</div>"""
         rows.append(
             f"""
 <section class="shot" id="shot-{n}" data-n="{n}">
-  <h2>{html.escape(title)}</h2>
+  <h2>{html.escape(title)}</h2>{video}
+  <div class="cap">frame strip, -1.5 s to +1.0 s, frame-exact reference</div>
   <a href="{s['file']}" target="_blank"><img src="{s['file']}" alt="{html.escape(title)}" loading="lazy"></a>
   <div class="row">
     <label><input type="radio" name="v{n}" value="correct"> correct</label>
@@ -156,6 +170,11 @@ def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tra
   .shot {{ border-top: 1px solid #2c2c2c; padding: 16px 0 10px; }}
   .shot h2 {{ font-size: 16px; margin: 0 0 8px; font-weight: 600; }}
   .shot img {{ display: block; width: 100%; max-width: 1700px; height: auto; border-radius: 6px; }}
+  .shot video {{ display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }}
+  .speed {{ display: flex; gap: 8px; align-items: center; margin: 8px 0 14px; flex-wrap: wrap; }}
+  .speed button {{ font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid #444; background: #242424; color: #ddd; cursor: pointer; }}
+  .speed button.on {{ background: #3a3a3a; border-color: #777; color: #fff; }}
+  .cap {{ color: #9a9a9a; font-size: 13px; margin: 4px 0 6px; }}
   .row {{ display: flex; gap: 22px; align-items: center; margin-top: 10px; flex-wrap: wrap; }}
   .row label {{ cursor: pointer; user-select: none; padding: 6px 10px; border-radius: 6px; background: #242424; }}
   .row label:has(input:checked) {{ background: #3a3a3a; outline: 1px solid #666; }}
@@ -243,6 +262,29 @@ document.getElementById("download").onclick = () => {{
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }};
+document.querySelectorAll(".speed button").forEach(btn => {{
+  btn.onclick = () => {{
+    const wrap = btn.closest(".shot");
+    const v = wrap.querySelector("video");
+    const speed = btn.dataset.speed;
+    const next = v.dataset[speed];
+    if (!next || v.getAttribute("src") === next) return;
+    const ratio = v.duration ? v.currentTime / v.duration : 0;
+    v.setAttribute("src", next);
+    v.load();
+    v.addEventListener("loadedmetadata", () => {{ v.currentTime = ratio * v.duration; v.play().catch(() => {{}}); }}, {{ once: true }});
+    wrap.querySelectorAll(".speed button").forEach(b => b.classList.toggle("on", b === btn));
+  }};
+}});
+if ("IntersectionObserver" in window) {{
+  const io = new IntersectionObserver(entries => {{
+    for (const e of entries) {{
+      const v = e.target;
+      if (e.isIntersecting) v.play().catch(() => {{}}); else v.pause();
+    }}
+  }}, {{ threshold: 0.2 }});
+  document.querySelectorAll(".shot video").forEach(v => io.observe(v));
+}}
 restore();
 summary();
 </script>
@@ -274,15 +316,20 @@ def main(argv: list[str] | None = None) -> int:
     clip = resolve_clip(str(args.clip) if args.clip else None, (events or {}).get("clip"), meta.get("clip"))
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
-    for old in args.out.glob("shot_*.jpg"):
+    for old in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
         old.unlink()
     sheets = []
     for n, shot in enumerate(shots, 1):
         img, m = render_shot(n, shot, grab, index)
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
         save_jpg(args.out / m["file"], img)
+        try:
+            m.update(render_clip(n, m["t"], clip, args.out))
+        except RuntimeError as exc:
+            print(f"  shot {n}: no video ({exc})")
+            m.update({"video": None, "video_half": None, "video_source": None, "video_caption": f"video failed: {exc}"})
         sheets.append(m)
-        print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}")
+        print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
     grab.close()
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets}, indent=1))
@@ -292,4 +339,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    with qa_lock():
+        raise SystemExit(main())
