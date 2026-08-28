@@ -27,3 +27,12 @@ runs away from the ball). Protocol `A<angle>\n` at 115200, 40-140 deg, centre 90
 law KP 0.06 deg/px, deadband 25 px, EMA 0.35 (software/ball_tracker.py); <= 20 commands/s, only on >= 1 deg change;
 ball lost -> hold, after 3 s drift back to 90. Score bar shows `pan 97 deg`. Test without hardware: `--dry-serial`
 prints the commands.
+
+## Big Ball Baller (broadcast layer)
+Widgets from `broadcast/assets/<id>.png` (score_bug, made_flash, player_card, team_overview, lower_third, end_summary,
+heat_map); placeholders with the same geometry until FRONTEND delivers. Timing: score bug always, made flash 1.5 s,
+player card 3 s after a made basket (and top scorers every 3 min), team overview every 5 min for 6 s or hotkey `t`,
+lower third first 10 s or hotkey `b`, end summary + heat map on hotkey `e` or at the end of the file. `--widgets off`
+gives the plain score bar. Teams: `--team-a/--team-b/--color-a/--color-b` or `broadcast/config.json` (flags win),
+never guessed. State: `out/live_state.json` every second and `http://<bind>:8501/state.json` (`--bind 0.0.0.0` for
+a phone on the same Wi-Fi). Frame grabs for tests: `--snapshot-at 38.5:/tmp/card.jpg` (repeatable).
