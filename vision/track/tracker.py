@@ -69,7 +69,7 @@ class Tracker:
                  conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.5,
                  ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
                  hoop_min_streak: int = 3, crop_px: int = 640, crop_after_gap: int = 2,
-                 ball_blacklist_rel: list | None = None,
+                 ball_blacklist_rel: list | None = None, proc_fps: float = 25.0,
                  tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
@@ -115,7 +115,10 @@ class Tracker:
 
         self.teams = TeamClassifier(team_mode)
         seed = [np.asarray(b, dtype=np.float32) for b in (ball_blacklist_rel or [])]
-        self.gate = BallGate(blacklist_rel=seed)
+        # Ball physics are tuned at 25 processed fps (1080p50, stride 2): scale to the real rate.
+        self.gate_kw = {"gravity_px": 2.5 * (25.0 / proc_fps) ** 2,
+                        "coast_frames": max(3, round(0.5 * proc_fps))}
+        self.gate = BallGate(blacklist_rel=seed, **self.gate_kw)
         if seed:
             log.info("ball blacklist seeded with %d hoop-relative fixture offsets", len(seed))
         self.last_hoop: list[float] | None = None
@@ -143,7 +146,8 @@ class Tracker:
                 for t in pred.trackers:
                     t.reset()
         # pixel blacklist dies with the shot, the hoop-relative one (in hoop widths) carries over
-        self.gate = BallGate(counts=self.gate.counts, blacklist_rel=self.gate.blacklist_rel)
+        self.gate = BallGate(counts=self.gate.counts, blacklist_rel=self.gate.blacklist_rel,
+                             **self.gate_kw)
         self.last_hoop, self.last_hoop_frame = None, -10**9
         self.hoop_streak, self.hoop_pending = 0, None
         self.teams.reset_votes()
