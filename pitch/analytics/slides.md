@@ -34,7 +34,7 @@ The camera that follows the ball is the camera that keeps the stats.
 4. Projected feet onto a 2D court (homography, one click per court landmark) and
    rendered a minimap next to the video.
 5. Shot events from ball and hoop geometry, per-player FGA / FGM / FG% table.
-   {SHOTS_FOUND} = 24 shot attempts, 10 made, in the 10 minute game10 clip (Team A 4 of 12, Team B 6 of 12).
+   {SHOTS_FOUND} = 24 shot attempts, 10 made, in the 10 minute game10 clip (Team A 3 of 9, 6 points; Team B 7 of 15, 15 points).
    Human-checked by the coach: 22 of 23 called attempts were real (96 %),
    made or miss right in 16 of 22 (73 %), shooter's team right in 77 %.
 6. Live mode: same models on the phone stream at about 10 fps, running score bar,
@@ -70,7 +70,7 @@ analytics for coaches, and the scoreboard for the volunteer at the table.
 | Tracking speed | 0.56 s per frame at 1080p on MPS (yolo11s + ball model) | `out/track_summary.json` |
 | Live detection rate | about 10 fps | `vision/live/live.py` |
 | Shots found (dev 60 s) | 1 attempt, 0 made | `out/dev60_v2/` |
-| Shots found (game10, 10 min, frozen human-verified list) | 24 attempts, 10 made, Team A 4 of 12, Team B 6 of 12 | `out/events.json` (v1 tracks, human-verified) |
+| Shots found (game10, 10 min, frozen human-verified list) | 24 attempts, 10 made; Team A 3 of 9, 6 points; Team B 7 of 15, 15 points (one estimated three at 268.4 s) | `out/events.json` (v1 tracks, human-verified) |
 | Human check of the shots (Sami) | attempts precision 96 % (22 of 23), made/miss 73 % (16 of 22), shooter team 77 %, shooter person 40 % (6 of 15) | `out/qa/stats_eval_game10.json`, `out/qa/verdicts_game10.json` |
 | Possessions, players with distance, cuts handled (game10) | 235, 616, 48 | STATS |
 | Live mode on the phone | 1080p30 in, 14 fps overlay with detection under full load | LIVE test 14:10 |

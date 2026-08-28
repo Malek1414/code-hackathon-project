@@ -121,8 +121,10 @@ shot detector then finds 31 attempts instead of 24 (ball in 38 % of frames
 instead of 34 %), but on the human-verified set the verdicts are not better
 (made/miss 14 of 20 = 70 % vs 16 of 22 = 73 %, shooter team 70 % vs 77 %,
 STATS 14:57) and 10 of the 31 attempts are unverified, so the frozen,
-human-verified v1 list (24 attempts, 10 made, Team A 4 of 12, Team B 6 of 12)
-stays the reference for the pitch.
+human-verified v1 list (24 attempts, 10 made; with the identity-based team split and the points
+rule: Team A 3 of 9 for 6 points, Team B 7 of 15 for 15 points, one
+three-pointer beyond the arc estimated at 268.4 s) stays the reference for
+the pitch.
 
 ### 14:15 comparison (measured by TRACK, `best.pt` vs COCO weights)
 Setup (TRACK): `data/clips/dev60.mp4`, frames 900 to 3121, stride 4, 526

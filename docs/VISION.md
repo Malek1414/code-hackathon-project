@@ -133,7 +133,7 @@ Possession = nearest foot to the ball, shot = ball enters the hoop zone from
 above, made = ball seen below the rim within 0.5 s; bench players and
 spectators filtered unless `--no-court-filter`. Measured: 52 unit tests pass (3.6 s); 1
 shot attempt, 0 made, on the 60 s dev clip; on the full game10 (10 min) 24
-shot attempts, 10 made, Team A 4 of 12 and Team B 6 of 12 (frozen, human-verified list) (`out/game10/events.json`,
+shot attempts, 10 made, Team A 3 of 9 for 6 points and Team B 7 of 15 for 15 points, one three-pointer estimated at 268.4 s (frozen, human-verified list, identity-based team split) (`out/game10/events.json`,
 `out/game10/stats.json`, 14:00, not yet checked against a hand count).
 
 ## Dashboard (`vision/dashboard/build.py`, FRONTEND)

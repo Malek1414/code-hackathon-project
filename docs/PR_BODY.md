@@ -8,7 +8,7 @@ The analytics half of FollowCam: a clip in, labeled players / ball / hoop, ByteT
 | Detection, ByteTrack, team colors, overlay video | `vision/track/` | 0.08 s/frame alone on the M3; best.pt persons give 25 % fewer id switches than COCO |
 | Jersey numbers (EasyOCR, vote per track, merge ids into players) | `vision/numbers/` | runs; 1 of 75 tracks numbered on the last dev60 run |
 | Court calibration, camera propagation across pans and cuts, minimap | `vision/court/` | game10 calibrated, court lines stay on the floor through zoom and pan (`out/pitch/court_lines_10s.mp4`) |
-| Possession, shot events, per-player FG stats | `vision/stats/` | 52 unit tests pass; game10 (10 min): 24 attempts, 10 made, Team A 4 of 12, Team B 6 of 12 (human-verified) |
+| Possession, shot events, per-player FG stats | `vision/stats/` | 52 unit tests pass; game10 (10 min): 24 attempts, 10 made, Team A 3 of 9 (6 points), Team B 7 of 15 (15 points, one estimated three at 268.4 s), human-verified |
 | Coach dashboard (one HTML) | `vision/dashboard/` | renders real data in 0.23 s |
 | Live mode: camera in, score bar, hotkey veto, 2D panel, MJPEG, RTMP | `vision/live/` | replay and RTMP tested locally; laptop camera works, iPhone gave no frames at 12:50 |
 | Head blur from tracks, retention dry run | `vision/privacy/` | 11,579 heads blurred on the 60 s overlay |
