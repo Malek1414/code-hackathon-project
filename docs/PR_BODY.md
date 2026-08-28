@@ -31,11 +31,11 @@ Val on 45 held-out frames: mAP50 0.723 / mAP50-95 0.588, per class above. TRACK 
 
 15,001 frames in 2088 s (0.139 s/frame next to other jobs), 7.8 players per frame, ball in 34 % of frames, hoop in 80 %, 2850 track ids; 24 shot attempts, 10 made, 235 possessions, 616 players with distance, 48 camera cuts handled.
 
-Human check by Sami of every called shot (`out/qa/stats_eval_game10.json`, `out/qa/verdicts_game10.json`): attempt precision 0.96 (22 of 23 real, 0 uncalled), made/miss 0.73 (16 of 22; 4 errors are rim-outs called makes), shooter team 0.77 (17 of 22), shooter person 0.40 (6 of 15 judged; 7 attributions changed after a fix, not re-judged). Live mode: phone 1080p30 in, 14 fps overlay with detection under full load.
+Human check by Sami of every called shot (`out/qa/stats_eval_game10.json`, `out/qa/verdicts_game10.json`): attempt precision 0.96 (22 of 23 real, 0 uncalled), made/miss 0.73 (16 of 22; 4 errors are rim-outs called makes), shooter team 0.77 (17 of 22), shooter person 0.40 (6 of 15 judged; 7 attributions changed after a fix, not re-judged). Live mode: phone 1080p30 in, 14 fps overlay with detection under full load. Ball v2 inside TRACK on the full game10 (QA vs the 120 hand labels): ball recall 0.31 to 0.53, precision 0.62 to 0.96, false balls 17 to 2; the shot detector then sees 31 attempts, 7 of them not yet human-checked.
 
 ## Unverified
 
-Jersey-number recall on game10 (the 40 % shooter identity above is the closest measure). The phone camera on the rig on stage (tested on the desk only). Hotkeys on a real keyboard during a live game. The ball fine-tune inside TRACK on game10 (measured on dev60 and on the 120 labeled frames only; re-evaluation pending). The rig tracker on a free GPU (20 fps target, CPU measured at 6 fps under load).
+Jersey-number recall on game10 (the 40 % shooter identity above is the closest measure). The phone camera on the rig on stage (tested on the desk only). Hotkeys on a real keyboard during a live game. The 7 additional shot attempts found with ball v2 (not yet human-checked). The rig tracker on a free GPU (20 fps target, CPU measured at 6 fps under load).
 
 ## Known limits
 

@@ -114,6 +114,12 @@ minutes on a laptop cut false balls on wall objects by a factor of 4 to 5
 and lifted recall by 10 points; the remaining misses are the ball in a
 player's hands.
 
+Inside TRACK on the full game10 (game10_v2, ball v2 as `--ball-weights`,
+measured by QA against Sami's 120 hand labels, 14:50): ball recall 31 to 53
+percent, precision 62 to 96 percent, frames with a false ball 17 to 2. The
+shot detector then finds 31 attempts instead of 24; the 7 new ones await
+Sami's check, so the pitch keeps "24 attempts, 10 made" until confirmed.
+
 ### 14:15 comparison (measured by TRACK, `best.pt` vs COCO weights)
 Setup (TRACK): `data/clips/dev60.mp4`, frames 900 to 3121, stride 4, 526
 frames, 40 sample frames per config in `out/compare/`.
