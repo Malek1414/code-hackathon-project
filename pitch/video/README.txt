@@ -16,3 +16,7 @@ made or miss verdict 73 percent (docs/RESULTS.md).
 
 05_problem_14s.mp4     14.0 s   Raw game10 footage, 143 to 157 s (no boxes), 1280x720, 25 fps, no audio.
                                 Loops muted under the red Problem slide of pitch/deck/index.html.
+
+06_combined_60s.mp4    59.0 s   Prototype 10 s, three 5.5 s, dunk 6.2 s (real dunk at 31.85 s of the phone clip, half speed
+                                around the rim, top of the portrait frame, DUNK animation rendered on it), then the full
+                                37 s analytics segment. Replaces 03_combined_40s on deck slide 5.
