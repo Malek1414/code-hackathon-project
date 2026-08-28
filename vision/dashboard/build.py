@@ -1,18 +1,22 @@
-"""Build out/dashboard.html: one self-contained page, no external requests.
+"""Build out/dashboard.html: the coach-facing report, one self-contained page.
 
     .venv/bin/python vision/dashboard/build.py [--events out/events.json] [--stats out/stats.json]
-        [--calib out/court_calib.json] [--minimap minimap.mp4] [--overlay overlay.mp4] [--out out/dashboard.html]
+        [--calib out/court_calib.json] [--tracks out/tracks.jsonl] [--minimap minimap.mp4]
+        [--overlay overlay.mp4] [--out out/dashboard.html]
 
-Shot chart on a top-down court (shooter_foot projected to metres with the COURT
-helper), per-player and per-team table from stats.json, minimap video embedded
-by relative path (the html and the mp4 both live in out/). Missing inputs
-degrade to an empty section with a note instead of failing, so the page can be
-rebuilt at every milestone.
+No external requests, no build step: CSS and JS are inlined, the videos are
+referenced by relative path (html and mp4 both live in out/). Python collects
+the numbers (score, timeline, shot positions in metres, player table), the
+inline script draws them. Every input may be missing; the section then shows a
+short note instead of failing, so the page can be rebuilt at every milestone.
+
+Owned by the FRONTEND session. Court helpers come from vision/court (COURT).
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import html
 import json
 import sys
@@ -25,8 +29,22 @@ from vision.court.geometry import FIBA, polylines  # noqa: E402
 from vision.court.project import Calibration, load_calibration  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-TEAM_NAME = {0: "Team A", 1: "Team B", -1: "Unknown"}
-TEAM_COLOR = {0: "#3B82F6", 1: "#EF4444", -1: "#9CA3AF"}
+
+# Jersey colours of this game (see vision/track/teams.py): Moabit plays blue,
+# the Wiesel black with red panels. Team ids follow the tracks.jsonl contract.
+TEAMS = {
+    0: {"id": 0, "name": "BC Lions Moabit", "short": "Lions", "color": "#4C8DFF", "ink": "#0B1B3A"},
+    1: {"id": 1, "name": "Weddinger Wiesel", "short": "Wiesel", "color": "#E5484D", "ink": "#2A0A0C"},
+    -1: {"id": -1, "name": "Unassigned", "short": "Unassigned", "color": "#8A93A6", "ink": "#1A1D24"},
+}
+POINTS_PER_MADE = 2  # events.json carries no two/three point split yet; a `points` key per shot wins if present
+
+METHOD = [
+    ("Auto-labeling", "Grounding DINO labels players, ball, hoop and referees on frames of the game, no hand labeling."),
+    ("Detector", "YOLO11 fine-tuned on this Landesliga footage, run at full resolution so the ball survives."),
+    ("Tracking", "ByteTrack keeps player ids across frames, teams are read from the jersey colour."),
+    ("Court model", "A homography maps every foot position to the 2D court. Shots, distances and the minimap live there."),
+]
 
 
 def load_json(path: Path | None) -> dict | None:
@@ -35,232 +53,396 @@ def load_json(path: Path | None) -> dict | None:
     return None
 
 
-# --- court svg ---------------------------------------------------------------
-
-SCALE = 30.0  # svg units per metre
-MARGIN = 1.0
+# --- data ---------------------------------------------------------------------
 
 
-def court_svg(shots: list[dict], cal: Calibration | None) -> str:
-    w = (FIBA.length_m + 2 * MARGIN) * SCALE
-    h = (FIBA.width_m + 2 * MARGIN) * SCALE
-
-    def P(x, y):
-        return f"{(x + MARGIN) * SCALE:.1f},{h - (y + MARGIN) * SCALE:.1f}"
-
-    parts = [f'<svg class="court" viewBox="0 0 {w:.0f} {h:.0f}" role="img" aria-label="Shot chart">']
-    parts.append(f'<rect x="{MARGIN * SCALE}" y="{MARGIN * SCALE}" width="{FIBA.length_m * SCALE}" '
-                 f'height="{FIBA.width_m * SCALE}" class="floor"/>')
-    for poly in polylines(FIBA):
-        parts.append('<polyline class="mark" points="' + " ".join(P(x, y) for x, y in poly) + '"/>')
-    for hx, hy in FIBA.hoops:
-        cx, cy = P(hx, hy).split(",")
-        parts.append(f'<circle cx="{cx}" cy="{cy}" r="{0.225 * SCALE:.1f}" class="hoop"/>')
-
-    placed = 0
-    for s in shots:
-        xy = s.get("court_m")
-        if xy is None:
-            continue
-        cx, cy = P(xy[0], xy[1]).split(",")
-        team = int(s.get("team", -1))
-        made = bool(s.get("made"))
-        label = (f"{'Made' if made else 'Miss'}, player {s.get('player_id')}, {TEAM_NAME.get(team, 'Unknown')}, "
-                 f"t={s.get('t', 0):.1f}s" + (", unconfirmed" if s.get("unconfirmed") else ""))
-        cls = f"shot team{team} {'made' if made else 'miss'}"
-        if made:
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="7" class="{cls}" data-team="{team}"><title>{html.escape(label)}</title></circle>')
-        else:
-            x, y = float(cx), float(cy)
-            parts.append(f'<g class="{cls}" data-team="{team}"><title>{html.escape(label)}</title>'
-                         f'<line x1="{x - 6:.1f}" y1="{y - 6:.1f}" x2="{x + 6:.1f}" y2="{y + 6:.1f}"/>'
-                         f'<line x1="{x - 6:.1f}" y1="{y + 6:.1f}" x2="{x + 6:.1f}" y2="{y - 6:.1f}"/></g>')
-        placed += 1
-    parts.append("</svg>")
-    return "\n".join(parts), placed
+def shot_points(s: dict) -> int:
+    return int(s.get("points") or POINTS_PER_MADE) if s.get("made") else 0
 
 
 def place_shots(events: dict | None, cal: Calibration | None) -> list[dict]:
+    """Shots with `court_m` (metres, None without calibration) and `points`."""
     if not events:
         return []
     shots = []
-    for s in events.get("shots", []):
-        s = dict(s)
-        foot = s.get("shooter_foot")
-        if s.get("court_m") is None and foot and cal is not None:
-            xy = cal.project(int(s.get("frame", 0)) if s.get("frame") is not None else None, [foot])[0]
-            s["court_m"] = [float(xy[0]), float(xy[1])] if np.isfinite(xy).all() else None
-        if s.get("shooter_confirmed") is False:
-            s["unconfirmed"] = True
+    for raw in events.get("shots", []):
+        s = {
+            "t": float(raw.get("t") or 0.0),
+            "frame": raw.get("frame"),
+            "player_id": raw.get("player_id"),
+            "team": int(raw.get("team", -1)) if raw.get("team") is not None else -1,
+            "made": bool(raw.get("made")),
+            "points": shot_points(raw),
+            "unconfirmed": raw.get("shooter_confirmed") is False,
+            "court_m": raw.get("court_m"),
+        }
+        foot = raw.get("shooter_foot")
+        if s["court_m"] is None and foot and cal is not None:
+            frame = int(raw["frame"]) if raw.get("frame") is not None else None
+            xy = cal.project(frame, [foot])[0]
+            if np.isfinite(xy).all() and cal.on_court(xy)[0]:
+                s["court_m"] = [round(float(xy[0]), 2), round(float(xy[1]), 2)]
         shots.append(s)
+    shots.sort(key=lambda s: s["t"])
     return shots
 
 
-# --- tables ------------------------------------------------------------------
+def score(shots: list[dict]) -> dict[int, int]:
+    out = {0: 0, 1: 0}
+    for s in shots:
+        if s["team"] in out:
+            out[s["team"]] += s["points"]
+    return out
 
 
-def pct(v) -> str:
-    return "" if v is None else f"{100 * float(v):.0f}%"
+def team_totals(shots: list[dict], stats: dict | None) -> list[dict]:
+    agg = {t: {"team": t, "fga": 0, "fgm": 0} for t in (0, 1)}
+    for s in shots:
+        if s["team"] in agg:
+            agg[s["team"]]["fga"] += 1
+            agg[s["team"]]["fgm"] += 1 if s["made"] else 0
+    if not shots:
+        for t in (stats or {}).get("teams") or []:
+            if int(t.get("team", -1)) in agg:
+                agg[int(t["team"])].update(fga=int(t.get("fga") or 0), fgm=int(t.get("fgm") or 0))
+    return [agg[0], agg[1]]
 
 
-def num(v, digits=0, unit="") -> str:
-    if v is None:
-        return ""
-    return f"{float(v):.{digits}f}{unit}"
-
-
-def player_rows(stats: dict | None, distances: dict[int, float]) -> str:
-    if not stats or not stats.get("players"):
-        return '<tr><td colspan="8" class="muted">stats.json not available yet</td></tr>'
+def player_rows(stats: dict | None, distances: dict[int, float]) -> list[dict]:
     rows = []
-    players = sorted(stats["players"], key=lambda p: (int(p.get("team", -1)), -float(p.get("fga") or 0), int(p["id"])))
-    for p in players:
-        team = int(p.get("team", -1))
+    for p in (stats or {}).get("players") or []:
         fga, fgm = int(p.get("fga") or 0), int(p.get("fgm") or 0)
         fg = p.get("fg_pct") if p.get("fg_pct") is not None else (fgm / fga if fga else None)
         dist = p.get("distance_m") if p.get("distance_m") is not None else distances.get(int(p["id"]))
-        rows.append(
-            f'<tr data-team="{team}"><td><span class="dot" style="background:{TEAM_COLOR.get(team)}"></span>{TEAM_NAME.get(team)}</td>'
-            f'<td class="num">{p["id"]}</td><td class="num">{fga}</td><td class="num">{fgm}</td>'
-            f'<td class="num">{pct(fg)}</td><td class="num">{num(p.get("possession_s"), 0, " s")}</td>'
-            f'<td class="num">{num(dist, 0, " m")}</td>'
-            f'<td><div class="bar"><span style="width:{(100 * float(fg)) if fg else 0:.0f}%;background:{TEAM_COLOR.get(team)}"></span></div></td></tr>')
-    return "\n".join(rows)
+        rows.append({
+            "id": int(p["id"]), "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
+            "fg_pct": None if fg is None else round(float(fg), 3),
+            "possession_s": None if p.get("possession_s") is None else round(float(p["possession_s"]), 1),
+            "distance_m": None if dist is None else round(float(dist), 1),
+        })
+    rows.sort(key=lambda r: (r["team"] if r["team"] >= 0 else 9, -r["fga"], -(r["possession_s"] or 0), r["id"]))
+    return rows
 
 
-def team_rows(stats: dict | None, shots: list[dict]) -> str:
-    teams = (stats or {}).get("teams")
-    if not teams and shots:
-        agg: dict[int, dict] = {}
-        for s in shots:
-            t = agg.setdefault(int(s.get("team", -1)), {"team": int(s.get("team", -1)), "fga": 0, "fgm": 0})
-            t["fga"] += 1
-            t["fgm"] += 1 if s.get("made") else 0
-        teams = list(agg.values())
-    if not teams:
-        return '<tr><td colspan="4" class="muted">no team totals yet</td></tr>'
+def possessions(events: dict | None) -> list[dict]:
     out = []
-    for t in sorted(teams, key=lambda t: int(t.get("team", -1))):
-        team = int(t.get("team", -1))
-        fga, fgm = int(t.get("fga") or 0), int(t.get("fgm") or 0)
-        out.append(f'<tr><td><span class="dot" style="background:{TEAM_COLOR.get(team)}"></span>{TEAM_NAME.get(team)}</td>'
-                   f'<td class="num">{fga}</td><td class="num">{fgm}</td><td class="num">{pct(fgm / fga) if fga else ""}</td></tr>')
-    return "\n".join(out)
+    for p in (events or {}).get("possessions") or []:
+        try:
+            out.append({"team": int(p.get("team", -1)), "start": float(p["start_t"]), "end": float(p["end_t"]),
+                        "player_id": p.get("player_id")})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
 
 
-# --- page --------------------------------------------------------------------
+def clip_duration(events: dict | None, tracks_meta: dict | None, tracks: Path, shots: list[dict]) -> float:
+    if events and events.get("duration_s"):
+        return float(events["duration_s"])
+    if tracks_meta and tracks_meta.get("source_fps") and tracks_meta.get("last_frame") is not None:
+        return (float(tracks_meta["last_frame"]) - float(tracks_meta.get("first_frame") or 0)) / float(tracks_meta["source_fps"])
+    last_t = 0.0
+    if tracks.exists():
+        with tracks.open("rb") as fh:
+            try:
+                fh.seek(-4096, 2)
+            except OSError:
+                fh.seek(0)
+            tail = fh.read().decode("utf-8", "ignore").strip().splitlines()
+        for line in reversed(tail):
+            try:
+                last_t = float(json.loads(line)["t"])
+                break
+            except (ValueError, KeyError):
+                continue
+    if shots:
+        last_t = max(last_t, shots[-1]["t"] + 5)
+    return max(last_t, 10.0)
 
-CSS = """
-:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--text:#e6e8ee;--muted:#8b93a7;--floor:#1f232c;--mark:#cfd4dd;--a:#3B82F6;--b:#EF4444}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
-main{max-width:1280px;margin:0 auto;padding:28px 24px 60px}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
-h1{font-size:22px;margin:0;font-weight:650;letter-spacing:.01em}h2{font-size:15px;margin:0 0 12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-.sub{color:var(--muted);font-size:14px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.kpi .v{font-size:28px;font-weight:650;line-height:1.1}.kpi .l{color:var(--muted);font-size:13px;margin-top:4px}
-.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:16px}@media(max-width:960px){.grid{grid-template-columns:1fr}}
-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0}
-.toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-button{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
-button.on{background:#232838;border-color:#3a4256}
-svg.court{width:100%;height:auto;display:block}.floor{fill:var(--floor)}.mark{fill:none;stroke:var(--mark);stroke-width:1.6}.hoop{fill:none;stroke:#f59e0b;stroke-width:2}
-.shot.made{stroke:#0f1115;stroke-width:1.2}.shot.team0{fill:var(--a)}.shot.team1{fill:var(--b)}.shot.team-1{fill:#9CA3AF}
-g.shot line{stroke-width:2.2}g.shot.team0 line{stroke:var(--a)}g.shot.team1 line{stroke:var(--b)}g.shot.team-1 line{stroke:#9CA3AF}
-.hidden{display:none}
-.legend{display:flex;gap:16px;color:var(--muted);font-size:13px;margin-top:8px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:6px}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle}
-table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}
-.bar{width:90px;height:6px;background:#262b36;border-radius:3px;overflow:hidden}.bar span{display:block;height:100%}
+
+def court_geometry() -> dict:
+    return {
+        "length": FIBA.length_m, "width": FIBA.width_m,
+        "lines": [np.asarray(p, float).round(3).tolist() for p in polylines(FIBA)],
+        "hoops": [list(h) for h in FIBA.hoops],
+    }
+
+
+def fmt_clock(seconds: float) -> str:
+    s = int(round(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+# --- page ---------------------------------------------------------------------
+
+CSS = r"""
+:root{--bg:#0B0D12;--panel:#12151C;--panel2:#171B24;--line:#222836;--text:#E7EAF0;--muted:#8A93A6;--faint:#5C6478;
+--floor:#151923;--mark:#8E96A8;--rim:#F0A63A;--lions:#4C8DFF;--wiesel:#E5484D;--none:#8A93A6}
+*{box-sizing:border-box}html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1320px;margin:0 auto;padding:28px 28px 64px}
+h1{font-size:13px;margin:0;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+h2{font-size:12px;margin:0 0 14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.muted{color:var(--muted)}.faint{color:var(--faint)}.small{font-size:13px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;min-width:0}
+.stack{display:grid;gap:16px}
+.grid2{display:grid;grid-template-columns:1.05fr 1fr;gap:16px}@media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+.videos{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.videos{grid-template-columns:1fr}}
+
+header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+@media(max-width:800px){header{grid-template-columns:1fr;text-align:center}.team.right{text-align:center}}
+.kicker{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-bottom:6px}
+.team{display:flex;flex-direction:column;gap:6px}.team.right{text-align:right;align-items:flex-end}
+.team .name{font-size:20px;font-weight:650;letter-spacing:.005em;display:flex;align-items:center;gap:10px}
+.team.right .name{flex-direction:row-reverse}
+.swatch{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+.team .line{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.scoreboard{display:flex;align-items:baseline;gap:18px;font-variant-numeric:tabular-nums}
+.scoreboard .pts{font-size:64px;font-weight:700;line-height:1;letter-spacing:-.02em}
+.scoreboard .colon{font-size:40px;color:var(--faint);font-weight:300;transform:translateY(-6px)}
+.scoreboard.empty .pts{color:var(--faint)}
+
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-4px 0 14px}
+.toolbar .spacer{flex:1}
+button.f{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+button.f:hover{border-color:#39415A}button.f.on{background:var(--panel2);border-color:#414A64}
+.legend{display:flex;gap:18px;color:var(--muted);font-size:13px;margin-top:10px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+.tl-grid{stroke:var(--line);stroke-width:1}.tl-axis{fill:var(--muted);font-size:11px}
+.tl-line{fill:none;stroke-width:2.2;stroke-linejoin:round}
+.tl-dot{stroke:var(--panel);stroke-width:1.5;cursor:pointer}
+.tl-miss{stroke-width:2;opacity:.75}
+.tl-play{stroke:#E7EAF0;stroke-width:1.2;stroke-dasharray:3 3;opacity:0}
+.tl-poss{opacity:.55}
+.dim{opacity:.18}
+svg.court{width:100%;height:auto;display:block}
+.floor{fill:var(--floor)}.mark{fill:none;stroke:var(--mark);stroke-width:1.4;opacity:.75}.rim{fill:var(--rim);stroke:none}.board{stroke:var(--rim);stroke-width:3;stroke-linecap:round}
+.shot{cursor:pointer;transition:opacity .15s}.shot.made{stroke:rgba(11,13,18,.9);stroke-width:1.5}.shot.miss{fill:var(--floor);stroke-width:2.6}.shot:hover{stroke-width:3;stroke:#fff}
+.shot.unconfirmed{stroke-dasharray:3 2}
+.hidden{display:none!important}
+.pending{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;display:inline-flex;gap:8px;align-items:center;cursor:pointer;background:var(--panel2)}
+.chip .m{width:9px;height:9px;border-radius:50%;display:inline-block}.chip .m.miss{background:transparent!important;border:2px solid}
+
 .tablewrap{overflow-x:auto}
-video{width:100%;height:auto;display:block;border-radius:8px;background:#000}
-.videos{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}.videos.two{grid-template-columns:1fr 1fr}@media(max-width:960px){.videos.two{grid-template-columns:1fr}}
-footer{color:var(--muted);font-size:12px;margin-top:20px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th:first-child,td:first-child{padding-left:2px}
+th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em}
+tbody tr:hover{background:var(--panel2)}
+td.id{font-weight:650;font-variant-numeric:tabular-nums}
+.bar{width:52px;height:5px;background:var(--line);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:10px}.bar span{display:block;height:100%}
+.tdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:1px}
+
+video{width:100%;height:auto;display:block;border-radius:10px;background:#000;aspect-ratio:16/9}
+.placeholder{aspect-ratio:16/9;border-radius:10px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px;text-align:center;padding:20px}
+.vcap{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:8px;gap:12px}
+
+.method{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}@media(max-width:900px){.method{grid-template-columns:1fr 1fr}}@media(max-width:560px){.method{grid-template-columns:1fr}}
+.step{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.step .n{color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums;letter-spacing:.08em}
+.step .t{font-weight:650;margin:4px 0 4px}.step .d{color:var(--muted);font-size:13.5px;line-height:1.45}
+footer{color:var(--faint);font-size:12px;margin-top:22px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#tip{position:fixed;pointer-events:none;background:#1C2130;border:1px solid #2E3648;color:var(--text);padding:7px 10px;border-radius:8px;font-size:13px;line-height:1.35;opacity:0;transition:opacity .08s;z-index:10;max-width:260px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+#tip b{font-weight:650}#tip .sub{color:var(--muted)}
 """
 
-JS = """
+JS = r"""
 (function(){
-  var buttons=document.querySelectorAll('[data-filter]');
-  function apply(team){
-    document.querySelectorAll('.shot,[data-team]').forEach(function(el){
-      if(el.hasAttribute('data-filter'))return;
-      var t=el.getAttribute('data-team');
-      el.classList.toggle('hidden',team!=='all'&&t!==team);
+  var D=window.DASH; var TEAM=D.teams; var team=function(t){return TEAM[String(t)]||TEAM['-1']};
+  var SVG='http://www.w3.org/2000/svg';
+  function el(tag,attrs,parent){var e=document.createElementNS(SVG,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+  function clock(s){s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)}
+  function pct(v){return v==null?'':Math.round(100*v)+'%'}
+  var tip=document.getElementById('tip');
+  function showTip(ev,htmlText){tip.innerHTML=htmlText;tip.style.opacity=1;moveTip(ev)}
+  function moveTip(ev){var x=ev.clientX+14,y=ev.clientY+14;var r=tip.getBoundingClientRect();if(x+r.width>window.innerWidth-8)x=ev.clientX-r.width-14;if(y+r.height>window.innerHeight-8)y=ev.clientY-r.height-14;tip.style.left=x+'px';tip.style.top=y+'px'}
+  function hideTip(){tip.style.opacity=0}
+  function bindTip(node,textFn){node.addEventListener('mouseenter',function(e){showTip(e,textFn())});node.addEventListener('mousemove',moveTip);node.addEventListener('mouseleave',hideTip)}
+
+  var overlay=document.getElementById('overlay'),minimap=document.getElementById('minimap');
+  var canSeek=D.video_offset_s!=null&&overlay;
+  function seekTo(t){if(!canSeek)return;var v=Math.max(0,t-D.video_offset_s-2.5);[overlay,minimap].forEach(function(m){if(!m)return;try{m.currentTime=v;m.play()}catch(e){}});overlay.scrollIntoView({behavior:'smooth',block:'nearest'})}
+  function shotTip(s){var tm=team(s.team);return '<b>'+(s.made?'Made':'Missed')+'</b> by player '+s.player_id+' <span class="sub">'+tm.short+'</span><br><span class="sub">at '+clock(s.t)+(s.unconfirmed?', shooter unconfirmed':'')+(canSeek?', click to watch':'')+'</span>'}
+
+  /* score timeline */
+  (function(){
+    var svg=document.getElementById('timeline'); if(!svg)return;
+    var W=1000,H=250,L=44,R=16,T=14,B=44,PH=10; var dur=Math.max(D.duration_s,1);
+    var maxPts=Math.max(2,D.score['0'],D.score['1']); maxPts=Math.ceil(maxPts/2)*2;
+    var x=function(t){return L+(t/dur)*(W-L-R)}, y=function(p){return T+(1-p/maxPts)*(H-T-B-PH-6)};
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var stepPts=maxPts<=10?2:(maxPts<=30?5:10);
+    for(var p=0;p<=maxPts;p+=stepPts){el('line',{x1:L,x2:W-R,y1:y(p),y2:y(p),'class':'tl-grid'},svg);var t=el('text',{x:L-8,y:y(p)+4,'class':'tl-axis','text-anchor':'end'},svg);t.textContent=p}
+    var ticks=5;for(var i=0;i<=ticks;i++){var tt=dur*i/ticks;var lab=el('text',{x:x(tt),y:H-B+16,'class':'tl-axis','text-anchor':i==0?'start':(i==ticks?'end':'middle')},svg);lab.textContent=clock(tt)}
+    var base=y(0);
+    (D.possessions||[]).forEach(function(ps){if(ps.end<=ps.start)return;var rr=el('rect',{x:x(ps.start),y:base+10,width:Math.max(1.5,x(ps.end)-x(ps.start)),height:PH,rx:2,fill:team(ps.team).color,'class':'tl-poss','data-team':ps.team},svg);bindTip(rr,function(){return '<b>Possession</b> '+team(ps.team).short+(ps.player_id!=null?', player '+ps.player_id:'')+'<br><span class="sub">'+clock(ps.start)+' to '+clock(ps.end)+'</span>'})});
+    if((D.possessions||[]).length){var pl=el('text',{x:L-8,y:base+10+PH-1,'class':'tl-axis','text-anchor':'end'},svg);pl.textContent='ball'}
+    ['0','1'].forEach(function(tk){var tm=TEAM[tk];var pts=0,d='M'+x(0)+' '+y(0);var made=D.shots.filter(function(s){return String(s.team)===tk&&s.made});
+      made.forEach(function(s){d+=' L'+x(s.t)+' '+y(pts);pts+=s.points;d+=' L'+x(s.t)+' '+y(pts)});d+=' L'+x(dur)+' '+y(pts);
+      el('path',{d:d,'class':'tl-line','stroke':tm.color,'data-team':tk},svg);
+      D.shots.filter(function(s){return String(s.team)===tk&&!s.made}).forEach(function(s){var m=el('line',{x1:x(s.t),x2:x(s.t),y1:base-9,y2:base-1,stroke:tm.color,'class':'tl-miss','data-team':tk},svg);bindTip(m,function(){return shotTip(s)});m.addEventListener('click',function(){seekTo(s.t)})});
+      pts=0;made.forEach(function(s){pts+=s.points;var c=el('circle',{cx:x(s.t),cy:y(pts),r:5.5,fill:tm.color,'class':'tl-dot','data-team':tk},svg);bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
     });
-    buttons.forEach(function(b){b.classList.toggle('on',b.getAttribute('data-filter')===team)});
-  }
+    var play=el('line',{x1:x(0),x2:x(0),y1:T,y2:base,'class':'tl-play'},svg);
+    if(canSeek){overlay.addEventListener('timeupdate',function(){var t=overlay.currentTime+D.video_offset_s;play.setAttribute('x1',x(Math.min(t,dur)));play.setAttribute('x2',x(Math.min(t,dur)));play.style.opacity=overlay.paused&&overlay.currentTime===0?0:1})}
+  })();
+
+  /* shot chart */
+  (function(){
+    var svg=document.getElementById('court'); if(!svg)return; var C=D.court,S=30,M=1.0;
+    var W=(C.length+2*M)*S,H=(C.width+2*M)*S; svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var X=function(m){return (m+M)*S}, Y=function(m){return H-(m+M)*S};
+    el('rect',{x:M*S,y:M*S,width:C.length*S,height:C.width*S,rx:3,'class':'floor'},svg);
+    C.lines.forEach(function(poly){el('polyline',{points:poly.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)}).join(' '),'class':'mark'},svg)});
+    C.hoops.forEach(function(h){var bx=h[0]<C.length/2?h[0]-0.375:h[0]+0.375;el('line',{x1:X(bx),x2:X(bx),y1:Y(h[1]-0.9),y2:Y(h[1]+0.9),'class':'board'},svg);el('circle',{cx:X(h[0]),cy:Y(h[1]),r:(0.225*S).toFixed(1),'class':'rim'},svg)});
+    D.shots.forEach(function(s){if(!s.court_m)return;var tm=team(s.team);var c=el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:s.made?9.5:8.5,'class':'shot '+(s.made?'made':'miss')+(s.unconfirmed?' unconfirmed':''),'data-team':s.team},svg);
+      if(s.made)c.setAttribute('fill',tm.color);else c.setAttribute('stroke',tm.color);
+      bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
+    document.querySelectorAll('.chip').forEach(function(ch){var s=D.shots[+ch.getAttribute('data-i')];if(!s)return;bindTip(ch,function(){return shotTip(s)});ch.addEventListener('click',function(){seekTo(s.t)})});
+  })();
+
+  /* team filter, shared by chart, chips, table, timeline */
+  var buttons=document.querySelectorAll('[data-filter]');
+  function apply(f){document.querySelectorAll('[data-team]').forEach(function(n){var t=n.getAttribute('data-team');var off=f!=='all'&&t!==f;
+      if(n.classList.contains('tl-line')||n.classList.contains('tl-dot')||n.classList.contains('tl-miss')||n.classList.contains('tl-poss'))n.classList.toggle('dim',off);else n.classList.toggle('hidden',off)});
+    buttons.forEach(function(b){b.classList.toggle('on',b.getAttribute('data-filter')===f)});
+    var vis=D.shots.filter(function(s){return f==='all'||String(s.team)===f});var made=vis.filter(function(s){return s.made}).length;
+    var c=document.getElementById('chart-count');if(c)c.textContent=vis.length?(made+' of '+vis.length+' made'+(vis.length?', '+Math.round(100*made/vis.length)+'%':'')):'';}
   buttons.forEach(function(b){b.addEventListener('click',function(){apply(b.getAttribute('data-filter'))})});
   apply('all');
 })();
 """
 
 
-def build(events, stats, cal, minimap: str | None, overlay: str | None, clip: str, calib_note: str,
-          distances: dict[int, float] | None = None) -> str:
-    shots = place_shots(events, cal)
-    svg, placed = court_svg(shots, cal)
-    fga = len(shots)
-    fgm = sum(1 for s in shots if s.get("made"))
-    unconfirmed = sum(1 for s in shots if s.get("unconfirmed"))
-    distances = distances or {}
-    n_players = len((stats or {}).get("players") or [])
-    fps = (events or {}).get("fps")
+def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minimap, overlay, clip, calib_note,
+          video_offset_s, source_meta) -> str:
+    sc = score(shots)
+    has_events = bool(events)
+    placed = sum(1 for s in shots if s.get("court_m"))
+    has_distance = any(p["distance_m"] is not None for p in players)
+    fps = (events or {}).get("fps") or (source_meta or {}).get("source_fps")
+    T0, T1 = TEAMS[0], TEAMS[1]
 
-    kpis = [
-        (str(fga), "Field goal attempts"),
-        (str(fgm), "Made"),
-        (pct(fgm / fga) if fga else "", "Team FG%"),
-        (str(n_players), "Players tracked"),
-    ]
-    if unconfirmed:
-        kpis.append((str(unconfirmed), "Unconfirmed shots"))
-    kpi_html = "".join(f'<div class="kpi"><div class="v">{html.escape(v) or "&nbsp;"}</div><div class="l">{l}</div></div>' for v, l in kpis)
+    def team_line(t: dict) -> str:
+        if not (t["fga"] or t["fgm"]):
+            return "no shots detected yet" if not has_events else "no attempts"
+        return f'{t["fgm"]} of {t["fga"]} field goals, {100 * t["fgm"] / t["fga"]:.0f}%'
 
+    # header -----------------------------------------------------------------
+    header = f"""
+<header>
+  <div class="kicker"><span>FollowCam coach report</span><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span></div>
+  <div class="team"><div class="name"><span class="swatch" style="background:{T0['color']}"></span>{T0['name']}</div><div class="line">{team_line(teams[0])}</div></div>
+  <div class="scoreboard{'' if has_events else ' empty'}" aria-label="Final score"><span class="pts" style="color:{T0['color'] if has_events else 'inherit'}">{sc[0]}</span><span class="colon">:</span><span class="pts" style="color:{T1['color'] if has_events else 'inherit'}">{sc[1]}</span></div>
+  <div class="team right"><div class="name"><span class="swatch" style="background:{T1['color']}"></span>{T1['name']}</div><div class="line">{team_line(teams[1])}</div></div>
+</header>"""
+
+    # timeline ----------------------------------------------------------------
+    tl_note = "" if has_events else '<p class="muted small" style="margin:8px 0 0">Shot events not available yet, the timeline fills in once events.json exists.</p>'
+    timeline = f"""
+<section><h2>Score timeline</h2>
+<svg id="timeline" class="chart" role="img" aria-label="Points over time for both teams"></svg>
+<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks under the axis are misses{', the band below shows ball possession' if poss else ''}{', click a shot to watch it' if video_offset_s is not None and overlay else ''}</span></div>
+{tl_note}</section>"""
+
+    # shot chart --------------------------------------------------------------
+    chips = ""
+    if shots and placed < len(shots):
+        items = []
+        for i, s in enumerate(shots):
+            if s.get("court_m"):
+                continue
+            tm = TEAMS.get(s["team"], TEAMS[-1])
+            items.append(f'<span class="chip" data-i="{i}" data-team="{s["team"]}"><i class="m {"made" if s["made"] else "miss"}" style="background:{tm["color"]};border-color:{tm["color"]}"></i>{fmt_clock(s["t"])}<span class="muted">player {s["player_id"]}</span></span>')
+        chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} shots without a court position yet (calibration pending). Time and shooter are known:</p><div class="pending">{"".join(items)}</div>'
     notes = []
-    if not events:
-        notes.append("events.json not available yet, shot chart is empty.")
-    elif placed < fga:
-        notes.append(f"{fga - placed} shots without a court position (no calibration for their frame).")
-    if cal is None:
-        notes.append("court_calib.json missing, shots cannot be placed on the court.")
-    else:
+    if not has_events:
+        notes.append("Shot events not available yet.")
+    if cal is None and shots and placed < len(shots):
+        notes.append("Court calibration pending, shots are placed once court_calib.json exists.")
+    elif cal is None and not shots:
+        notes.append("Shots appear on the court once events.json and court_calib.json exist.")
+    elif calib_note:
         notes.append(calib_note)
-    note_html = " ".join(html.escape(n) for n in notes)
+    shot_chart = f"""
+<section><h2>Shot chart</h2>
+<div class="toolbar"><button class="f on" data-filter="all">Both teams</button><button class="f" data-filter="0"><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</button><button class="f" data-filter="1"><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</button><span class="spacer"></span><span id="chart-count" class="muted small"></span></div>
+<svg id="court" class="court" role="img" aria-label="Shot chart on a top-down court"></svg>
+<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span><span class="faint">hover a shot for time and player</span></div>
+{chips}
+{f'<p class="muted small" style="margin:12px 0 0">{" ".join(html.escape(n) for n in notes)}</p>' if notes else ''}
+</section>"""
 
-    videos = []
-    if minimap:
-        videos.append(f'<div><h2>Minimap</h2><video src="{html.escape(minimap)}" controls muted loop autoplay playsinline></video></div>')
-    if overlay:
-        videos.append(f'<div><h2>Tracking overlay</h2><video src="{html.escape(overlay)}" controls muted loop playsinline></video></div>')
-    videos_html = f'<div class="videos{" two" if len(videos) == 2 else ""}">{"".join(videos)}</div>' if videos else ""
+    # player table ------------------------------------------------------------
+    rows = []
+    for p in players:
+        tm = TEAMS.get(p["team"], TEAMS[-1])
+        fg = p["fg_pct"]
+        rows.append(
+            f'<tr data-team="{p["team"]}"><td class="id">{p["id"]}</td>'
+            f'<td><i class="tdot" style="background:{tm["color"]}"></i>{tm["short"]}</td>'
+            f'<td class="num">{p["fga"]}</td><td class="num">{p["fgm"]}</td>'
+            f'<td class="num">{"" if fg is None else f"{100 * fg:.0f}%"}<span class="bar"><span style="width:{(100 * fg) if fg else 0:.0f}%;background:{tm["color"]}"></span></span></td>'
+            f'<td class="num">{"" if p["possession_s"] is None else f"{p["possession_s"]:.0f} s"}</td>'
+            + (f'<td class="num">{"" if p["distance_m"] is None else f"{p["distance_m"]:.0f} m"}</td>' if has_distance else "")
+            + "</tr>")
+    ncol = 7 if has_distance else 6
+    if not rows:
+        rows.append(f'<tr><td colspan="{ncol}" class="muted">Player stats not available yet, the table fills in once stats.json exists.</td></tr>')
+    table = f"""
+<section><h2>Players</h2>
+<div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th>{'<th class="num">Distance</th>' if has_distance else ''}</tr></thead>
+<tbody>{"".join(rows)}</tbody></table></div>
+<p class="faint small" style="margin:12px 0 0">Player numbers are tracker ids, team by jersey colour. Possession is time as the closest player to the ball.{'' if has_distance else ' Distance follows once the court calibration exists.'}</p>
+</section>"""
+
+    # videos ------------------------------------------------------------------
+    ov = (f'<video id="overlay" src="{html.escape(overlay)}" controls muted playsinline preload="metadata"></video>'
+          if overlay else '<div class="placeholder">Tracking overlay arrives with overlay.mp4</div>')
+    mm = (f'<video id="minimap" src="{html.escape(minimap)}" controls muted playsinline preload="metadata"></video>'
+          if minimap else '<div class="placeholder">2D minimap arrives with the court calibration</div>')
+    videos = f"""
+<section><h2>Video</h2>
+<div class="videos">
+  <div>{ov}<div class="vcap"><span>Tracking overlay</span><span>ids, teams and ball trail on the broadcast frame</span></div></div>
+  <div>{mm}<div class="vcap"><span>Minimap</span><span>the same seconds on the 2D court</span></div></div>
+</div></section>"""
+
+    # method ------------------------------------------------------------------
+    steps = "".join(f'<div class="step"><div class="n">0{i + 1}</div><div class="t">{html.escape(t)}</div><div class="d">{html.escape(d)}</div></div>'
+                    for i, (t, d) in enumerate(METHOD))
+    method = f'<section><h2>How it was made</h2><div class="method">{steps}</div></section>'
+
+    data = {
+        "teams": {str(k): v for k, v in TEAMS.items()},
+        "score": {str(k): v for k, v in sc.items()},
+        "shots": shots, "possessions": poss, "players": players,
+        "duration_s": round(float(duration_s), 2),
+        "court": court_geometry(),
+        "video_offset_s": video_offset_s,
+    }
+    data_js = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
+    built = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FollowCam Coach Dashboard</title><style>{CSS}</style></head>
-<body><main>
-<header><div><h1>FollowCam Coach Dashboard</h1><div class="sub">{html.escape(clip)}{f" at {fps:g} fps" if fps else ""}</div></div>
-<div class="sub">BC Lions Moabit vs Weddinger Wiesel, Landesliga Berlin</div></header>
-<div class="kpis">{kpi_html}</div>
-<div class="grid">
-<section><h2>Shot chart</h2>
-<div class="toolbar"><button data-filter="all" class="on">All</button><button data-filter="0"><span class="dot" style="background:{TEAM_COLOR[0]}"></span>Team A</button><button data-filter="1"><span class="dot" style="background:{TEAM_COLOR[1]}"></span>Team B</button></div>
-{svg}
-<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{TEAM_COLOR[0]}"/></svg> made</span><span><svg width="14" height="14"><line x1="2" y1="2" x2="12" y2="12" stroke="{TEAM_COLOR[0]}" stroke-width="2"/><line x1="2" y1="12" x2="12" y2="2" stroke="{TEAM_COLOR[0]}" stroke-width="2"/></svg> miss</span><span>hover a shot for details</span></div>
-<p class="muted" style="font-size:13px;margin:10px 0 0">{note_html}</p>
-</section>
-<section><h2>Teams</h2>
-<div class="tablewrap"><table><thead><tr><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th></tr></thead>
-<tbody>{team_rows(stats, shots)}</tbody></table></div>
-<h2 style="margin-top:18px">Players</h2>
-<div class="tablewrap"><table><thead><tr><th>Team</th><th class="num">Id</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th><th class="num">Distance</th><th></th></tr></thead>
-<tbody>{player_rows(stats, distances)}</tbody></table></div>
-</section>
+<title>FollowCam, {html.escape(T0['name'])} vs {html.escape(T1['name'])}</title><style>{CSS}</style></head>
+<body><main class="stack">
+{header}
+{timeline}
+<div class="grid2">
+{shot_chart}
+{table}
 </div>
-{videos_html}
-<footer>Generated by vision/dashboard/build.py. Player ids are tracker ids, teams by jersey colour.</footer>
-</main><script>{JS}</script></body></html>
+{videos}
+{method}
+<footer><span>Built {built} by vision/dashboard/build.py, everything on this page is computed from the video.</span><span>FollowCam, CODE Hackathon Berlin 2026</span></footer>
+</main>
+<div id="tip" role="tooltip"></div>
+<script>window.DASH={data_js};</script>
+<script>{JS}</script></body></html>
 """
 
 
@@ -269,31 +451,50 @@ def main(argv=None) -> int:
     ap.add_argument("--events", type=Path, default=ROOT / "out" / "events.json")
     ap.add_argument("--stats", type=Path, default=ROOT / "out" / "stats.json")
     ap.add_argument("--calib", type=Path, default=ROOT / "out" / "court_calib.json")
-    ap.add_argument("--tracks", type=Path, default=ROOT / "out" / "tracks.jsonl", help="für distance_m, falls stats.json es nicht füllt")
+    ap.add_argument("--tracks", type=Path, default=ROOT / "out" / "tracks.jsonl", help="for distance_m if stats.json lacks it, and the clip length")
+    ap.add_argument("--tracks-meta", type=Path, default=ROOT / "out" / "tracks_meta.json", help="clip and frame range of the overlay, for video seeking")
     ap.add_argument("--minimap", default="minimap.mp4", help="relative to the html, empty to omit")
     ap.add_argument("--overlay", default="overlay.mp4", help="relative to the html, empty to omit")
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "dashboard.html")
     args = ap.parse_args(argv)
 
-    events, stats = load_json(args.events), load_json(args.stats)
+    events, stats, meta = load_json(args.events), load_json(args.stats), load_json(args.tracks_meta)
     cal = load_calibration(args.calib) if args.calib.exists() else None
     calib_note = ""
     if cal is not None:
-        calib_note = {"per_frame": "Court calibration per frame (camera tracked).",
+        calib_note = {"per_frame": "Court calibration per frame, the camera pan is tracked.",
                       "keyframes": f"Court calibration from {len(cal.keyframes)} keyframes, blended by time.",
-                      "single": "Single court calibration for the whole clip."}[cal.mode]
+                      "single": "One court calibration for the whole clip."}[cal.mode]
     minimap = args.minimap if args.minimap and (args.out.parent / args.minimap).exists() else None
     overlay = args.overlay if args.overlay and (args.out.parent / args.overlay).exists() else None
-    clip = (events or {}).get("clip") or (cal.meta.get("clip") if cal else "") or ""
+    clip = (events or {}).get("clip") or (meta or {}).get("clip") or (cal.meta.get("clip") if cal else "") or ""
+
+    shots = place_shots(events, cal)
     distances: dict[int, float] = {}
     needs_distance = any(p.get("distance_m") is None for p in (stats or {}).get("players") or [])
     if cal is not None and needs_distance and args.tracks.exists():
         distances = cal.player_distances(args.tracks)
-    page = build(events, stats, cal, minimap, overlay, clip, calib_note, distances)
+    players = player_rows(stats, distances)
+    teams = team_totals(shots, stats)
+    poss = possessions(events)
+    duration_s = clip_duration(events, meta, args.tracks, shots)
+
+    # The overlay video starts at meta.first_frame of meta.clip. Seeking from a shot
+    # only makes sense when the events were computed on the same clip.
+    video_offset_s = None
+    if overlay and meta and meta.get("source_fps"):
+        same_clip = (not events) or Path(str(events.get("clip") or "")).name == Path(str(meta.get("clip") or "")).name
+        if same_clip:
+            video_offset_s = round(float(meta.get("first_frame") or 0) / float(meta["source_fps"]), 3)
+
+    page = build(events=events, stats=stats, cal=cal, shots=shots, players=players, teams=teams, poss=poss,
+                 duration_s=duration_s, minimap=minimap, overlay=overlay, clip=Path(clip).name if clip else "",
+                 calib_note=calib_note, video_offset_s=video_offset_s, source_meta=meta)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page)
-    print(f"gespeichert: {args.out} ({len(page) // 1024} kB, events={'ja' if events else 'nein'}, stats={'ja' if stats else 'nein'}, "
-          f"calib={cal.mode if cal else 'nein'}, minimap={'ja' if minimap else 'nein'}, overlay={'ja' if overlay else 'nein'})")
+    print(f"saved: {args.out} ({len(page) // 1024} kB, events={'yes' if events else 'no'} shots={len(shots)} placed={sum(1 for s in shots if s.get('court_m'))}, "
+          f"stats={'yes' if stats else 'no'} players={len(players)}, calib={cal.mode if cal else 'no'}, "
+          f"minimap={'yes' if minimap else 'no'}, overlay={'yes' if overlay else 'no'}, seek_offset={video_offset_s})")
     return 0
 
 
