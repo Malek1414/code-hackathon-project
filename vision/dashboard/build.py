@@ -323,6 +323,27 @@ def court_geometry() -> dict:
     }
 
 
+def video_duration_s(path: Path) -> float | None:
+    """Duration via the bundled ffmpeg, None when it cannot be read."""
+    try:
+        import re as _re
+        import subprocess
+        import imageio_ffmpeg
+        out = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+                             capture_output=True, text=True, timeout=20).stderr
+        m = _re.search(r"Duration: (\d+):(\d+):(\d+\.?\d*)", out)
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else None
+    except Exception:  # noqa: BLE001, a probe failure must not take the page down
+        return None
+
+
+def same_length(a: Path, b: Path, tolerance: float = 0.15) -> bool | None:
+    da, db = video_duration_s(a), video_duration_s(b)
+    if da is None or db is None:
+        return None
+    return abs(da - db) <= tolerance * max(da, db, 1.0)
+
+
 def fmt_clock(seconds: float) -> str:
     s = int(round(seconds))
     return f"{s // 60}:{s % 60:02d}"
@@ -672,6 +693,9 @@ def main(argv=None) -> int:
                       "single": "One court calibration for the whole clip."}[cal.mode]
     minimap = args.minimap if args.minimap and (args.out.parent / args.minimap).exists() else None
     overlay = args.overlay if args.overlay and (args.out.parent / args.overlay).exists() else None
+    if minimap and overlay and same_length(args.out.parent / args.minimap, args.out.parent / args.overlay) is False:
+        print(f"minimap {args.minimap} has a different length than {args.overlay}, treated as another clip and left out", file=sys.stderr)
+        minimap = None
     clip = (events or {}).get("clip") or (meta or {}).get("clip") or (cal.meta.get("clip") if cal else "") or ""
 
     shots = place_shots(events, cal, ids)
