@@ -1,0 +1,235 @@
+{
+ "brand": "Big Ball Baller",
+ "example": true,
+ "title": "Landesliga Berlin",
+ "clip_or_source": "game10.mp4",
+ "t": 312.4,
+ "period": 1,
+ "clock": "05:12",
+ "teams": [
+  {
+   "id": 0,
+   "name": "Team A",
+   "color": "#2f6fdb",
+   "score": 10,
+   "fga": 12,
+   "fgm": 5,
+   "fg_pct": 0.42,
+   "possessions": 21
+  },
+  {
+   "id": 1,
+   "name": "Team B",
+   "color": "#c8102e",
+   "score": 10,
+   "fga": 11,
+   "fgm": 5,
+   "fg_pct": 0.45,
+   "possessions": 19
+  }
+ ],
+ "players": [
+  {
+   "key": "A5",
+   "number": 5,
+   "team": 0,
+   "pts": 4,
+   "fga": 3,
+   "fgm": 2,
+   "fg_pct": 0.67,
+   "possession_s": 22.9,
+   "distance_m": 410
+  },
+  {
+   "key": "A44",
+   "number": 44,
+   "team": 0,
+   "pts": 2,
+   "fga": 2,
+   "fgm": 1,
+   "fg_pct": 0.5,
+   "possession_s": 11.4,
+   "distance_m": 388
+  },
+  {
+   "key": "A24",
+   "number": 24,
+   "team": 0,
+   "pts": 2,
+   "fga": 3,
+   "fgm": 1,
+   "fg_pct": 0.33,
+   "possession_s": 10.1,
+   "distance_m": 402
+  },
+  {
+   "key": "A55",
+   "number": 55,
+   "team": 0,
+   "pts": 2,
+   "fga": 2,
+   "fgm": 1,
+   "fg_pct": 0.5,
+   "possession_s": 20.2,
+   "distance_m": 365
+  },
+  {
+   "key": "A23",
+   "number": 23,
+   "team": 0,
+   "pts": 0,
+   "fga": 2,
+   "fgm": 0,
+   "fg_pct": 0.0,
+   "possession_s": 6.4,
+   "distance_m": 290
+  },
+  {
+   "key": "B9",
+   "number": 9,
+   "team": 1,
+   "pts": 4,
+   "fga": 3,
+   "fgm": 2,
+   "fg_pct": 0.67,
+   "possession_s": 7.7,
+   "distance_m": 351
+  },
+  {
+   "key": "B12",
+   "number": 12,
+   "team": 1,
+   "pts": 2,
+   "fga": 2,
+   "fgm": 1,
+   "fg_pct": 0.5,
+   "possession_s": 12.3,
+   "distance_m": 377
+  },
+  {
+   "key": "B13",
+   "number": 13,
+   "team": 1,
+   "pts": 2,
+   "fga": 2,
+   "fgm": 1,
+   "fg_pct": 0.5,
+   "possession_s": 9.0,
+   "distance_m": 340
+  },
+  {
+   "key": "B55",
+   "number": 55,
+   "team": 1,
+   "pts": 2,
+   "fga": 3,
+   "fgm": 1,
+   "fg_pct": 0.33,
+   "possession_s": 5.2,
+   "distance_m": 298
+  },
+  {
+   "key": "B1",
+   "number": 1,
+   "team": 1,
+   "pts": 0,
+   "fga": 1,
+   "fgm": 0,
+   "fg_pct": 0.0,
+   "possession_s": 4.4,
+   "distance_m": 255
+  }
+ ],
+ "last_event": {
+  "t": 310.2,
+  "type": "made",
+  "team": 0,
+  "player_key": "A5",
+  "points": 2
+ },
+ "shots": [
+  {
+   "team": 0,
+   "made": true,
+   "court_m": [
+    3.1,
+    7.4
+   ]
+  },
+  {
+   "team": 0,
+   "made": false,
+   "court_m": [
+    6.8,
+    3.2
+   ]
+  },
+  {
+   "team": 0,
+   "made": true,
+   "court_m": [
+    2.2,
+    9.1
+   ]
+  },
+  {
+   "team": 0,
+   "made": false,
+   "court_m": [
+    7.6,
+    11.0
+   ]
+  },
+  {
+   "team": 0,
+   "made": true,
+   "court_m": [
+    4.9,
+    5.0
+   ]
+  },
+  {
+   "team": 1,
+   "made": true,
+   "court_m": [
+    25.0,
+    7.9
+   ]
+  },
+  {
+   "team": 1,
+   "made": false,
+   "court_m": [
+    21.4,
+    4.1
+   ]
+  },
+  {
+   "team": 1,
+   "made": true,
+   "court_m": [
+    26.1,
+    6.2
+   ]
+  },
+  {
+   "team": 1,
+   "made": false,
+   "court_m": [
+    20.6,
+    10.7
+   ]
+  },
+  {
+   "team": 1,
+   "made": true,
+   "court_m": [
+    23.3,
+    8.8
+   ]
+  }
+ ],
+ "heat_image": null,
+ "pan_deg": 97,
+ "camera": "ok"
+}

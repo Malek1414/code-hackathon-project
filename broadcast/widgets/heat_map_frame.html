@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>BBB heat map</title>
+<style>
+:root{--glass:rgba(11,13,18,.74);--glass2:rgba(11,13,18,.58);--line:rgba(255,255,255,.14);--text:#F4F6FA;--muted:rgba(244,246,250,.66);--a:#2f6fdb;--b:#c8102e}
+*{box-sizing:border-box}html,body{margin:0;background:transparent}
+body{width:1920px;height:1080px;overflow:hidden;position:relative;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.w{position:absolute}
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:22px;-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)}
+.brand{font-weight:900;letter-spacing:.06em;font-size:28px;line-height:1}
+.brand small{display:block;font-weight:600;letter-spacing:.14em;font-size:14px;color:var(--muted);text-transform:uppercase;margin-top:6px}
+.name{font-weight:700;font-size:32px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num{font-weight:800;font-size:56px;letter-spacing:-.03em;line-height:1}
+.lbl{font-size:28px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.acc{width:10px;border-radius:6px;flex:none}
+.sw{width:18px;height:18px;border-radius:5px;flex:none}
+.row{display:flex;align-items:center;gap:18px}
+.stat{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.stat .v{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.stat .l{font-size:28px;color:var(--muted);font-weight:600}
+
+#hm{left:60px;top:48px;width:1800px;height:984px;padding:36px 44px;display:grid;grid-template-columns:420px 1fr;gap:36px}
+#hm .side{display:flex;flex-direction:column;gap:22px}
+#hm .side .brand{font-size:36px}
+#hm .side h2{margin:0;font-size:40px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+#hm .side p{margin:0;font-size:28px;color:var(--muted);line-height:1.35}
+#hm .legend{display:flex;flex-direction:column;gap:14px;margin-top:auto;font-size:28px}
+#hm .legend div{display:flex;align-items:center;gap:14px}
+#hm .legend i{width:26px;height:26px;border-radius:50%;flex:none}
+#hm .legend i.miss{background:transparent!important;border:4px solid}
+#hm .court{position:relative;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--line);overflow:hidden}
+#hm .court img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#hm .court svg{position:absolute;inset:0;width:100%;height:100%}
+#hm .court .mark{fill:none;stroke:rgba(255,255,255,.5);stroke-width:2}
+#hm .court .rim{fill:#F0A63A}
+</style></head>
+<body data-widget="heat_map_frame">
+
+<div id="hm" class="w glass"><div class="side"><div class="brand">BBB<small>Big Ball Baller</small></div><h2>Where the game happened</h2><p id="sub">Position density per team from the tracking, shots drawn on top.</p>
+<div class="legend"><div><i style="background:var(--a)"></i><span id="la"></span></div><div><i style="background:var(--b)"></i><span id="lb"></span></div><div><i class="miss" style="border-color:rgba(255,255,255,.7)"></i><span>hollow, missed</span></div><div><i style="background:rgba(255,255,255,.85)"></i><span>filled, made</span></div></div></div>
+<div class="court" id="court"></div></div>
+
+<script id="bbb-state" type="application/json">{"brand": "Big Ball Baller", "example": true, "title": "Landesliga Berlin", "clip_or_source": "game10.mp4", "t": 312.4, "period": 1, "clock": "05:12", "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21}, {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}], "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}, {"key": "A44", "number": 44, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 11.4, "distance_m": 388}, {"key": "A24", "number": 24, "team": 0, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 10.1, "distance_m": 402}, {"key": "A55", "number": 55, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 20.2, "distance_m": 365}, {"key": "A23", "number": 23, "team": 0, "pts": 0, "fga": 2, "fgm": 0, "fg_pct": 0.0, "possession_s": 6.4, "distance_m": 290}, {"key": "B9", "number": 9, "team": 1, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 7.7, "distance_m": 351}, {"key": "B12", "number": 12, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 12.3, "distance_m": 377}, {"key": "B13", "number": 13, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 9.0, "distance_m": 340}, {"key": "B55", "number": 55, "team": 1, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 5.2, "distance_m": 298}, {"key": "B1", "number": 1, "team": 1, "pts": 0, "fga": 1, "fgm": 0, "fg_pct": 0.0, "possession_s": 4.4, "distance_m": 255}], "last_event": {"t": 310.2, "type": "made", "team": 0, "player_key": "A5", "points": 2}, "shots": [{"team": 0, "made": true, "court_m": [3.1, 7.4]}, {"team": 0, "made": false, "court_m": [6.8, 3.2]}, {"team": 0, "made": true, "court_m": [2.2, 9.1]}, {"team": 0, "made": false, "court_m": [7.6, 11.0]}, {"team": 0, "made": true, "court_m": [4.9, 5.0]}, {"team": 1, "made": true, "court_m": [25.0, 7.9]}, {"team": 1, "made": false, "court_m": [21.4, 4.1]}, {"team": 1, "made": true, "court_m": [26.1, 6.2]}, {"team": 1, "made": false, "court_m": [20.6, 10.7]}, {"team": 1, "made": true, "court_m": [23.3, 8.8]}], "heat_image": null, "pan_deg": 97, "camera": "ok"}</script>
+<script>
+function bbbState(){
+  var s=null;
+  try{var h=location.hash;if(h&&h.length>1){s=JSON.parse(decodeURIComponent(h.slice(1)));}}catch(e){}
+  if(!s&&window.BBB_STATE)s=window.BBB_STATE;
+  if(!s)s=JSON.parse(document.getElementById('bbb-state').textContent);
+  var teams=s.teams||[];while(teams.length<2)teams.push({id:teams.length,name:'Team '+(teams.length?'B':'A'),color:teams.length?'#c8102e':'#2f6fdb',score:0,fga:0,fgm:0,fg_pct:0,possessions:0});
+  s.teams=teams;s.players=s.players||[];
+  document.documentElement.style.setProperty('--a',teams[0].color||'#2f6fdb');
+  document.documentElement.style.setProperty('--b',teams[1].color||'#c8102e');
+  return s;
+}
+function pct(v){return (v==null||isNaN(v))?'':Math.round(100*v)+'%'}
+function esc(t){return String(t==null?'':t).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function label(p){if(p.others)return 'others, no number read';if(p.number!=null)return '#'+p.number;return '?'}
+function teamOf(s,i){return s.teams[i]||s.teams[0]}
+function topScorer(s,team){var ps=s.players.filter(function(p){return p.team===team});ps.sort(function(a,b){return (b.pts||0)-(a.pts||0)||(b.fgm||0)-(a.fgm||0)||(b.possession_s||0)-(a.possession_s||0)});return ps[0]}
+function findPlayer(s,key){for(var i=0;i<s.players.length;i++)if(s.players[i].key===key)return s.players[i];return null}
+
+(function(){var s=bbbState();
+document.getElementById('la').textContent=teamOf(s,0).name;document.getElementById('lb').textContent=teamOf(s,1).name;
+var court=document.getElementById('court');var S=40,M=1,L=28,Wd=15,Wc=(L+2*M)*S,Hc=(Wd+2*M)*S;
+var X=function(m){return (m+M)*S},Y=function(m){return Hc-(m+M)*S};
+var svg='';
+if(s.heat_image){svg+='';court.innerHTML='<img src="'+esc(s.heat_image)+'" alt="">';}
+svg+='<svg viewBox="0 0 '+Wc+' '+Hc+'" preserveAspectRatio="xMidYMid meet">';
+svg+='<rect class="mark" x="'+X(0)+'" y="'+Y(Wd)+'" width="'+(L*S)+'" height="'+(Wd*S)+'"/>';
+svg+='<line class="mark" x1="'+X(14)+'" y1="'+Y(0)+'" x2="'+X(14)+'" y2="'+Y(Wd)+'"/>';
+svg+='<circle class="mark" cx="'+X(14)+'" cy="'+Y(7.5)+'" r="'+(1.8*S)+'"/>';
+[[0,1],[28,-1]].forEach(function(h){var bx=h[0],d=h[1];svg+='<rect class="mark" x="'+Math.min(X(bx),X(bx+d*5.8))+'" y="'+Y(7.5+2.45)+'" width="'+(5.8*S)+'" height="'+(4.9*S)+'"/>';
+ var hx=bx+d*1.575;svg+='<circle class="rim" cx="'+X(hx)+'" cy="'+Y(7.5)+'" r="'+(0.3*S)+'"/>';
+ var r=6.75*S,cx=X(hx),cy=Y(7.5);var ax=d>0?1:-1;
+ svg+='<path class="mark" d="M'+(cx)+' '+(cy-r)+' A'+r+' '+r+' 0 0 '+(d>0?1:0)+' '+(cx)+' '+(cy+r)+'"/>';
+});
+(s.shots||[]).forEach(function(sh){if(!sh.court_m)return;var T=teamOf(s,sh.team||0);svg+='<circle cx="'+X(sh.court_m[0])+'" cy="'+Y(sh.court_m[1])+'" r="13" fill="'+(sh.made?T.color:'rgba(11,13,18,.6)')+'" stroke="'+T.color+'" stroke-width="4"/>';});
+svg+='</svg>';court.insertAdjacentHTML('beforeend',svg);
+})();
+</script></body></html>
