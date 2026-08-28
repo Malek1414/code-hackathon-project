@@ -195,11 +195,11 @@ def detect_cuts(frames: np.ndarray, C: np.ndarray, thumbs: dict[int, np.ndarray]
 
 
 def cuts_from_signal(aligned: dict[int, float], first_frame: int = 0, threshold: float = CUT_THRESHOLD,
-                     min_run: int = 2) -> list[int]:
+                     min_run: int = 2, min_gap: int = 2 * CUT_LAG) -> list[int]:
     """One cut per run of at least `min_run` consecutive high samples, placed at the
     start of the run minus half the lag so it lands inside a dissolve, not after it."""
     cuts: list[int] = []
-    ts = sorted(aligned)
+    ts = [t for t in sorted(aligned) if aligned[t] < 254]  # 255 = no overlap marker from older caches
     i = 0
     while i < len(ts):
         if aligned[ts[i]] > threshold:
@@ -208,7 +208,9 @@ def cuts_from_signal(aligned: dict[int, float], first_frame: int = 0, threshold:
                 j += 1
             if j - i >= min_run:
                 # first high sample t means the change happened in (t - THUMB_EVERY, t]
-                cuts.append(max(first_frame, ts[i] - THUMB_EVERY // 2))
+                cut = max(first_frame, ts[i] - THUMB_EVERY // 2)
+                if not cuts or cut - cuts[-1] >= min_gap:
+                    cuts.append(cut)
             i = j
         else:
             i += 1
@@ -270,8 +272,96 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
             est = carried(a, pos[b])
             d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
             mean = float(np.nanmean(d)) if np.isfinite(d).any() else None
-        drift_px[f"{a}->{b}"] = round(mean, 1) if mean is not None else None
+            drift_px[f"{a}->{b}"] = round(mean, 1) if mean is not None else None
     return out, drift_px, report
+
+
+# --- auto anchors: tie keyframe-less segments to a hand keyframe by direct feature matching ----
+
+AUTO_MIN_INLIERS = 80
+AUTO_MIN_RATIO = 0.6
+"""Measured on dev60 at half resolution: the same wide camera across a dissolve
+gives 240+ SIFT inliers at a 0.77 ratio, the scoreboard 41 at 0.42, a close-up
+28 at 0.45. The hall wall, doors and benches are what match, not the players."""
+
+
+def _sift_features(grey: np.ndarray, mask: np.ndarray | None):
+    sift = cv2.SIFT_create(nfeatures=3000)
+    return sift.detectAndCompute(grey, mask)
+
+
+def _match_h(kp_a, des_a, kp_b, des_b) -> tuple[np.ndarray | None, int, float]:
+    """Homography a -> b from SIFT matches, with inlier count and ratio."""
+    if des_a is None or des_b is None or len(des_a) < 8 or len(des_b) < 8:
+        return None, 0, 0.0
+    matches = cv2.BFMatcher().knnMatch(des_a, des_b, k=2)
+    good = [m for m, n in (p for p in matches if len(p) == 2) if m.distance < 0.75 * n.distance]
+    if len(good) < 8:
+        return None, len(good), 0.0
+    src = np.float32([kp_a[g.queryIdx].pt for g in good])
+    dst = np.float32([kp_b[g.trainIdx].pt for g in good])
+    H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 4.0)
+    if H is None or mask is None:
+        return None, len(good), 0.0
+    inl = int(mask.sum())
+    return H, inl, inl / len(good)
+
+
+def auto_anchors(clip: Path, frames: np.ndarray, keyframes: dict[int, np.ndarray], cuts: list[int],
+                 boxes: dict[int, np.ndarray], scale: float = 0.5, log=print) -> tuple[dict[int, np.ndarray], list[dict]]:
+    """One synthetic keyframe per segment that has no hand keyframe, found by matching a
+    frame of that segment directly against every hand keyframe image (same tripod, same
+    hall, so the static background relates any two wide shots by a homography)."""
+    cap = cv2.VideoCapture(str(clip))
+    S = np.diag([scale, scale, 1.0])
+    S_inv = np.linalg.inv(S)
+
+    def read_small(index: int):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(index))
+        ok, img = cap.read()
+        if not ok:
+            return None, None
+        small = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        near = min(boxes, key=lambda f: abs(f - index)) if boxes else None
+        mask = player_mask(grey.shape, boxes[near] * scale, pad=12) if near is not None and abs(near - index) <= 25 else None
+        return grey, mask
+
+    refs = {}
+    for k in sorted(keyframes):
+        grey, mask = read_small(k)
+        if grey is not None:
+            refs[k] = _sift_features(grey, mask)
+    bounds = sorted(set([int(frames[0])] + [c for c in cuts if frames[0] < c <= frames[-1]] + [int(frames[-1]) + 1]))
+    anchors: dict[int, np.ndarray] = {}
+    report: list[dict] = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        if any(a <= k < b for k in keyframes):
+            continue
+        length = b - a
+        cands = sorted({a + min(15, length // 3), a + length // 2, b - 1 - min(15, length // 3)})
+        cands = [c for c in cands if a <= c < b]
+        best = None
+        for cand in cands:
+            grey, mask = read_small(cand)
+            if grey is None:
+                continue
+            kp, des = _sift_features(grey, mask)
+            for k, (kp_r, des_r) in refs.items():
+                T, inl, ratio = _match_h(kp_r, des_r, kp, des)
+                if T is None or inl < AUTO_MIN_INLIERS or ratio < AUTO_MIN_RATIO:
+                    continue
+                if best is None or inl > best[2]:
+                    best = (cand, k, inl, ratio, S_inv @ T @ S)
+        if best is None:
+            report.append({"start": a, "end": b - 1, "auto": None})
+            continue
+        cand, k, inl, ratio, T_full = best
+        anchors[cand] = _normalise(T_full @ keyframes[k])
+        report.append({"start": a, "end": b - 1, "auto": cand, "from_keyframe": k, "inliers": inl, "ratio": round(ratio, 2)})
+        log(f"  Segment {a}..{b - 1}: automatisch verankert über Frame {cand} an Keyframe {k} ({inl} Inlier, {ratio:.2f})")
+    cap.release()
+    return anchors, report
 
 
 def write_cuts(clip: Path, frames: np.ndarray, cuts: list[int], threshold: float, out_dir: Path) -> Path:
@@ -328,6 +418,7 @@ def main(argv=None) -> int:
                     help="direkte Neuverankerung alle N Frames (0 = aus; bei geschnittenem Material aus lassen)")
     ap.add_argument("--no-cache", action="store_true", help="Kamerakette neu rechnen")
     ap.add_argument("--cut-threshold", type=float, default=CUT_THRESHOLD, help="Schnitt-Schwelle auf der ausgerichteten Differenz")
+    ap.add_argument("--no-auto", action="store_true", help="keine automatische Verankerung keyframeloser Segmente")
     ap.add_argument("--chain-only", action="store_true", help="nur die Kamerakette cachen, keine Keyframes nötig")
     ap.add_argument("--preview", action="store_true", help="out/court_propagate_preview.mp4 mit Linien-Overlay schreiben")
     ap.add_argument("--preview-every", type=int, default=5)
@@ -376,14 +467,23 @@ def main(argv=None) -> int:
     if args.chain_only:
         print("nur Kamerakette berechnet.")
         return 0
-    H_m_to_px, drift, segments = per_frame_homographies(frames, C, keyframes, cuts)
+    anchors, auto_report = ({}, []) if args.no_auto else auto_anchors(args.clip, frames, keyframes, cuts, boxes, scale=args.scale)
+    if not args.no_auto:
+        missing = [r for r in auto_report if r["auto"] is None]
+        print(f"{len(anchors)} Segmente automatisch verankert, {len(missing)} ohne Treffer (Nahaufnahmen?)")
+    H_m_to_px, drift, segments = per_frame_homographies(frames, C, {**keyframes, **anchors}, cuts)
+    auto_frames = set(anchors)
+    for seg in segments:
+        seg["auto"] = [k for k in seg["keyframes"] if k in auto_frames]
+        seg["keyframes"] = [k for k in seg["keyframes"] if k not in auto_frames]
     H_px_to_m = np.full_like(H_m_to_px, np.nan)
     ok = np.isfinite(H_m_to_px).all(axis=(1, 2))
     ok[ok] = np.abs(np.linalg.det(H_m_to_px[ok])) > 1e-12
     H_px_to_m[ok] = np.linalg.inv(H_m_to_px[ok])
     H_m_to_px[~ok] = np.nan
     for seg in segments:
-        state = f"Keyframes {seg['keyframes']}" if seg["keyframes"] else "OHNE Keyframe, bleibt unkalibriert"
+        state = (f"Keyframes {seg['keyframes']}" if seg["keyframes"] else
+                 f"automatisch verankert {seg['auto']}" if seg.get("auto") else "OHNE Keyframe, bleibt unkalibriert")
         fps = float(data.get("fps") or 50.0)
         print(f"  Segment {seg['start']}..{seg['end']} ({seg['start'] / fps:.0f}s bis {seg['end'] / fps:.0f}s): {state}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -393,6 +493,7 @@ def main(argv=None) -> int:
     data["propagation"] = {"frames": int(len(frames)), "stride": args.stride, "scale": args.scale,
                            "failed_transitions": stats["failed"], "reanchors": stats["reanchors"],
                            "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),
+                           "auto_anchors": auto_report,
                            "chain_drift_px_at_next_keyframe": drift}
     args.calib.write_text(json.dumps(data, indent=1, allow_nan=False))
     contract = args.calib.with_name("court_calib.json")
