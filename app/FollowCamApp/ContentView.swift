@@ -4,6 +4,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var camera = CameraManager()
     @StateObject private var pan = PanController()
+    @StateObject private var heart = HeartRateMonitor()
+    @StateObject private var whoop = WhoopAuthCoordinator.shared
     @State private var tracker = SubjectTracker()
     @State private var subjectBox: CGRect?   // Vision-normalized
     @State private var bridgeHost = "192.168.1.10"
@@ -42,6 +44,11 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(pan.connected ? .green : .orange)
                     Toggle("inv", isOn: $pan.invert).frame(width: 80)
+                    Button(heart.bpm != nil ? "♥ \(heart.bpm!)" : "link HR") {
+                        heart.startScan()
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(heart.bpm != nil ? .red : .white)
                     Spacer()
                     Text("\(Int(pan.angle))°")
                         .font(.system(.title2, design: .monospaced).bold())
@@ -53,6 +60,15 @@ struct ContentView: View {
                 Spacer()
 
                 HStack(spacing: 24) {
+                    Button(whoop.connected ? "WHOOP ✓" : "WHOOP") {
+                        Task {
+                            try? await whoop.connect()
+                            _ = try? await WhoopClient.shared.exportLatestWorkout()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(whoop.connected ? .green : .white)
+
                     Button(tracker.isTracking ? "clear target" : "tap video to target") {
                         tracker.clear()
                         subjectBox = nil
@@ -62,7 +78,13 @@ struct ContentView: View {
                     .tint(.white)
 
                     Button {
-                        camera.isRecording ? camera.stopRecording() : camera.startRecording()
+                        if camera.isRecording {
+                            camera.stopRecording()
+                            heart.endLog(stamp: Int(Date().timeIntervalSince1970))
+                        } else {
+                            heart.beginLog()
+                            camera.startRecording()
+                        }
                     } label: {
                         Circle()
                             .fill(camera.isRecording ? Color.gray : Color.red)
