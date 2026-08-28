@@ -51,13 +51,16 @@ def main(argv=None) -> int:
             log.info("tracks.jsonl changed (quiet %.0f s), running", quiet)
             try:
                 # pass 1: long tracks only, identities.json out fast; pass 2: the fragments, rewrite
-                for min_s, crops in read.PASSES:
-                    read.run(a.tracks, min_track_s=min_s, max_crops=crops)
+                shooters = read.shooter_ids(a.tracks)
+                passes = [(0.0, read.MAX_CROPS, shooters)] if shooters else []  # shooters first, whatever their length
+                passes += [(min_s, crops, None) for min_s, crops in read.PASSES]
+                for min_s, crops, only in passes:
+                    read.run(a.tracks, min_track_s=min_s, max_crops=crops, only_ids=only, priority_ids=shooters)
                     m = merge.run(a.tracks.parent / read.READS_NAME, a.tracks.parent / "identities.json")
                     if a.publish:
                         shutil.copyfile(a.tracks.parent / "identities.json", a.publish)
                     s = m["summary"]
-                    print(f"NUMBERS pass >= {min_s:.0f} s: {s['tracks_with_number']}/{s['tracks']} tracks got a "
+                    print(f"NUMBERS pass {'shooters' if only else f'>= {min_s:.0f} s'}: {s['tracks_with_number']}/{s['tracks']} tracks got a "
                           f"number ({100 * s['share']:.0f}%), {s['players_with_number']} numbered players", flush=True)
                     if a.tracks.stat().st_mtime != mtime:
                         break  # new frames arrived, start over with the long tracks

@@ -304,8 +304,20 @@ def track_seconds(rows: list[dict]) -> float:
     return rows[-1]["t"] - rows[0]["t"]
 
 
+def shooter_ids(tracks_path: Path) -> set[int]:
+    """STATS' shooter track ids from the events.json next to the tracks file (empty if none)."""
+    events = tracks_path.parent / "events.json"
+    if not events.exists():
+        return set()
+    try:
+        return {int(s["player_id"]) for s in json.load(open(events)).get("shots", []) if s.get("player_id") is not None}
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return set()
+
+
 def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = True,
-        min_track_s: float = 0.0, max_crops: int = MAX_CROPS, only_ids: set[int] | None = None) -> dict:
+        min_track_s: float = 0.0, max_crops: int = MAX_CROPS, only_ids: set[int] | None = None,
+        priority_ids: set[int] | None = None) -> dict:
     """OCR + vote. Tracks shorter than min_track_s get no crops (they stay in the
     output without a number) unless the cache already holds reads for them."""
     t0 = time.time()
@@ -354,7 +366,9 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
                 else:
                     crops[k] = crop
                     color[k] = crop_team(frame, bbox)
-        order = sorted((k for k in need_ocr if k in crops), key=lambda k: -len(tracks[todo[k][0][0]]))
+        prio = priority_ids or set()  # shooters first (ORCH), then the longest tracks
+        order = sorted((k for k in need_ocr if k in crops),
+                       key=lambda k: (todo[k][0][0] not in prio, -len(tracks[todo[k][0][0]])))
         for k in order:
             reads, mode = ocr_crop(reader, crops[k], color[k])
             cache[k] = {"reads": reads, "team": color[k], "mode": mode}
