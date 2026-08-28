@@ -568,7 +568,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th>{'<th class="num">Distance</th>' if has_distance else ''}</tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
 {f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks</button>' if n_inactive else ''}
-<p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{'' if has_distance else ' Distance follows once the court calibration exists.'}</p>
+<p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{' Distance counts only the seconds with a court calibration.' if has_distance and cal is not None and cal.mode != 'single' else '' if has_distance else ' Distance follows once the court calibration exists.'}</p>
 </section>"""
 
     # videos ------------------------------------------------------------------
@@ -579,7 +579,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     if overlay and meta_clip and clip and meta_clip != clip:
         ov_note = f"{html.escape(meta_clip)}, the stats above are from {html.escape(clip)}"
     mm = (f'<video id="minimap" src="{html.escape(minimap)}" controls muted playsinline preload="metadata"></video>'
-          if minimap else '<div class="placeholder">2D minimap arrives with the court calibration</div>')
+          if minimap else '<div class="placeholder">2D minimap for this clip is not rendered yet</div>')
     videos = f"""
 <section><h2>Video</h2>
 <div class="videos">
