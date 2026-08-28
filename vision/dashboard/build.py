@@ -235,7 +235,11 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
         track_id = p.get("id") if isinstance(p.get("id"), int) or str(p.get("id")).isdigit() else None
         label, number, ident = ids.resolve(track_id, p.get("key"), p.get("number"))
         fg = (fgm / fga) if fga else None
-        dist = p.get("distance_m") if p.get("distance_m") is not None else (distances.get(int(track_id)) if track_id is not None else None)
+        dist = p.get("distance_m")
+        if dist is None:
+            tids = [int(t) for t in (p.get("track_ids") or ([track_id] if track_id is not None else [])) if str(t).lstrip("-").isdigit()]
+            found = [distances[t] for t in tids if t in distances]
+            dist = round(sum(found), 1) if found else None
         rows.append({
             "id": p.get("id"), "label": label, "number": number, "ident": ident, "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
             "fg_pct": None if fg is None else round(float(fg), 3),
