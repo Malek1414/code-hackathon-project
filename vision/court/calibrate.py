@@ -63,6 +63,26 @@ def keyframe_dict(spec: SurfaceSpec, clicks: Clicks, fit: HomographyFit) -> dict
     }
 
 
+def geometry_warnings(spec: SurfaceSpec, clicks: Clicks) -> list[str]:
+    """Why a fit that solved may still be worthless: the points span no area."""
+    ids = [lm.id for lm in spec.landmarks if lm.id in clicks]
+    if len(ids) < 4:
+        return []
+    px = np.array([clicks[i] for i in ids], np.float64)
+    world = np.array([[spec.landmark(i).x, spec.landmark(i).y] for i in ids], np.float64)
+    out = []
+    sv = np.linalg.svd(px - px.mean(axis=0), compute_uv=False)
+    if sv[0] > 0 and sv[1] / sv[0] < 0.08:
+        out.append("Punkte liegen im Bild fast auf einer Linie. Punkte in einer anderen Tiefe setzen (Freiwurflinie, Mittellinie).")
+    if np.ptp(world[:, 0]) < 1.0:
+        out.append("Alle Punkte auf der Grundlinie, die Tiefe ist unbestimmt. Freiwurflinie oder Mittellinie dazunehmen.")
+    if np.ptp(world[:, 1]) < 3.0:
+        out.append("Alle Punkte in einem schmalen Streifen der Feldbreite. Punkte weiter auseinander setzen.")
+    if len(ids) < 6:
+        out.append(f"Nur {len(ids)} Punkte. Ab 6 wird der Fehler aussagekräftig.")
+    return out
+
+
 def calib_dict(spec: SurfaceSpec, keyframes: dict[int, Clicks], fits: dict[int, HomographyFit],
                clip: str, fps: float, image_size: tuple[int, int]) -> dict:
     """Contract format from docs/ORCHESTRATION.md: single H for the first keyframe
@@ -271,7 +291,9 @@ class Calibrator:
             self.message = str(exc)
             return False
         fit = self.fits[self.frame_index]
-        self.message = (f"Fehler {fit.mean_error_px:.1f} px / {fit.mean_error_m:.2f} m "
+        fit.warnings = geometry_warnings(self.spec, self.clicks) + fit.warnings
+        verdict = "OK" if fit.mean_error_px < 6 and not fit.warnings else "PRUEFEN"
+        self.message = (f"{verdict}: Fehler {fit.mean_error_px:.1f} px / {fit.mean_error_m:.2f} m "
                         f"({fit.inliers}/{fit.total} Punkte). Gespeichert.")
         return True
 
@@ -407,6 +429,8 @@ def main(argv=None) -> int:
 
     if args.no_gui:
         fits = {f: solve(spec, c) for f, c in keyframes.items() if len(c) >= 4}
+        for f, fit in fits.items():
+            fit.warnings = geometry_warnings(spec, keyframes[f]) + fit.warnings
         write_outputs(args.out, spec, keyframes, fits, clip)
         return 0
 
