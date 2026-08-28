@@ -38,7 +38,7 @@ STEP_ORDER = ("track", "numbers", "court", "stats", "qa", "frontend")
 # Processes that use the GPU (the MPS schedule in docs/ORCHESTRATION.md). The smoke
 # test waits while any of these run; run_all itself only waits with --wait-for-gpu.
 GPU_JOB_PATTERNS = (
-    "vision/track/run.py", "vision.track.run", "vision/track/compare.py", "vision.track.compare",
+    "vision/track/", "vision.track.",  # anything of TRACK (run, compare, experiments), ORCH rule 12:52
     "vision/label/train.py", "vision.label.train", "vision/label/autolabel.py", "vision.label.autolabel",
     "vision/live/live.py", "vision.live.live", "vision/run_all.py", "vision.run_all", "vision.smoke_test", "vision/smoke_test.py",
 )
@@ -154,6 +154,7 @@ class Pipeline:
             raise SystemExit(f"unbekannte Schritte: {', '.join(sorted(unknown))} (erlaubt: {', '.join(STEP_ORDER)})")
         self.log_file = self.od / "run_all.log"
         self.team_a, self.team_b = a.team_a, a.team_b
+        self.wait_gpu_s = a.wait_for_gpu
 
     # -- paths -------------------------------------------------------------
     def default_calib(self) -> Path:
@@ -315,6 +316,9 @@ class Pipeline:
                 for cmd in step.cmds:
                     print("    $ " + show(cmd))
                 continue
+            if step.name == "track" and self.wait_gpu_s and not wait_for_gpu(self.wait_gpu_s, log=self.log):
+                self.log("GPU vor TRACK immer noch belegt, Abbruch")
+                return 2
             self.log(f"{step.name.upper():9s} läuft ({why})")
             if not self.run_step(step):
                 self.log(f"abgebrochen nach {time.time() - t_all:.1f} s")

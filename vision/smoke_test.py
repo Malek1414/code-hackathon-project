@@ -155,6 +155,8 @@ def main(argv=None) -> int:
     if not a.with_numbers:
         skip.append("numbers")
     cmd = [PY, "-m", "vision.run_all", "--clip", str(cut), "--out-dir", str(od), "--skip", ",".join(skip)]
+    if not a.no_wait:
+        cmd += ["--wait-for-gpu", str(int(a.max_wait))]  # second check right before TRACK
     if a.force:
         cmd.append("--force")
     log("$ " + " ".join(cmd))
