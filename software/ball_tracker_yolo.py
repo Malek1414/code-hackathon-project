@@ -6,15 +6,18 @@ fallback): `A<angle>\\n` at 115200 baud, servo 40 to 140 degrees, KP, deadband,
 EMA. Detection is ultralytics with models/ball_hoop_avishah.pt (class 0 =
 ball) at imgsz 640, conf 0.35, on the CPU by default (the GPU is scheduled for
 other jobs and must stay free during the live demo); `--device mps` is
-optional. Of several balls the one nearest the previous position wins. When
-the model finds nothing for LOST_FRAMES frames in a row, the HSV mask from
-ball_tracker.py takes over until the model sees the ball again.
+optional. Of several balls the one nearest the previous position wins. With
+--hsv-fallback (off by default: measured 14:20, the mask fires on skin tones
+in 55 percent of frames when no ball is in view) the HSV mask from
+ball_tracker.py takes over after LOST_FRAMES frames without a model ball,
+until the model sees the ball again.
 
 Usage:
   .venv/bin/python software/ball_tracker_yolo.py                       # webcam 0, preview only
   .venv/bin/python software/ball_tracker_yolo.py --cam 1               # iPhone via Continuity Camera
   .venv/bin/python software/ball_tracker_yolo.py --video data/clips/dev60.mp4
   .venv/bin/python software/ball_tracker_yolo.py --serial /dev/tty.usbserial-XXXX
+  .venv/bin/python software/ball_tracker_yolo.py --device mps --hsv-fallback   # GPU free, orange ball only
   .venv/bin/python software/ball_tracker_yolo.py --video clip.mp4 --headless --max-frames 600 --save-frames 3
 
 Keys: q quit. Prints fps and ball hit rate on exit (and every 100 frames headless).
@@ -115,6 +118,8 @@ def main():
     ap.add_argument("--video", default=None)
     ap.add_argument("--serial", default=None)
     ap.add_argument("--device", default="cpu", help="cpu (default, keeps the GPU free) or mps")
+    ap.add_argument("--hsv-fallback", action="store_true",
+                    help="use the HSV color mask after %d lost frames (off: it fires on skin tones)" % LOST_FRAMES)
     ap.add_argument("--headless", action="store_true", help="no windows (tests, ssh)")
     ap.add_argument("--max-frames", type=int, default=0, help="stop after N frames (tests)")
     ap.add_argument("--max-seconds", type=float, default=0, help="stop after N seconds (tests)")
@@ -162,7 +167,7 @@ def main():
             lost += 1
             if lost >= 3:
                 prev = None  # widen the search to the full frame
-            if lost >= LOST_FRAMES:
+            if args.hsv_fallback and lost >= LOST_FRAMES:
                 target = hsv_ball(frame)
                 source = "hsv"
                 if target is not None:

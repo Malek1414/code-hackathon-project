@@ -11,9 +11,13 @@ only; two processes may share camera 0.
 2. 15:50 Kill every model job so the GPU is free for the demo:
    `ps -axo pid,command | grep .venv/bin/python`, then `kill` each vision/track,
    vision/label, run_all or smoke_test process (monitor, numbers.watch and
-   qa.watch are CPU only and may stay). The rig tracker runs on HSV
-   (`software/ball_tracker.py`) or `--device cpu` during the live demo, never a
-   second MPS model.
+   qa.watch are CPU only and may stay). Rig tracker: with every other model job
+   killed, start `software/ball_tracker_yolo.py --device mps` and read the fps
+   on its window once (target 20 fps; not measured yet, the GPU was never free
+   for it). Below 10 fps or any other MPS job alive: `--device cpu` (measured
+   6 fps under load) or Malek's HSV `software/ball_tracker.py`. Leave
+   `--hsv-fallback` off unless the ball is the only orange thing in view (the
+   mask fires on skin).
 3. 15:55 In Terminal.app (not another terminal, camera permission), repo root:
    `.venv/bin/python -m vision.live.live --list-sources` and pick the index
    that reports frames. On this Mac the phone is `--source 1` (measured in the
