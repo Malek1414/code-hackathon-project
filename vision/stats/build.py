@@ -39,6 +39,7 @@ def build(
     identities: dict[int, "Identity"] | None = None,
     image_height: float = 1080.0,
     on_court_filter: bool = True,
+    bench_line_frac: float = 0.0,
     possession_params: PossessionParams = PossessionParams(),
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
@@ -48,7 +49,7 @@ def build(
     Bench players / spectators are removed per frame (OnCourtFilter)."""
     engine = StatsEngine(
         dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params, cuts=cuts,
-        calib=calib, image_height=image_height, on_court_filter=on_court_filter,
+        calib=calib, image_height=image_height, on_court_filter=on_court_filter, bench_line_frac=bench_line_frac,
     )
     for fr in frames:
         engine.push(fr)
@@ -302,6 +303,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
     ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
     ap.add_argument("--no-court-filter", action="store_true", help="keep bench players and spectators")
+    ap.add_argument("--bench-line-frac", type=float, default=0.0,
+                    help="interim without calibration: feet above this share of the image height are off court "
+                         "(COURT for dev60 segment 853-1562: 505/1080 = 0.47)")
     ap.add_argument("--fixture", choices=["made", "miss", "pass"], help="run on a synthetic scenario")
     ap.add_argument("--min-hold", type=float, default=PossessionParams.min_hold_s, help="seconds")
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
@@ -347,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         identities=identities,
         image_height=image_height,
         on_court_filter=not args.no_court_filter,
+        bench_line_frac=args.bench_line_frac,
         possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
     out.mkdir(parents=True, exist_ok=True)

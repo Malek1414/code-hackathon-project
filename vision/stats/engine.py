@@ -46,9 +46,11 @@ class OnCourtFilter:
         min_height_ratio: float = 0.6,
         top_frac: float = 0.35,
         margin_m: float = 1.0,
+        bench_line_frac: float = 0.0,
     ) -> None:
         self.calib = calib
         self.image_height = image_height
+        self.bench_line_frac = bench_line_frac  # > 0: any foot above this share of the image height is off court
         self.window_s = window_s
         self.min_height_ratio = min_height_ratio
         self.top_frac = top_frac
@@ -84,7 +86,8 @@ class OnCourtFilter:
             y_med = statistics.median(e[2] for e in hist)
             small = band_median > 0 and h_med < self.min_height_ratio * band_median
             high = y_med < self.top_frac * self.image_height
-            (removed if (small and high) else keep).append(p)
+            behind_bench_line = self.bench_line_frac > 0 and y_med < self.bench_line_frac * self.image_height
+            (removed if ((small and high) or behind_bench_line) else keep).append(p)
         self._record(fr, keep, removed)
         return [p.id for p in removed]
 
@@ -127,10 +130,13 @@ class StatsEngine:
         calib: dict | None = None,
         image_height: float = 1080.0,
         on_court_filter: bool = True,
+        bench_line_frac: float = 0.0,
     ) -> None:
         self.fps = fps
         self.max_gap_s = max_gap_s
-        self.court_filter = OnCourtFilter(calib, image_height=image_height) if on_court_filter else None
+        self.court_filter = (
+            OnCourtFilter(calib, image_height=image_height, bench_line_frac=bench_line_frac) if on_court_filter else None
+        )
         self._cuts = sorted(set(int(c) for c in (cuts or [])))  # frame numbers where the footage jumps
         self.cuts_applied = 0
         self.possession = PossessionTracker(possession_params, dt=dt)
