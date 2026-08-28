@@ -240,9 +240,14 @@ def player_stats(
     poss_s = possession_seconds(frames, possession)
     distance = distances if distances is not None else (distances_m(frames, calib) if calib else {})
 
+    shot_team: dict[int, int] = {}  # a shooter's team as the event decided it (nearby players etc.)
+    for s in shots:
+        if s.player_id is not None and s.team >= 0:
+            shot_team.setdefault(s.player_id, s.team)
+
     rows: dict[str, dict] = {}
     for pid, n in seen.items():
-        track_team = teams[pid].most_common(1)[0][0] if teams[pid] else -1
+        track_team = teams[pid].most_common(1)[0][0] if teams[pid] else shot_team.get(pid, -1)
         if pid in ident:
             key, team, number = ident[pid].key, ident[pid].team, ident[pid].number
         else:
