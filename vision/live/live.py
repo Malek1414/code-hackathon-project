@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import queue
+import signal
 import sys
 import threading
 import time
@@ -356,8 +357,33 @@ def main(argv: list[str] | None = None) -> int:
 
     status = ""  # shown in the score bar when the source misbehaves
     panel = None
+    stop_flag = {"stop": False}
+
+    def _on_signal(signum, _frame):  # SIGINT/SIGTERM end the loop cleanly so the exit file gets written
+        stop_flag["stop"] = True
+
+    signal.signal(signal.SIGINT, _on_signal)
+    signal.signal(signal.SIGTERM, _on_signal)
+    last_dump = time.monotonic()
+
+    def dump(final: bool = False) -> None:
+        summary = {
+            "fps": src_fps,
+            "clip": args.source,
+            "shots": shots_log,
+            "score": {str(k): vars(v) for k, v in board.teams.items()},
+            "actions": [vars(a) for a in board.history],
+            "unassigned_baskets": board.unassigned,
+            "frames_rendered": frames_rendered,
+            "frames_processed": worker.processed,
+            "rtmp_frames": pusher.frames if pusher else 0,
+            "source_reopens": cap.reopens,
+            "final": final,
+        }
+        Path(args.events_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.events_out).write_text(json.dumps(summary, indent=1))
     try:
-        while True:
+        while not stop_flag["stop"]:
             fresh = True
             if idx > 0:
                 if realtime and not is_cam and not cap.eof:
@@ -449,6 +475,9 @@ def main(argv: list[str] | None = None) -> int:
                     flash = (hit[0], hit[1], t)
             if fresh:
                 idx += 1
+            if time.monotonic() - last_dump > 5.0:  # score survives a hard kill
+                dump()
+                last_dump = time.monotonic()
     finally:
         worker.stop = True
         cap.release()
@@ -461,19 +490,7 @@ def main(argv: list[str] | None = None) -> int:
             pusher.close()
         if mjpeg:
             mjpeg.stop()
-        summary = {
-            "fps": src_fps,
-            "clip": args.source,
-            "shots": shots_log,
-            "score": {str(k): vars(v) for k, v in board.teams.items()},
-            "unassigned_baskets": board.unassigned,
-            "frames_rendered": frames_rendered,
-            "frames_processed": worker.processed,
-            "rtmp_frames": pusher.frames if pusher else 0,
-            "source_reopens": cap.reopens,
-        }
-        Path(args.events_out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.events_out).write_text(json.dumps(summary, indent=1))
+        dump(final=True)
         log.info("done: rendered %d, processed %d, shots %d, score %s -> %s", frames_rendered,
                  worker.processed, len(shots_log), board.line(), args.events_out)
     return 0
