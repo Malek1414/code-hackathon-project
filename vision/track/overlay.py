@@ -8,7 +8,7 @@ ball trail, hoop, shot flashes. Runs standalone on CPU, no re-detection:
 
 What is drawn, and why:
 * players: only those on the court. With out/court_calib.json the foot point
-  is projected (vision.court.draw.on_court_px, court plus 1 m tolerance);
+  is projected (vision.court.draw.on_court_px, court plus 0.5 m tolerance);
   without it, STATS's "off_court_track_ids" from events.json are hidden.
   Bench, coaches and spectators otherwise get boxes too. `--court-lines`
   additionally draws COURT's calibrated court lines.
@@ -51,6 +51,7 @@ HOOP_COLOR = (0, 255, 120)
 TRAIL_LEN = 25
 TRAIL_GAP_S = 0.5
 FLASH_S = 1.0
+COURT_TOLERANCE_M = 0.5  # QA measured: 1.5 m keeps the bench on court
 
 
 def default_calib(video: Path, calib: Path | None) -> Path | None:
@@ -128,7 +129,7 @@ class OverlayWriter:
         if self.calib is not None and players:
             feet = np.array([p["foot"] for p in players], np.float64)
             try:
-                ok = self._court.on_court_px(self.calib, record["frame"], feet)
+                ok = self._court.on_court_px(self.calib, record["frame"], feet, COURT_TOLERANCE_M)
                 return [p for p, keep in zip(players, ok) if keep]
             except Exception as e:  # noqa: BLE001
                 log.debug("projection failed at frame %d: %s", record["frame"], e)
