@@ -77,8 +77,6 @@ def build_number_cards(frames: list[dict], grab: FrameGrabber, out: Path, identi
     identities = read_json(identities_path)
     if not identities:
         return []
-    for old in out.glob("num_*.jpg"):
-        old.unlink()
     players = select_players(identities)
     switch_t = {
         int(tid): float(info["switch_t"])
@@ -130,4 +128,8 @@ def build_number_cards(frames: list[dict], grab: FrameGrabber, out: Path, identi
         for t in tiles[i]:
             row += [t, pad]
         save_jpg(out / card["img"], np.hstack(row), 90)
+    keep = {c["img"] for c in cards if c["img"]}
+    for stale in out.glob("num_*.jpg"):
+        if stale.name not in keep:
+            stale.unlink()
     return cards

@@ -125,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-nostdin",
         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{out_w}x{OUT_H}", "-r", f"{fps:.3f}", "-i", "-",
         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        "-threads", "2",  # ORCH 13:41: renders must not starve the training / tracking runs
         str(tmp),
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)

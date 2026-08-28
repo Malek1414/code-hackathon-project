@@ -507,9 +507,7 @@ def main(argv: list[str] | None = None) -> int:
     index = TrackIndex(frames)
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
-    for old in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
-        old.unlink()
-    sheets = []
+    sheets = []  # files are replaced per shot; stale ones are pruned only after a complete run (an interrupted run must not empty the page)
     for n, shot in enumerate(shots, 1):
         img, m = render_shot(n, shot, grab, index)
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
@@ -531,6 +529,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
     numbers = build_number_cards(frames, grab, args.out, args.identities)
     grab.close()
+    keep = {m["file"] for m in sheets} | {m.get("video") for m in sheets} | {m.get("video_half") for m in sheets}
+    for stale in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
+        if stale.name not in keep:
+            stale.unlink()
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets, "numbers": numbers}, indent=1))
     page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames))
