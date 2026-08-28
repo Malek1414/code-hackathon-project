@@ -56,7 +56,9 @@ Hard rules:
  "hoops": [{"bbox": [x1,y1,x2,y2]}]}
 ```
 `foot` = bottom-center of bbox in pixels (the point COURT projects). `team` is
-0/1 by jersey color, `-1` unknown. `ball` may be `null`.
+0/1 by jersey color, `-1` unknown. `ball` may be `null`. Optional per line
+(added 13:00): `"others": [{"bbox": [...], "cls": "referee"|"person"}]` = referee
+boxes and dropped person boxes (spectators, off-court), used by PRIVACY's blur.
 
 ### `out/events.json` — shot events (STATS writes, COURT/dashboard reads)
 ```json
