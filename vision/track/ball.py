@@ -197,7 +197,7 @@ class BallGate:
         gate = min(self.base_px + self.per_frame_px * gap, self.max_gate_px)
         stuck = self._stuck()
         if stuck:
-            gate = self.max_gate_px  # the "ball" is not moving: let a real one take over
+            gate = float("inf")  # the "ball" is not moving: let a real one take over from anywhere
         near = self.near_px + self.near_grow_px * min(gap, 10)
 
         tier1, tier2 = [], []
