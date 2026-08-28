@@ -6,8 +6,8 @@ Usage:
         --stride 2 --out out/dev60_blurred.mp4        # raw clip: --stride from out/tracks_meta.json
 
 No model runs here: the boxes come from TRACK's tracks.jsonl, so this is CPU
-only and never touches the GPU. Per frame, for every box in "players"
-(players, referees and anyone else TRACK boxed; team -1 included):
+only and never touches the GPU. Per frame, for every box in "players" and in
+the optional "others" list (referees, bench, spectators, if TRACK writes it):
   * head region = top HEAD_FRAC (22 percent) of the box, widened by
     WIDEN (20 percent) on each side, pixelated (mosaic + Gaussian blur).
   * when --calib (out/court_calib.json, H_px_to_m) is given, the foot point is
@@ -114,7 +114,9 @@ def blur_frame(frame: np.ndarray, row: dict | None, calib) -> tuple[int, int]:
         return 0, 0
     h, w = frame.shape[:2]
     heads = full = 0
-    for p in row.get("players", []):
+    # "others" is the optional list of non-player person boxes (referees,
+    # bench, spectators) TRACK may write; treated exactly like players.
+    for p in list(row.get("players", [])) + list(row.get("others", [])):
         bbox = p["bbox"]
         if off_court(p.get("foot", [(bbox[0] + bbox[2]) / 2, bbox[3]]), calib):
             full += pixelate(frame, clamp(*bbox, w, h))
