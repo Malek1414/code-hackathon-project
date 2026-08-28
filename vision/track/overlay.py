@@ -136,6 +136,8 @@ class OverlayWriter:
             try:
                 xy = self.calib.project(record["frame"], feet)
                 ok = self.calib.on_court(xy, COURT_TOLERANCE_M) | ~np.isfinite(xy).all(axis=1)
+                if ok.sum() * 2 < len(players):
+                    return players  # more than half "off court" = the homography is off, not the players
                 return [p for p, keep in zip(players, ok) if keep]
             except Exception as e:  # noqa: BLE001
                 log.debug("projection failed at frame %d: %s", record["frame"], e)
