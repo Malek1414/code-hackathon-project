@@ -105,6 +105,14 @@ class Calibration:
     def to_px(self, frame: int | None, points_m) -> np.ndarray:
         return apply_h(self.H_m_to_px(frame), points_m)
 
+    def is_uncertain(self, frame: int | None) -> bool:
+        """True inside a stretch where the camera chain drifted more than 150 px between
+        anchors ("uncertain_frames" in the calibration file): the position is blended and
+        may be metres off. Draw such shots as unsure, do not count distance there."""
+        if frame is None:
+            return False
+        return any(a <= frame <= b for a, b in self.meta.get("uncertain_frames") or [])
+
     def court_polygon_px(self, frame: int | None = None) -> np.ndarray | None:
         """Court corners in pixels for this frame ([4, 2] float32, bottom-left, bottom-right,
         top-right, top-left in court terms), or None when the frame is uncalibrated."""
@@ -149,6 +157,8 @@ class Calibration:
                 dt = (frames[k] - frames[k - 1]) / self.fps
                 if dt <= 0 or dt > 2.0:
                     continue
+                if self.is_uncertain(int(frames[k])) or self.is_uncertain(int(frames[k - 1])):
+                    continue  # no distance from stretches where the calibration itself moves
                 step = float(np.linalg.norm(xy[k] - xy[k - 1]))
                 if step / dt <= MAX_SPEED_M_S:
                     dist += step

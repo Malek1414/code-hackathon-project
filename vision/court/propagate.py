@@ -376,6 +376,28 @@ def auto_anchors(clip: Path, frames: np.ndarray, keyframes: dict[int, np.ndarray
     return anchors, report
 
 
+UNCERTAIN_DRIFT_PX = 150.0
+
+
+def uncertain_ranges(drift: dict[str, float | None], threshold: float = UNCERTAIN_DRIFT_PX) -> list[list[int]]:
+    """Frame ranges between two anchors whose chained estimate missed the next anchor by
+    more than `threshold` px: positions inside are blended, but can be metres off."""
+    out = []
+    for key, px in drift.items():
+        if px is None or px <= threshold:
+            continue
+        a, b = (int(v) for v in key.split("->"))
+        out.append([a, b])
+    out.sort()
+    merged: list[list[int]] = []
+    for a, b in out:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged
+
+
 def write_cuts(clip: Path, frames: np.ndarray, cuts: list[int], threshold: float, out_dir: Path) -> Path:
     """out/cuts_<clip>.json for TRACK/STATS: reset ids and ball history at these frames."""
     fps = cv2.VideoCapture(str(clip)).get(cv2.CAP_PROP_FPS) or 50.0
@@ -508,6 +530,7 @@ def main(argv=None) -> int:
     np.savez_compressed(args.out, frames=frames, H_m_to_px=H_m_to_px, H_px_to_m=H_px_to_m)
 
     data["per_frame"] = rel(args.out)
+    data["uncertain_frames"] = uncertain_ranges(drift)
     data["propagation"] = {"frames": int(len(frames)), "stride": args.stride, "scale": args.scale,
                            "failed_transitions": stats["failed"], "reanchors": stats["reanchors"],
                            "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),
