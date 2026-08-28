@@ -85,15 +85,22 @@ confident number keeps its own key `A?7` (team letter, `?`, track id). STATS
 aggregates `stats.json` per `key` (adds `"number"` and `"key"` to each player row)
 and events carry `"player_key"`; FRONTEND shows `#12` instead of track ids.
 
-### `out/court_calib.json` — homography (COURT writes, everyone reads)
+### `out/court_calib.json` — homography (COURT writes, everyone reads via `vision.court.project.load_calibration`)
 ```json
-{"clip": "data/clips/game10.mp4", "frame": 0,
+{"clip": "data/clips/dev60.mp4", "frame": 1500,
  "court_m": {"length": 28.0, "width": 15.0},
  "points": [{"id": "corner_bl", "px": [x,y], "m": [0,0]}, ...],
- "H_px_to_m": [[...],[...],[...]], "reproj_err_px": 1.3}
+ "H_px_to_m": [[...],[...],[...]], "reproj_err_px": 1.3,
+ "frames": {"1500": {"points": [...], "H_px_to_m": [...], "H_m_to_px": [...], "reproj_err_px": 1.1}},
+ "per_frame": "out/court_H_dev60.npz", "propagation": {"cuts": [...]}}
 ```
-If the camera pans, `frames: {"<frame>": H}` may be added per keyframe; the
-fixed single-H version must exist first.
+Top-level `frame`/`H_px_to_m` = the first hand keyframe. `frames` = one dict per hand
+keyframe. Per-frame matrices (camera pans, cuts) live in the `.npz` named by
+`per_frame`; frames outside a calibrated segment are NaN = uncalibrated. Nobody
+reads matrices by hand: `cal = load_calibration("out/court_calib.json");
+cal.project(frame, [[x, y], ...]) -> metres`, `cal.player_distances(tracks_path)`.
+Per-clip files: `out/court_calib_<clip>.json`, `out/court_H_<clip>.npz`,
+`out/cuts_<clip>.json`; `out/court_calib.json` = the last calibrated clip.
 
 ### `data/dataset/` — YOLO format (LABEL writes)
 `images/{train,val}/*.jpg`, `labels/{train,val}/*.txt`, `data.yaml` with the
