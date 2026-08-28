@@ -171,6 +171,8 @@ def main() -> None:
                 if writer:
                     writer.write(frame, record)
                 done += 1
+                if done % 25 == 0:
+                    out.flush()  # NUMBERS' watcher and the monitor board read while we run
                 if done % 250 == 0:
                     s = tr.summary()
                     log.info("frame %d/%d  %.3f s/frame  players/frame %.1f  ball %.0f%%  "
