@@ -8,7 +8,8 @@ ones downscaled), run EasyOCR (CPU only: the MPS is scheduled for other jobs)
 with a digit-only allowlist and keep reads of 1-2 digits with conf >= MIN_CONF.
 
 Vote per track: sum of confidences per number. A number is assigned when the
-winner has >= MIN_READS reads and >= WIN_SHARE of the vote mass.
+winner has >= MIN_READS reads and >= WIN_SHARE of the vote mass, or when the
+only read of the track is a single one with conf >= STRONG_READ.
 
 Writes:
   out/numbers_reads.json   per track: team, votes, reads, number, conf, crops
@@ -30,6 +31,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from vision.track.teams import rule_label, torso_color  # TRACK's jersey color rule, per crop
+
 log = logging.getLogger("numbers")
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,14 +40,20 @@ TRACKS = ROOT / "out" / "tracks.jsonl"
 META = ROOT / "out" / "tracks_meta.json"
 READS_OUT = ROOT / "out" / "numbers_reads.json"
 PREVIEW_OUT = ROOT / "out" / "numbers_preview.jpg"
-CACHE = ROOT / "out" / "numbers_cache.json"
+CACHE = ROOT / "out" / "numbers_cache_v2.json"  # v2: {"reads": [...], "team": 0/1/-1} per crop
 
-MAX_CROPS = 12
+MAX_CROPS = 6  # per track, spread over its lifetime, tallest box per bin
+# (min track length s, crops) per pass, long tracks first so identities.json is useful early; cache makes each
+# later pass pay only for its new tracks
+PASSES = ((10.0, MAX_CROPS), (5.0, MAX_CROPS), (2.0, MAX_CROPS), (0.0, MAX_CROPS))
 TORSO_TOP, TORSO_BOTTOM = 0.15, 0.60
+TORSO_X0, TORSO_X1 = 0.10, 0.90  # middle 80 % of the width: neighbours' numbers stay out
+SWITCH_MIN_CROPS = 2  # crops of the final color after >= 1 crop of the other color = id switch
 MAX_SIDE = 256  # px, longest side of the crop fed to the OCR
 CPU_THREADS = 4
 MIN_CONF = 0.4
 MIN_READS = 2
+STRONG_READ = 0.9  # a single read this sure with no competing read is enough (measured: 1.00 reads were all right)
 WIN_SHARE = 0.6
 MIN_BOX_H = 60  # px; smaller boxes have no legible number at 1080p
 ALLOWLIST = "0123456789"
@@ -81,12 +90,14 @@ def load_tracks(path: Path = TRACKS) -> tuple[dict[int, list[dict]], str]:
     return dict(tracks), clip
 
 
-def majority_team(rows: list[dict]) -> int:
+def majority_team(rows: list[dict]) -> tuple[int, float]:
+    """(team, share): majority over the track's frames, share = its part of the 0/1 frames."""
     c = Counter(r["team"] for r in rows)
     known = [(n, t) for t, n in c.items() if t in (0, 1)]
     if not known:
-        return -1
-    return max(known)[1]
+        return -1, 0.0
+    n, t = max(known)
+    return t, round(n / sum(m for m, _ in known), 3)
 
 
 def pick_samples(rows: list[dict], k: int = MAX_CROPS) -> list[dict]:
@@ -108,7 +119,8 @@ def torso_crop(frame: np.ndarray, bbox) -> np.ndarray | None:
     x1, y1, x2, y2 = bbox
     h = y2 - y1
     ty1, ty2 = int(y1 + TORSO_TOP * h), int(y1 + TORSO_BOTTOM * h)
-    tx1, tx2 = int(x1), int(x2)
+    w = x2 - x1
+    tx1, tx2 = int(x1 + TORSO_X0 * w), int(x1 + TORSO_X1 * w)
     H, W = frame.shape[:2]
     ty1, ty2, tx1, tx2 = max(ty1, 0), min(ty2, H), max(tx1, 0), min(tx2, W)
     if ty2 - ty1 < 8 or tx2 - tx1 < 8:
@@ -132,6 +144,12 @@ def get_reader():
     return easyocr.Reader(["en"], gpu=False, verbose=False)
 
 
+def crop_team(frame: np.ndarray, bbox) -> int:
+    """Jersey color of this box in this frame (0/1/-1), TRACK's rule, no history."""
+    feat = torso_color(frame, bbox)
+    return -1 if feat is None else int(rule_label(feat))
+
+
 def ocr_digits(reader, img: np.ndarray) -> list[tuple[str, float]]:
     """All digit reads (1-2 digits, conf >= MIN_CONF) in the crop."""
     res = reader.readtext(img, allowlist=ALLOWLIST, detail=1, paragraph=False, canvas_size=MAX_SIDE, mag_ratio=1.0,
@@ -144,6 +162,28 @@ def ocr_digits(reader, img: np.ndarray) -> list[tuple[str, float]]:
     return out
 
 
+def pixel_team(per_crop: list[tuple]) -> tuple[int, float | None]:
+    """(team by crop colors, switch_t). Team = the color of the LAST crops (the
+    player the id ends on); switch_t = t of the first crop of that color when at
+    least one crop of the other team precedes a run of >= SWITCH_MIN_CROPS crops
+    of it (ByteTrack id jump); a single stray crop at the end is not a switch."""
+    colored = [(r["t"], ct) for _, r, _, ct in per_crop if ct in (0, 1)]
+    if not colored:
+        return -1, None
+    colored.sort()
+    last = colored[-1][1]
+    n_last = sum(1 for _, ct in colored if ct == last)
+    n_other = len(colored) - n_last
+    if n_last < SWITCH_MIN_CROPS and n_other >= SWITCH_MIN_CROPS:
+        last = 1 - last  # one stray crop at the end: majority wins, no switch
+        n_last, n_other = n_other, n_last
+    if n_other >= 1 and n_last >= SWITCH_MIN_CROPS:
+        idx = max(i for i, (_, ct) in enumerate(colored) if ct != last)
+        if idx + 1 < len(colored):
+            return last, colored[idx + 1][0]  # first crop of the final color run
+    return last, None
+
+
 def vote(reads: list[tuple[str, float]]) -> tuple[int | None, float, dict[str, float], dict[str, int]]:
     mass: dict[str, float] = defaultdict(float)
     count: dict[str, int] = defaultdict(int)
@@ -151,12 +191,22 @@ def vote(reads: list[tuple[str, float]]) -> tuple[int | None, float, dict[str, f
         num = str(int(text))  # "07" -> "7"
         mass[num] += conf
         count[num] += 1
+    # ORCH rule: a one-digit read that is a substring of a two-digit read of the same
+    # track (5 on a 55 shirt, 2 on a 23) is half a vote for the two-digit number
+    for d in [n for n in mass if len(n) == 1]:
+        hosts = [n for n in mass if len(n) == 2 and d in n]
+        if hosts:
+            host = max(hosts, key=mass.get)
+            mass[host] += 0.5 * mass.pop(d)
+            count[host] += count.pop(d)
     if not mass:
         return None, 0.0, {}, {}
     total = sum(mass.values())
     winner = max(mass, key=mass.get)
     share = mass[winner] / total
     if count[winner] >= MIN_READS and share >= WIN_SHARE:
+        return int(winner), round(share, 3), dict(mass), dict(count)
+    if len(mass) == 1 and count[winner] == 1 and mass[winner] >= STRONG_READ:
         return int(winner), round(share, 3), dict(mass), dict(count)
     return None, round(share, 3), dict(mass), dict(count)
 
@@ -215,45 +265,65 @@ def build_preview(tiles: list[tuple[np.ndarray, str, str]], out: Path, cols: int
     cv2.imwrite(str(out), sheet, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
 
-def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = True) -> dict:
+def track_seconds(rows: list[dict]) -> float:
+    return rows[-1]["t"] - rows[0]["t"]
+
+
+def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = True,
+        min_track_s: float = 0.0, max_crops: int = MAX_CROPS) -> dict:
+    """OCR + vote. Tracks shorter than min_track_s get no crops (they stay in the
+    output without a number) unless the cache already holds reads for them."""
     t0 = time.time()
     tracks, clip = load_tracks(tracks_path)
     video = video or (ROOT / clip)
     cache = load_cache()
 
     # which crops do we need
-    plan: dict[int, list[dict]] = {tid: pick_samples(rows) for tid, rows in tracks.items()}
+    plan: dict[int, list[dict]] = {}
+    for tid, rows in tracks.items():
+        samples = pick_samples(rows, max_crops)
+        if track_seconds(rows) < min_track_s:
+            samples = [r for r in samples if crop_key(clip, r["frame"], r["bbox"]) in cache]
+        plan[tid] = samples
     wanted_frames: set[int] = set()
     todo: dict[str, list[tuple[int, dict]]] = defaultdict(list)  # key -> [(tid, row)]
     for tid, rows in plan.items():
         for r in rows:
             k = crop_key(clip, r["frame"], r["bbox"])
             if k not in cache or preview:
-                wanted_frames.add(r["frame"])
+                wanted_frames.add(r["frame"])  # preview needs the pixels even when cached
             todo[k].append((tid, r))
     need_ocr = [k for k in todo if k not in cache]
-    log.info("tracks %d, crops %d, cached %d, to OCR %d, frames to decode %d",
-             len(tracks), len(todo), len(todo) - len(need_ocr), len(need_ocr), len(wanted_frames))
+    log.info("tracks %d (>= %.1f s: %d), crops %d, cached %d, to OCR %d, frames to decode %d",
+             len(tracks), min_track_s, sum(1 for r in tracks.values() if track_seconds(r) >= min_track_s),
+             len(todo), len(todo) - len(need_ocr), len(need_ocr), len(wanted_frames))
 
     reader = get_reader() if need_ocr else None
     crops: dict[str, np.ndarray] = {}
+    by_frame: dict[int, list[str]] = defaultdict(list)
+    for k, users in todo.items():
+        by_frame[users[0][1]["frame"]].append(k)
     n_done = 0
     if wanted_frames:
+        # decode once, keep the crops; OCR afterwards ordered by track length so a
+        # killed run has read the long (useful) tracks first
+        color: dict[str, int] = {}
         for fidx, frame in read_frames(video, wanted_frames):
-            for k, users in todo.items():
-                if users[0][1]["frame"] != fidx:
-                    continue
-                crop = torso_crop(frame, users[0][1]["bbox"])
+            for k in by_frame[fidx]:
+                bbox = todo[k][0][1]["bbox"]
+                crop = torso_crop(frame, bbox)
                 if crop is None:
-                    cache[k] = []
-                    continue
-                if preview:
+                    cache[k] = {"reads": [], "team": -1}
+                else:
                     crops[k] = crop
-                if k not in cache:
-                    cache[k] = ocr_digits(reader, crop)
-                    n_done += 1
-                    if n_done % 100 == 0:
-                        log.info("ocr %d/%d  %.1f s", n_done, len(need_ocr), time.time() - t0)
+                    color[k] = crop_team(frame, bbox)
+        order = sorted((k for k in need_ocr if k in crops), key=lambda k: -len(tracks[todo[k][0][0]]))
+        for k in order:
+            cache[k] = {"reads": ocr_digits(reader, crops[k]), "team": color[k]}
+            n_done += 1
+            if n_done % 100 == 0:
+                log.info("ocr %d/%d  %.1f s", n_done, len(order), time.time() - t0)
+                json.dump(cache, open(CACHE, "w"))
         json.dump(cache, open(CACHE, "w"))
 
     # vote
@@ -262,19 +332,25 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
     assigned = 0
     for tid in sorted(tracks):
         rows = tracks[tid]
-        reads: list[tuple[str, float]] = []
         per_crop = []
         for r in plan[tid]:
             k = crop_key(clip, r["frame"], r["bbox"])
-            rd = [tuple(x) for x in cache.get(k, [])]
-            reads.extend(rd)
-            per_crop.append((k, r, rd))
+            entry = cache.get(k, {"reads": [], "team": -1})
+            per_crop.append((k, r, [tuple(x) for x in entry["reads"]], entry["team"]))
+        team, team_share = majority_team(rows)
+        team_px, switch_t = pixel_team(per_crop)
+        if team_px in (0, 1):
+            team = team_px  # the color of the crops beats the id's sticky history vote
+        reads = [x for _, r, rd, ct in per_crop for x in rd
+                 if ct == team or team not in (0, 1) or (switch_t is not None and r["t"] >= switch_t and ct == -1)]
         number, share, mass, count = vote(reads)
-        team = majority_team(rows)
         if number is not None:
             assigned += 1
         result_tracks[str(tid)] = {
             "team": team,
+            "team_share": team_share,
+            "team_px": team_px,
+            "switch_t": switch_t,
             "number": number,
             "conf": share if number is not None else 0.0,
             "votes": {k: round(v, 3) for k, v in sorted(mass.items(), key=lambda kv: -kv[1])},
@@ -287,20 +363,23 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
         }
         if preview:
             head = f"id{tid} {'AB'[team] if team in (0, 1) else '?'}" + (f" #{number}" if number is not None else " -")
-            for i, (k, r, rd) in enumerate(per_crop[:MAX_CROPS]):
-                foot = " ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-"
+            if not per_crop:
+                continue  # fragment without crops: no row on the sheet
+            for i, (k, r, rd, ct) in enumerate(per_crop[:max_crops]):
+                foot = ("AB"[ct] if ct in (0, 1) else "?") + " " + (" ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-")
                 tiles.append((crops.get(k), head if i == 0 else f"f{r['frame']}", foot))
-            for _ in range(len(per_crop), MAX_CROPS):
+            for _ in range(len(per_crop), max_crops):
                 tiles.append((None, "", ""))
 
     out = {"clip": clip, "video": str(video.relative_to(ROOT)) if video.is_relative_to(ROOT) else str(video),
-           "params": {"max_crops": MAX_CROPS, "min_conf": MIN_CONF, "min_reads": MIN_READS, "win_share": WIN_SHARE},
+           "params": {"max_crops": max_crops, "min_track_s": min_track_s, "min_conf": MIN_CONF,
+                      "min_reads": MIN_READS, "win_share": WIN_SHARE},
            "n_tracks": len(tracks), "n_assigned": assigned, "tracks": result_tracks}
     tmp = READS_OUT.with_suffix(".tmp")
     json.dump(out, open(tmp, "w"), indent=1)
     tmp.replace(READS_OUT)
     if preview:
-        build_preview(tiles, PREVIEW_OUT, cols=MAX_CROPS)
+        build_preview(tiles, PREVIEW_OUT, cols=max_crops)
     log.info("numbers: %d/%d tracks got a number (%.0f%%)  %.1f s  -> %s",
              assigned, len(tracks), 100 * assigned / max(1, len(tracks)), time.time() - t0, READS_OUT)
     return out
@@ -311,10 +390,12 @@ def main(argv=None) -> int:
     ap.add_argument("--tracks", type=Path, default=TRACKS)
     ap.add_argument("--video", type=Path, default=None, help="default: clip from out/tracks_meta.json")
     ap.add_argument("--no-preview", action="store_true")
+    ap.add_argument("--min-s", type=float, default=0.0, help="only OCR tracks at least this long (s)")
+    ap.add_argument("--max-crops", type=int, default=MAX_CROPS)
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
                         stream=sys.stdout)
-    run(a.tracks, a.video, preview=not a.no_preview)
+    run(a.tracks, a.video, preview=not a.no_preview, min_track_s=a.min_s, max_crops=a.max_crops)
     return 0
 
 

@@ -1,9 +1,12 @@
 """Merge track ids into real players (NUMBERS role) -> out/identities.json.
 
 Input: out/numbers_reads.json (from read.py) and out/tracks.jsonl.
-Players = groups of track ids with the same (team, number) whose lifetimes do
-not overlap (two boxes with the same number on screen at once are two people or
-one wrong read; the overlapping id then falls back to its own key). Tracks
+Players = groups of track ids with the same (team, number) whose lifetimes
+overlap by at most MAX_OVERLAP_S (ORCH rule: two boxes with the same number
+are two people only if both are on court at once for > 1 s; a shorter overlap
+is a hand-over between ids or a misread and merges. The 0.5 s allowance after
+a cut is covered by the same tolerance). A longer overlap becomes a second
+player with key `A12~<id>` so the conflict stays visible. Tracks
 without a confident number keep their own key, e.g. A?7 (team letter, ?, id);
 team -1 uses the letter "X".
 
@@ -30,6 +33,11 @@ READS = ROOT / "out" / "numbers_reads.json"
 IDENTITIES = ROOT / "out" / "identities.json"
 
 TEAM_LETTER = {0: "A", 1: "B"}
+MAX_OVERLAP_S = 1.0  # same (team, number) ids may overlap this long and still be one player
+
+
+def overlap_s(a: dict, b: dict) -> float:
+    return min(a["last_t"], b["last_t"]) - max(a["first_t"], b["first_t"])
 
 
 def letter(team: int) -> str:
@@ -59,7 +67,7 @@ def group_players(tracks: dict[str, dict]) -> list[dict]:
         for tid, tr in members:
             placed = False
             for g in groups:
-                if all(tr["first_t"] > o["last_t"] or tr["last_t"] < o["first_t"] for _, o in g):
+                if all(overlap_s(tr, o) <= MAX_OVERLAP_S for _, o in g):
                     g.append((tid, tr))
                     placed = True
                     break
@@ -77,6 +85,15 @@ def group_players(tracks: dict[str, dict]) -> list[dict]:
                 "last_t": max(o["last_t"] for _, o in g),
                 "frames": sum(o["frames"] for _, o in g),
             })
+    # ORCH rule: the same number on both teams with a lopsided vote is suspect (TRACK's
+    # color rule reads black sleeves on a blue shirt as team B); we keep the player but
+    # flag it with the team share of its tracks so consumers can show it
+    mass_of = {p["key"]: sum(sum(tracks[str(t)].get("votes", {}).values()) for t in p["track_ids"]) for p in players}
+    for p in players:
+        rival = next((q for q in players if q is not p and q["number"] == p["number"] and q["team"] != p["team"]), None)
+        if rival and mass_of[rival["key"]] >= 3 * mass_of[p["key"]]:
+            p["suspect_team"] = True
+            p["team_share"] = round(min(tracks[str(t)].get("team_share", 1.0) for t in p["track_ids"]), 3)
     for tid, tr in singles:
         players.append({
             "key": own_key(tr.get("team", -1), tid), "team": tr.get("team", -1), "number": None,
@@ -91,9 +108,11 @@ def run(reads_path: Path = READS, out_path: Path = IDENTITIES) -> dict:
     tracks_out: dict[str, dict] = {}
     for tid, tr in reads["tracks"].items():
         tracks_out[tid] = {
-            "team": tr["team"], "number": tr["number"], "conf": tr["conf"],
+            "team": tr["team"], "team_share": tr.get("team_share", 1.0), "number": tr["number"], "conf": tr["conf"],
             "votes": tr.get("counts", {}), "reads": tr["reads"],
         }
+        if tr.get("switch_t") is not None:
+            tracks_out[tid]["switch_t"] = tr["switch_t"]  # id jumped to another player here; number/team are the later one
     players = group_players(reads["tracks"])
     key_of = {t: p["key"] for p in players for t in p["track_ids"]}
     for tid in tracks_out:

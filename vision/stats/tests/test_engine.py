@@ -6,10 +6,12 @@ from vision.stats.shots import detect_shots
 
 
 def _batch(frames):
-    frames = [f for f in frames]
-    clean_ball(frames)
-    pos = track_possession(frames)
-    return detect_shots(frames, pos), pos.segments
+    """build.py's path: the engine over the whole list at once."""
+    engine = StatsEngine(dt=median_dt(frames), fps=50)
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    return engine.shots, engine.possession.segments
 
 
 def test_incremental_equals_batch_on_fixture():
@@ -68,3 +70,19 @@ def test_static_ball_with_panning_camera_gives_no_shot():
         fr.players = []
     events, _ = build(frames, fps=50, clip="x")
     assert events["shots"] == []
+
+
+def test_static_false_ball_is_dropped_while_real_ball_flies():
+    """dev60 56 s: an orange wall sign is reported as the ball in some frames
+    while the real ball is in the air; the static samples must go."""
+    frames = synthetic_scenario("made")
+    static = (1189.0, 384.0)
+    for n, fr in enumerate(frames):
+        if 2.6 <= fr.t <= 3.4 and n % 3 == 0:
+            fr.ball = Ball(center=static, bbox=(static[0] - 12, static[1] - 15, static[0] + 12, static[1] + 15), conf=0.5)
+    engine = StatsEngine(dt=0.02, fps=50)
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    assert engine.dropped_static >= 10
+    assert [(s.player_id, s.made) for s in engine.shots] == [(2, True)]

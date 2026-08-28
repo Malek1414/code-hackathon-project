@@ -25,8 +25,16 @@ Rule (docs/ORCHESTRATION.md, STATS milestone 12:45), adapted to sparse tracks
   central 50 % of the rim. Only a hint: from a side camera the 2D crossing
   cannot tell a swish from a front-iron rattle-out (dev60 57 s: crossing
   0.1 widths from the center, rattled out, verified on video).
-* shooter: holder of the last possession before the "up" sighting; release =
-  first frame in which the ball is more than one bbox width from his bbox.
+* shooter: the flight is followed backwards from the "up" sighting to its
+  first sample (chain of plausible moves, strays skipped) and extrapolated
+  `release_back_samples` further back to the hands; the player whose bbox
+  (upper `release_box_top_frac`, widened `release_box_widen` per side for the
+  arms) contains that release point is the shooter, else the player whose
+  widened box contains the first flight sample (the ball left his box). QA on dev60: the nearest
+  foot to the first flight sample was a bystander at the lane, the real
+  shooter stood alone at the free-throw line. Fallback when no box contains
+  the point: holder of the last possession (nearest foot), with
+  `shooter_confirmed` False.
 
 The camera pans, so every test is done in hoop-relative coordinates (ball
 minus hoop in the *same* frame) and only in frames that contain a hoop box.
@@ -62,6 +70,13 @@ class ShotParams:
     cooldown_s: float = 1.5  # one attempt per ... (rim rattles)
     shooter_lookback_s: float = 4.0
     release_width_scale: float = 1.0
+    release_chain_gap_s: float = 0.5  # flight samples further apart than this do not chain
+    release_back_samples: float = 2.0  # extrapolate the flight this many sample gaps back to the hands
+    release_box_top_frac: float = 0.6  # the release point must lie in the upper part of the shooter's box ...
+    release_box_widen: float = 0.3  # ... widened by this share on each side (arms)
+    release_max_skips: int = 4  # stray samples tolerated inside the flight chain
+    release_max_speed_diam_s: float = 90.0  # a real shot stays under ~70 ball diameters per second; static-junk jumps are >100
+    release_min_rise_diam_s: float = 5.0  # slower vertical motion than this is the ball in the hands, not in flight
     hoop_match_widths: float = 1.5  # same hoop in two frames if centers are this close
 
 
@@ -238,12 +253,12 @@ class ShotDetector:
         rim_k = self._last_above_k if self._last_above_k is not None else self._up_k
         rim_fr = self.frames[self._ball_idx[rim_k]]
         rim_hoop = rim_fr.hoops[0]
-        shooter, foot, release, confirmed = self._shooter(self._ball_idx[self._up_k])
+        pid, team, foot, release, confirmed = self._shooter_any(self._up_k)
         event = ShotEvent(
             frame=rim_fr.frame,
             t=rim_fr.t,
-            player_id=shooter.player_id if shooter else None,
-            team=shooter.team if shooter else -1,
+            player_id=pid,
+            team=team,
             made=False,
             shooter_foot=foot,
             hoop_bbox=rim_hoop,
@@ -309,12 +324,12 @@ class ShotDetector:
                 a, b = _rel(prev, prev_hoop), _rel(la, hoop)
                 if b[1] > a[1]:  # descending: extend the segment to the rim line
                     hint = crosses_rim(a, b, local, p, p.rim_inner_frac_extrapolated)
-        shooter, foot, release, confirmed = self._shooter(self._ball_idx[self._up_k])
+        pid, team, foot, release, confirmed = self._shooter_any(self._up_k)
         ev = ShotEvent(
             frame=la.frame,
             t=la.t,
-            player_id=shooter.player_id if shooter else None,
-            team=shooter.team if shooter else -1,
+            player_id=pid,
+            team=team,
             made=False,
             shooter_foot=foot,
             hoop_bbox=hoop,
@@ -370,6 +385,106 @@ class ShotDetector:
         if len(rel) < p.arc_min_samples:
             return True  # too little information to judge the rise
         return (max(ys) - min(ys)) >= p.arc_min_rise_hoops * hoop_h
+
+    def _shooter_any(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool]:
+        """Release-point rule first, possession rule as the unconfirmed fallback."""
+        hit = self._shooter_by_release(up_k)
+        if hit is not None:
+            return hit
+        seg, foot, release, _ = self._shooter(self._ball_idx[up_k])
+        if seg is None:
+            return None, -1, None, None, False
+        return seg.player_id, seg.team, foot, release, False
+
+    def _flight_chain(self, up_k: int) -> list[int]:
+        """Ball-sample positions of the flight, earliest first, ending at `up_k`.
+        Walking backwards from the rim the ball first climbs to the apex
+        (y shrinks), then drops to the hands (y grows); the chain ends where
+        the ball was lower than that again (dribble, pass) or a gap is too
+        long. Strays (implausible jumps) are skipped."""
+        p = self.p
+        chain = [up_k]
+        skips = 0
+        past_apex = False
+        j = up_k - 1
+        while j >= self._floor_k and skips <= p.release_max_skips:
+            cur = self.frames[self._ball_idx[chain[-1]]]
+            prev = self.frames[self._ball_idx[j]]
+            if cur.t - prev.t > p.release_chain_gap_s:
+                break
+            dt = max(cur.t - prev.t, 1e-3)
+            d = math.hypot(cur.ball.center[0] - prev.ball.center[0], cur.ball.center[1] - prev.ball.center[1])
+            diam = 20.0
+            if cur.ball.bbox is not None:
+                diam = max((cur.ball.bbox[2] - cur.ball.bbox[0] + cur.ball.bbox[3] - cur.ball.bbox[1]) / 2, 4.0)
+            if d / dt > p.release_max_speed_diam_s * diam:
+                skips += 1
+                j -= 1
+                continue
+            dy = prev.ball.center[1] - cur.ball.center[1]  # > 0: the earlier sample was lower in the image
+            rising = dy / dt >= p.release_min_rise_diam_s * diam
+            if rising:
+                past_apex = True  # clearly on the way up (seen backwards): the ascent has begun
+            elif past_apex:
+                break  # the ball is no longer rising fast: it was in the hands (or a dribble/pass)
+            chain.append(j)
+            j -= 1
+        chain.reverse()
+        return chain
+
+    def _shooter_by_release(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool] | None:
+        p = self.p
+        chain = self._flight_chain(up_k)
+        if len(chain) < 2:
+            return None
+        a = self.frames[self._ball_idx[chain[0]]]
+        b = self.frames[self._ball_idx[chain[1]]]
+        dt = b.t - a.t
+        if dt <= 0:
+            return None
+        vx = (b.ball.center[0] - a.ball.center[0]) / dt
+        vy = (b.ball.center[1] - a.ball.center[1]) / dt
+        back = p.release_back_samples * dt
+        release = (a.ball.center[0] - vx * back, a.ball.center[1] - vy * back)
+        a_index = self._ball_idx[chain[0]]
+        fr = None
+        for i in range(a_index, max(self._floor_index, a_index - 10) - 1, -1):
+            if self.frames[i].players:
+                fr = self.frames[i]
+                break
+        if fr is None:
+            return None
+        first = a.ball.center
+        best, best_rank = None, (9, math.inf)
+        for pl in fr.players:
+            w = pl.width
+            x1, x2 = pl.bbox[0] - p.release_box_widen * w, pl.bbox[2] + p.release_box_widen * w
+            top = pl.bbox[1] - 0.15 * pl.height
+            upper = pl.bbox[1] + p.release_box_top_frac * pl.height
+            cx, cy = pl.center
+            if x1 <= release[0] <= x2 and top <= release[1] <= upper:
+                rank = (0, math.hypot(release[0] - cx, release[1] - cy))  # release point in the shooting zone
+            elif x1 <= first[0] <= x2 and top <= first[1] <= pl.bbox[3]:
+                rank = (1, math.hypot(first[0] - cx, first[1] - cy))  # the ball left this player's box
+            else:
+                continue
+            if rank < best_rank:
+                best, best_rank = pl, rank
+        if best is None:
+            return None
+        return best.id, self._team_of(best.id, fr.t), best.foot, fr.frame, True
+
+    def _team_of(self, pid: int, t: float) -> int:
+        """Majority team of a track over the last shooter_lookback_s (TRACK's
+        per-frame value can be -1 for a few frames)."""
+        votes: dict[int, int] = {}
+        for fr in reversed(self.frames):
+            if t - fr.t > self.p.shooter_lookback_s:
+                break
+            pl = fr.player(pid)
+            if pl is not None and pl.team >= 0:
+                votes[pl.team] = votes.get(pl.team, 0) + 1
+        return max(votes, key=votes.get) if votes else -1
 
     def _shooter(self, up_index: int) -> tuple[Possession | None, Point | None, int | None, bool]:
         p = self.p

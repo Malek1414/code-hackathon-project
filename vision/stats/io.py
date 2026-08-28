@@ -143,7 +143,7 @@ def read_tracks(path: str | Path, fps: float | None = None) -> list[Frame]:
     return [by_frame[k] for k in sorted(by_frame)]
 
 
-MAX_BALL_ASPECT = 1.4  # a ball box is roughly square; exit signs and wall objects are not
+MAX_BALL_ASPECT = 1.8  # a ball box is roughly square (motion blur stretches it to ~1.5); signs are longer
 MAX_BALL_SPEED_DIAMETERS_S = 45.0  # ~10 m/s for a 0.24 m ball
 BALL_DIAMETER_FALLBACK_PX = 20.0
 

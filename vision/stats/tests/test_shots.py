@@ -18,7 +18,7 @@ def test_made_shot():
     assert s.player_id == FIXTURE_SHOOTER_ID and s.team == 0 and s.shooter_confirmed
     assert 3.5 < s.t < 3.8
     assert s.shooter_foot == (900.0, 820.0)
-    assert 2.5 <= frames[s.release_frame].t <= 2.8  # ball left the hands right after the shot started
+    assert 2.4 <= frames[s.release_frame].t <= 2.8  # release = start of the flight
     assert s.hoop_bbox == FIXTURE_HOOP
 
 
@@ -126,7 +126,7 @@ def test_ball_vanishing_at_the_rim_counts_as_unconfirmed_attempt():
     s = shots[0]
     assert s.made_confirmed is False and s.player_id == FIXTURE_SHOOTER_ID
     assert s.made is False and s.made_hint is True  # counted as miss; the arc aimed at the middle
-    assert s.decided_t - s.t <= 0.7
+    assert s.decided_t - s.t <= 1.2  # vanish window + 0.5 s engine lookahead
 
     # heading for the front iron: extrapolated verdict is a miss
     frames = synthetic_scenario("made")
@@ -144,3 +144,43 @@ def test_ball_vanishing_at_the_rim_counts_as_unconfirmed_attempt():
         if fr.t >= 3.3:
             fr.ball = None
     assert detect_shots(frames, track_possession(frames)) == []
+
+
+def test_shooter_from_release_point_without_possession():
+    """Ball never detected in the hands (no possession segment): the flight
+    still leads back into the shooter's box."""
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t < 2.56:
+            fr.ball = None
+    shots = detect_shots(frames, track_possession(frames))
+    assert len(shots) == 1
+    assert shots[0].player_id == FIXTURE_SHOOTER_ID and shots[0].shooter_confirmed is True
+    assert shots[0].team == 0 and shots[0].shooter_foot == (900.0, 820.0)
+
+
+def test_release_point_beats_nearest_foot():
+    """A bystander stands right next to the first flight samples; the release
+    point is still inside the shooter's box (dev60 free throw, QA finding)."""
+    from vision.stats.io import Player
+
+    frames = synthetic_scenario("made")
+    for fr in frames:
+        if fr.t < 2.56:
+            fr.ball = None
+        # bystander with feet under the early flight path, box not containing the release point
+        fr.players.append(Player(id=9, bbox=(960.0, 560.0, 1040.0, 760.0), foot=(1000.0, 760.0), team=1))
+    shots = detect_shots(frames, track_possession(frames))
+    assert [(s.player_id, s.shooter_confirmed) for s in shots] == [(FIXTURE_SHOOTER_ID, True)]
+
+
+def test_release_point_in_nobodys_box_falls_back_unconfirmed():
+    frames = synthetic_scenario("made")
+    for fr in frames:  # move the shooter's box away from the release point but keep him nearest by foot
+        fr.players = [
+            type(p)(id=p.id, bbox=(p.bbox[0] - 200, p.bbox[1], p.bbox[2] - 200, p.bbox[3]),
+                    foot=(p.foot[0] - 200, p.foot[1]), team=p.team) if p.id == FIXTURE_SHOOTER_ID else p
+            for p in fr.players
+        ]
+    shots = detect_shots(frames, track_possession(frames))
+    assert len(shots) == 1 and shots[0].shooter_confirmed is False

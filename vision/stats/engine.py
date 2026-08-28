@@ -8,9 +8,9 @@ live and offline results are identical by construction.
             ...                      # final verdict, at most made_window_s after the drop
     engine.finish()
 
-Ball cleaning (see io.clean_ball) needs the *next* ball detection to judge a
-jump, so a frame with a ball is held back until the next ball detection or
-until `max_gap_s` has passed; frames are always processed in order.
+Ball cleaning (see io.clean_ball) needs the *next* ball detections to judge a
+jump and to spot static wall fixtures, so every frame is held back for
+`static_window_s` (0.5 s of lookahead); frames are always processed in order.
 """
 
 from __future__ import annotations
@@ -106,6 +106,13 @@ class OnCourtFilter:
             self.removed[p.id] += 1
 
 
+def _diam(fr: Frame) -> float:
+    b = fr.ball.bbox
+    if b is None:
+        return 20.0
+    return max((b[2] - b[0] + b[3] - b[1]) / 2, 4.0)
+
+
 class StatsEngine:
     def __init__(
         self,
@@ -115,6 +122,7 @@ class StatsEngine:
         possession_params: PossessionParams = PossessionParams(),
         shot_params: ShotParams = ShotParams(),
         max_gap_s: float = 0.6,
+        static_window_s: float = 0.5,
         cuts: list[int] | None = None,
         calib: dict | None = None,
         image_height: float = 1080.0,
@@ -127,9 +135,12 @@ class StatsEngine:
         self.cuts_applied = 0
         self.possession = PossessionTracker(possession_params, dt=dt)
         self.detector = ShotDetector(self.possession, shot_params)
+        self.static_window_s = static_window_s
         self._queue: list[Frame] = []  # frames not yet processed (first one may hold a ball under judgement)
         self._last_kept: Frame | None = None  # last processed frame that had a ball
+        self._raw: deque[tuple[float, float, float, float]] = deque()  # t, x, y, diam of every raw ball sample
         self.dropped_balls = 0
+        self.dropped_static = 0
 
     # --- public ---------------------------------------------------------------
 
@@ -157,8 +168,29 @@ class StatsEngine:
             self.dropped_balls += 1
         if self.court_filter is not None:
             self.court_filter.apply(fr)
+        if fr.ball is not None:
+            self._raw.append((fr.t, fr.ball.center[0], fr.ball.center[1], _diam(fr)))
+            while self._raw and fr.t - self._raw[0][0] > 2 * self.static_window_s + 1.0:
+                self._raw.popleft()
         self._queue.append(fr)
         return done + self._drain(final=False)
+
+    def _is_static_junk(self, fr: Frame) -> bool:
+        """A 'ball' that sits at the same pixel position for several samples
+        while the real ball is seen far away in the same half-second window
+        is a wall fixture (orange sign next to the backboard), not a ball."""
+        x, y, diam = fr.ball.center[0], fr.ball.center[1], _diam(fr)
+        near = 0
+        far = False
+        for t, rx, ry, _d in self._raw:
+            if abs(t - fr.t) > self.static_window_s or t == fr.t:
+                continue
+            dist = ((rx - x) ** 2 + (ry - y) ** 2) ** 0.5
+            if dist <= 4.0:
+                near += 1
+            elif dist > 8 * diam:
+                far = True
+        return near >= 2 and far
 
     @property
     def removed_ids(self) -> dict[int, int]:
@@ -191,11 +223,16 @@ class StatsEngine:
             if head.ball is None:
                 done += self._process(self._queue.pop(0))
                 continue
+            newest = self._queue[-1]
+            if not final and newest.t - head.t < self.static_window_s:
+                break  # wait for the lookahead window (static check, next ball detection)
+            if self._is_static_junk(head):
+                head.ball = None
+                self.dropped_balls += 1
+                self.dropped_static += 1
+                done += self._process(self._queue.pop(0))
+                continue
             nxt = next((f for f in self._queue[1:] if f.ball is not None), None)
-            if nxt is None:
-                newest = self._queue[-1]
-                if not final and newest.t - head.t <= self.max_gap_s:
-                    break  # wait for the next ball detection to judge this one
             ok_prev = self._last_kept is None or plausible_move(self._last_kept, head, self.max_gap_s)
             ok_next = nxt is None or plausible_move(head, nxt, self.max_gap_s)
             if not (ok_prev or ok_next):
