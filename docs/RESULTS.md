@@ -83,5 +83,21 @@ auto-labels the model learned from, right `best.pt` predictions on the same
 frames, which the model never saw in training). Built with
 `vision/label/results_sheet.py`, CPU.
 
-### 14:15 comparison (TRACK, `best.pt` vs COCO weights)
-Pending, numbers from TRACK go here.
+### 14:15 comparison (measured by TRACK, `best.pt` vs COCO weights)
+Setup (TRACK): `data/clips/dev60.mp4`, frames 900 to 3121, stride 4, 526
+frames, 40 sample frames per config in `out/compare/`.
+
+| Config | Ball in frames | Players / frame | Track ids | Hoop in frames |
+|---|---|---|---|---|
+| A: COCO yolo11s persons + `ball_hoop_avishah.pt` (ball conf 0.45) | 33 % | 12.5 | 134 | 100 % |
+| A at ball conf 0.35 / 0.30 | 38 % / 43 % | | | |
+| B: `best.pt` alone | 0.2 % | 11.1 | 142 | 98 % |
+| C: `best.pt` persons + avishah ball/hoop | 33 % | 9.3 | 101 | 100 % |
+
+Reading (TRACK): B confirms that `best.pt` is useless as a ball detector
+(AP50 0.21). C is the production config since 13:00: the fine-tuned player
+class stops counting spectators and referees as players (12.5 to 9.3 per
+frame) and gives 101 instead of 134 track ids on the same footage, 25 % fewer
+id switches than COCO yolo11s. In the one real shot window of the clip (57.0
+to 57.8 s) the ball is carried onto the rim in 7 of 10 frames in every A and
+C config, and the static wall-fixture false ball never wins any more.
