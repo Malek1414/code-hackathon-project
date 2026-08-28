@@ -487,6 +487,7 @@ def main(argv: list[str] | None = None) -> int:
                 key = live_stats.key_of(ev.player_id, ev.team)
                 last_event = {"t": round(ev.t, 2), "type": "made" if ev.made and ev.made_confirmed else "miss",
                               "team": ev.team, "player_key": key, "points": act.points}
+                last_state_t = -1.0  # refresh the state (and the cards) right now, not at the next second
                 if widgets:
                     if ev.made and ev.made_confirmed:
                         widgets.made(t, ev.team if ev.team in (0, 1) else None, key, act.label)
@@ -561,6 +562,7 @@ def main(argv: list[str] | None = None) -> int:
                 hit = handle_key(key, board, t)
                 if hit:
                     flash = (hit[0], hit[1], t)
+                    last_state_t = -1.0
                     if widgets and hit[1]:
                         team = 0 if key in (ord("1"), ord("3")) else 1
                         widgets.manual(t, team, hit[0])
