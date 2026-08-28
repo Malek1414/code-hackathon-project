@@ -349,9 +349,11 @@ extern "C" {
 @import AVFoundation;
 @import AuthenticationServices;
 @import CoreBluetooth;
+@import CoreFoundation;
 @import CoreMedia;
 @import Foundation;
 @import ObjectiveC;
+@import UIKit;
 #endif
 
 #endif // defined(__OBJC__)
@@ -405,6 +407,17 @@ SWIFT_CLASS("_TtC9FollowCam16HeartRateMonitor")
 - (void)peripheral:(CBPeripheral * _Nonnull)peripheral didDiscoverServices:(NSError * _Nullable)error;
 - (void)peripheral:(CBPeripheral * _Nonnull)peripheral didDiscoverCharacteristicsForService:(CBService * _Nonnull)service error:(NSError * _Nullable)error;
 - (void)peripheral:(CBPeripheral * _Nonnull)peripheral didUpdateValueForCharacteristic:(CBCharacteristic * _Nonnull)characteristic error:(NSError * _Nullable)error;
+@end
+
+@class NSCoder;
+/// UIKit wrapper for the AVCaptureVideoPreviewLayer. The host view re-frames
+/// the layer in layoutSubviews — updateUIView does NOT run on layout, which
+/// left the preview at zero size (black screen) before.
+SWIFT_CLASS("_TtC9FollowCam15PreviewHostView")
+@interface PreviewHostView : UIView
+- (void)layoutSubviews;
+- (nonnull instancetype)initWithFrame:(CGRect)frame OBJC_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
 @end
 
 @class ASWebAuthenticationSession;

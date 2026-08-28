@@ -15,11 +15,13 @@
 		823722707F1FD7AEABF6B588 /* MotionLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30232EE2CBCA59A33067643 /* MotionLevel.swift */; };
 		9E4BA78F2467D3487193885A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C980E0C1BBE497EE5CEF2 /* ContentView.swift */; };
 		BDCA9733E84E270680CB54AD /* HeartRateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */; };
+		C554DB2A79D4E20A2C10C7DB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 492E3E4506A5789A0926E146 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2479A6A0DD2BA09BED009DD3 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateMonitor.swift; sourceTree = "<group>"; };
+		492E3E4506A5789A0926E146 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowCamApp.swift; sourceTree = "<group>"; };
 		512C980E0C1BBE497EE5CEF2 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		632C5AA127A15B6E1A51E3FC /* WhoopSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopSync.swift; sourceTree = "<group>"; };
@@ -41,6 +43,7 @@
 		C96C61BDA689E040CDE67790 /* FollowCamApp */ = {
 			isa = PBXGroup;
 			children = (
+				492E3E4506A5789A0926E146 /* Assets.xcassets */,
 				2479A6A0DD2BA09BED009DD3 /* CameraManager.swift */,
 				512C980E0C1BBE497EE5CEF2 /* ContentView.swift */,
 				49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */,
@@ -69,6 +72,7 @@
 			buildConfigurationList = A56AC09E36F42078403D4934 /* Build configuration list for PBXNativeTarget "FollowCam" */;
 			buildPhases = (
 				B5C33460D7AE52E502EC9271 /* Sources */,
+				5FA1AC8FCA1EF270C4765C06 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -113,6 +117,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5FA1AC8FCA1EF270C4765C06 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C554DB2A79D4E20A2C10C7DB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B5C33460D7AE52E502EC9271 /* Sources */ = {

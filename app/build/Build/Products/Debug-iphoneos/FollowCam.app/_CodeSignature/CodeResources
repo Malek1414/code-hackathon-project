@@ -4,13 +4,25 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>AppIcon60x60@2x.png</key>
+		<data>
+		Fl2xaOFw08RUXda8+aQSfpyUnDw=
+		</data>
+		<key>AppIcon76x76@2x~ipad.png</key>
+		<data>
+		WnA9x+YkJB8xpVG/+EwXoKSqcDo=
+		</data>
+		<key>Assets.car</key>
+		<data>
+		0ftpUO1+ny6ueVszXua3uhF6R0Y=
+		</data>
 		<key>FollowCam.debug.dylib</key>
 		<data>
-		uAdQB+ZmldTAYSJljVWY1Ysvtwo=
+		mqa1Egd04lv40ms3oIwshk2de8M=
 		</data>
 		<key>Info.plist</key>
 		<data>
-		Seq2uR05C4CBQrOPYqJUml1XCdI=
+		FNyO2cLl1BRRwuBN/3I5sBc8/Ew=
 		</data>
 		<key>PkgInfo</key>
 		<data>
@@ -18,7 +30,7 @@
 		</data>
 		<key>__preview.dylib</key>
 		<data>
-		ysQDYb80zcD57eNVBsV+MmXNlns=
+		jmCMZlcwqG6evsc9JRDIVsAs+Zo=
 		</data>
 		<key>embedded.mobileprovision</key>
 		<data>
@@ -27,18 +39,39 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>AppIcon60x60@2x.png</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			Zt85IQqkY/qfN3JPBVTNXr8iu/TxnOAfnmDEjuxXqCc=
+			</data>
+		</dict>
+		<key>AppIcon76x76@2x~ipad.png</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			3nHzDj01+A99PFZQKyC2NFbTuDnE+1S2aeoU2yWBRl0=
+			</data>
+		</dict>
+		<key>Assets.car</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			oeVp5sJ8Sw5u0PFTw4OG9nE3URbXm2iEevAGkeN3au0=
+			</data>
+		</dict>
 		<key>FollowCam.debug.dylib</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			3AnHwg7mCgUZ1HTm1NYojh9xD+Qad62rS2Ok66pVbaw=
+			H6Jd87Au1sESlBZaUhxJuTMSm2VtlmrrCHz934bbAVc=
 			</data>
 		</dict>
 		<key>__preview.dylib</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			kKLmxxlfAWnT/cjuzPB7iYMze5DNfs0O/DtFqtTtCB4=
+			jtWChispl5aPTn6WXN0+hI/MsyIm67Ab7BOIe3as+mE=
 			</data>
 		</dict>
 		<key>embedded.mobileprovision</key>

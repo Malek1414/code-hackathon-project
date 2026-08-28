@@ -24,6 +24,18 @@ struct ContentView: View {
     @State private var recordingStarted: Date?
     @State private var lostFlashUntil: Date?
     @State private var sweptRange: ClosedRange<Double> = 90...90
+    // auto-reacquire: retry the last known box for a short window after loss
+    @State private var reacquireBox: CGRect?
+    @State private var reacquireUntil: Date = .distantPast
+    @State private var frameCount = 0
+    // session summary counters (active while recording)
+    @State private var recFrames = 0
+    @State private var recTargetFrames = 0
+    @State private var recHRRange: ClosedRange<Int>?
+    @State private var recSwept: ClosedRange<Double> = 90...90
+    @State private var summary: SessionSummary?
+    @AppStorage("didOnboard") private var didOnboard = false
+    @State private var showGuide = false
 
     var body: some View {
         ZStack {
@@ -67,27 +79,62 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showSettings) { settingsSheet }
+        .sheet(item: $summary) { s in SummaryCard(summary: s) }
+        .overlay {
+            if showGuide {
+                SetupGuide(rigLinked: pan.connected,
+                           targetSet: tracker.isTracking,
+                           recording: camera.isRecording) {
+                    showGuide = false
+                    didOnboard = true
+                }
+            }
+        }
         .onAppear {
             camera.onFrame = { pixelBuffer in
-                guard let box = tracker.track(in: pixelBuffer) else {
-                    DispatchQueue.main.async {
-                        if subjectBox != nil {   // just lost the target
-                            lostFlashUntil = Date().addingTimeInterval(2.5)
-                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                        }
-                        subjectBox = nil
-                    }
-                    return
-                }
-                DispatchQueue.main.async {
-                    subjectBox = box
-                    pan.update(centerX: box.midX)
-                    sweptRange = min(sweptRange.lowerBound, pan.angle)...max(sweptRange.upperBound, pan.angle)
-                }
+                let box = tracker.track(in: pixelBuffer)   // Vision work stays off-main
+                DispatchQueue.main.async { handleFrame(box: box) }
             }
             camera.start()
             level.start()
+            if !didOnboard { showGuide = true }
         }
+    }
+
+    // MARK: per-frame state (main thread)
+
+    private func handleFrame(box: CGRect?) {
+        frameCount += 1
+        if recordingStarted != nil {
+            recFrames += 1
+            if box != nil { recTargetFrames += 1 }
+            if let bpm = heart.bpm {
+                recHRRange = recHRRange.map { min($0.lowerBound, bpm)...max($0.upperBound, bpm) } ?? bpm...bpm
+            }
+            recSwept = min(recSwept.lowerBound, pan.angle)...max(recSwept.upperBound, pan.angle)
+        }
+        guard let box = box else {
+            if subjectBox != nil {   // just lost the target
+                lostFlashUntil = Date().addingTimeInterval(2.5)
+                reacquireBox = subjectBox
+                reacquireUntil = Date().addingTimeInterval(3.0)
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
+            subjectBox = nil
+            // auto-reacquire: reseed the tracker on the last known spot, widened
+            if let lost = reacquireBox, Date() < reacquireUntil, frameCount % 10 == 0 {
+                tracker.select(roi: lost.insetBy(dx: -lost.width * 0.35, dy: -lost.height * 0.35))
+            }
+            return
+        }
+        if subjectBox == nil, reacquireBox != nil {   // reacquired
+            reacquireBox = nil
+            lostFlashUntil = nil
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        }
+        subjectBox = box
+        pan.update(centerX: box.midX)
+        sweptRange = min(sweptRange.lowerBound, pan.angle)...max(sweptRange.upperBound, pan.angle)
     }
 
     // MARK: top status strip — tally lamps + timecode
@@ -156,11 +203,23 @@ struct ContentView: View {
             .padding(.horizontal, 28)
 
             RecordButton(isRecording: camera.isRecording) {
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 if camera.isRecording {
                     camera.stopRecording()
                     heart.endLog(stamp: Int(Date().timeIntervalSince1970))
+                    if let started = recordingStarted {
+                        summary = SessionSummary(
+                            duration: Date().timeIntervalSince(started),
+                            coverageDeg: recSwept.upperBound - recSwept.lowerBound,
+                            targetHeld: recFrames > 0 ? Double(recTargetFrames) / Double(recFrames) : 0,
+                            hr: recHRRange)
+                    }
                     recordingStarted = nil
                 } else {
+                    recFrames = 0
+                    recTargetFrames = 0
+                    recHRRange = nil
+                    recSwept = pan.angle...pan.angle
                     heart.beginLog()
                     camera.startRecording()
                     recordingStarted = Date()
@@ -190,6 +249,12 @@ struct ContentView: View {
                             try? await whoop.connect()
                             _ = try? await WhoopClient.shared.exportLatestWorkout()
                         }
+                    }
+                }
+                Section {
+                    Button("Show setup guide") {
+                        showSettings = false
+                        showGuide = true
                     }
                 }
             }
@@ -237,6 +302,99 @@ struct PanScale: View {
         }
         .padding(.top, 6)
         .background(.black.opacity(0.55))
+    }
+}
+
+// MARK: - session summary after each recording
+
+struct SessionSummary: Identifiable {
+    let id = UUID()
+    let duration: TimeInterval
+    let coverageDeg: Double     // swept range while recording
+    let targetHeld: Double      // 0...1 share of frames with a locked target
+    let hr: ClosedRange<Int>?
+}
+
+struct SummaryCard: View {
+    let summary: SessionSummary
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 30, weight: .bold, design: .monospaced))
+                .foregroundColor(.pla)
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.chrome)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    var body: some View {
+        VStack(spacing: 26) {
+            Text("SESSION SAVED TO PHOTOS")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+            HStack {
+                stat(String(format: "%d:%02d", Int(summary.duration) / 60,
+                            Int(summary.duration) % 60), "RECORDED")
+                stat("\(Int(summary.coverageDeg))°", "PAN COVERED")
+                stat("\(Int(summary.targetHeld * 100))%", "TARGET HELD")
+            }
+            if let hr = summary.hr {
+                Text("♥ \(hr.lowerBound)–\(hr.upperBound) bpm")
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.red)
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .presentationDetents([.height(260)])
+    }
+}
+
+// MARK: - first-launch setup guide (doubles as the demo script)
+
+struct SetupGuide: View {
+    let rigLinked: Bool
+    let targetSet: Bool
+    let recording: Bool
+    let dismiss: () -> Void
+
+    private func step(_ n: Int, _ text: String, done: Bool) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(n).circle")
+                .font(.system(size: 26))
+                .foregroundColor(done ? .green : .chrome)
+            Text(text)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .foregroundColor(done ? .white : .chrome)
+            Spacer()
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Text("FOLLOWCAM SETUP")
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .foregroundColor(.pla)
+            step(1, "Link the rig — settings icon, enter laptop IP", done: rigLinked)
+            step(2, "Tap the ball (or its carrier) on screen", done: targetSet)
+            step(3, "Hit record — the rig does the rest", done: recording)
+            Button(action: dismiss) {
+                Text(rigLinked && targetSet && recording ? "ROLLING — DISMISS" : "GOT IT")
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.pla)
+                    .foregroundColor(.black)
+            }
+        }
+        .padding(24)
+        .background(Color.black.opacity(0.92))
+        .overlay(Rectangle().stroke(Color.pla, lineWidth: 1))
+        .padding(32)
     }
 }
 
@@ -365,18 +523,36 @@ struct TimecodeView: View {
     }
 }
 
-/// UIKit wrapper for the AVCaptureVideoPreviewLayer.
+/// UIKit wrapper for the AVCaptureVideoPreviewLayer. The host view re-frames
+/// the layer in layoutSubviews — updateUIView does NOT run on layout, which
+/// left the preview at zero size (black screen) before.
+final class PreviewHostView: UIView {
+    var previewLayer: AVCaptureVideoPreviewLayer? {
+        didSet {
+            oldValue?.removeFromSuperlayer()
+            if let l = previewLayer {
+                layer.addSublayer(l)
+                setNeedsLayout()
+            }
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer?.frame = bounds
+    }
+}
+
 struct CameraPreview: UIViewRepresentable {
     let layer: AVCaptureVideoPreviewLayer
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        layer.frame = view.bounds
-        view.layer.addSublayer(layer)
+    func makeUIView(context: Context) -> PreviewHostView {
+        let view = PreviewHostView()
+        view.previewLayer = layer
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
-        layer.frame = view.bounds
+    func updateUIView(_ view: PreviewHostView, context: Context) {
+        if view.previewLayer !== layer { view.previewLayer = layer }
     }
 }
