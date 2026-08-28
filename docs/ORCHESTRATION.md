@@ -214,6 +214,11 @@ Panning camera → calibrate on 2–3 keyframes and interpolate H by time.
 | 14:15 | DOCS (LABEL) | refresh VISION.md, README section, PR body with game10 numbers |
 | 14:30 | ORCH | **FREEZE**: `make demo CLIP=data/clips/game10.mp4` must pass from a clean state, PR body final, all model jobs killed at 15:50 for the live demo |
 
+Decision 15:00: contract `out/tracks.jsonl`, `overlay.mp4`, `minimap.mp4` = game10_v2 (ball v2, measured
+better against the hand labels); contract `out/events.json`, `stats.json` = game10 v1 shot list
+(human-verified: 24 attempts, 10 made) until Sami verifies v2's 10 new attempts; v2 list kept as
+`out/events_game10_v2.json`. Archives: `out/game10/` (v1), `out/game10_v2/`, `out/dev60_v2..v5/`.
+
 ## Session directory (28.08., for SendMessage)
 
 ORCH samimagdouli-61 · LABEL/PITCH/PRIVACY/DOCS/RIG samimagdouli-14 · TRACK samimagdouli-ac ·
