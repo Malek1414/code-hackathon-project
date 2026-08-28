@@ -112,7 +112,8 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             "team": int(raw.get("team", -1)) if raw.get("team") is not None else -1,
             "made": bool(raw.get("made")),
             "points": shot_points(raw),
-            "unconfirmed": raw.get("shooter_confirmed") is False,
+            "unconfirmed": raw.get("shooter_confirmed") is False or raw.get("made_confirmed") is False,
+            "flags": [f for f, ok in (("shooter unconfirmed", raw.get("shooter_confirmed")), ("basket unconfirmed", raw.get("made_confirmed"))) if ok is False],
             "court_m": raw.get("court_m"),
         }
         s["label"], s["number"] = ids.resolve(raw.get("player_id"), raw.get("player_key"))
@@ -319,7 +320,7 @@ JS = r"""
   var overlay=document.getElementById('overlay'),minimap=document.getElementById('minimap');
   var canSeek=D.video_offset_s!=null&&overlay;
   function seekTo(t){if(!canSeek)return;var v=Math.max(0,t-D.video_offset_s-2.5);[overlay,minimap].forEach(function(m){if(!m)return;try{m.currentTime=v;m.play()}catch(e){}});overlay.scrollIntoView({behavior:'smooth',block:'nearest'})}
-  function shotTip(s){var tm=team(s.team);return '<b>'+(s.made?'Made':'Missed')+'</b> by '+s.label+' <span class="sub">'+tm.short+'</span><br><span class="sub">at '+clock(s.t)+(s.unconfirmed?', shooter unconfirmed':'')+(canSeek?', click to watch':'')+'</span>'}
+  function shotTip(s){var tm=team(s.team);return '<b>'+(s.made?'Made':'Missed')+'</b> by '+s.label+' <span class="sub">'+tm.short+'</span><br><span class="sub">at '+clock(s.t)+(s.flags&&s.flags.length?', '+s.flags.join(', '):'')+(canSeek?', click to watch':'')+'</span>'}
 
   /* score timeline */
   (function(){
