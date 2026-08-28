@@ -23,11 +23,11 @@ from .common import EVENTS, QA_DIR, ROOT, TRACKS
 
 POLL_S, STABLE_S = 2.0, 4.0
 PY = sys.executable
-JOBS = {  # module -> files it depends on
+JOBS = {  # module -> files it depends on; order = priority (shot videos first, ball_check last)
+    "vision.qa.shot_sheets": (TRACKS, EVENTS, OVERLAY, IDENTITIES),
     "vision.qa.ball_recall": (TRACKS,),
     "vision.qa.team_check": (TRACKS,),
     "vision.qa.ball_check": (TRACKS, *DEFAULT_REJECTS),
-    "vision.qa.shot_sheets": (TRACKS, EVENTS, OVERLAY, IDENTITIES),
 }
 
 
