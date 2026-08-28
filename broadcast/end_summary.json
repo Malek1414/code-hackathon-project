@@ -6,66 +6,66 @@
    "id": 0,
    "name": "Team A",
    "color": "#2f6fdb",
-   "pts": 8,
-   "fga": 12,
-   "fgm": 4,
-   "possession_s": 248.4,
-   "distance_m": 2293.9,
+   "pts": 16,
+   "fga": 10,
+   "fgm": 7,
+   "possession_s": 207.0,
+   "distance_m": 2298.9,
    "players_identified": 9,
-   "tracks": 364,
-   "threes": 0,
-   "fg_pct": 0.333,
-   "possession_share": 0.571
+   "tracks": 365,
+   "threes": 2,
+   "fg_pct": 0.7,
+   "possession_share": 0.513
   },
   {
    "id": 1,
    "name": "Team B",
    "color": "#c8102e",
-   "pts": 13,
-   "fga": 12,
-   "fgm": 6,
-   "possession_s": 187.0,
-   "distance_m": 1895.0,
+   "pts": 29,
+   "fga": 20,
+   "fgm": 13,
+   "possession_s": 196.7,
+   "distance_m": 1898.4,
    "players_identified": 8,
-   "tracks": 286,
-   "threes": 1,
-   "fg_pct": 0.5,
-   "possession_share": 0.429
+   "tracks": 289,
+   "threes": 3,
+   "fg_pct": 0.65,
+   "possession_share": 0.487
   }
  ],
  "players": [
   {
-   "key": "A?1067",
+   "key": "A?7038",
    "number": null,
    "team": 0,
-   "pts": 2,
+   "pts": 3,
    "fga": 1,
    "fgm": 1,
    "fg_pct": 1.0,
-   "threes": 0,
-   "possession_s": 4.0,
-   "distance_m": 15.2,
+   "threes": 1,
+   "possession_s": 1.8,
+   "distance_m": 6.3,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.016
+   "possession_share": 0.009
   },
   {
-   "key": "A44",
-   "number": 44,
+   "key": "A?6072",
+   "number": null,
    "team": 0,
-   "pts": 2,
+   "pts": 3,
    "fga": 1,
    "fgm": 1,
    "fg_pct": 1.0,
-   "threes": 0,
-   "possession_s": 1.1,
-   "distance_m": 19.1,
-   "identified": true,
-   "tracks": 2,
-   "possession_share": 0.004
+   "threes": 1,
+   "possession_s": 0.0,
+   "distance_m": 7.2,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
   },
   {
-   "key": "A?4754",
+   "key": "A?1171",
    "number": null,
    "team": 0,
    "pts": 2,
@@ -73,14 +73,14 @@
    "fgm": 1,
    "fg_pct": 1.0,
    "threes": 0,
-   "possession_s": 0.7,
-   "distance_m": 2.3,
+   "possession_s": 0.6,
+   "distance_m": 5.8,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.003
   },
   {
-   "key": "A?661",
+   "key": "A?665",
    "number": null,
    "team": 0,
    "pts": 2,
@@ -88,11 +88,56 @@
    "fgm": 1,
    "fg_pct": 1.0,
    "threes": 0,
-   "possession_s": 0.4,
-   "distance_m": 7.2,
+   "possession_s": 0.0,
+   "distance_m": 0.9,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.002
+   "possession_share": 0.0
+  },
+  {
+   "key": "A?3486",
+   "number": null,
+   "team": 0,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 17.9,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "A?4324",
+   "number": null,
+   "team": 0,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 0.6,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "A?9008",
+   "number": null,
+   "team": 0,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 4.6,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
   },
   {
    "key": "A5",
@@ -103,29 +148,14 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 25.2,
+   "possession_s": 23.9,
    "distance_m": 119.4,
    "identified": true,
    "tracks": 6,
-   "possession_share": 0.101
+   "possession_share": 0.115
   },
   {
-   "key": "A24",
-   "number": 24,
-   "team": 0,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 10.1,
-   "distance_m": 68.8,
-   "identified": true,
-   "tracks": 5,
-   "possession_share": 0.041
-  },
-  {
-   "key": "A?9436",
+   "key": "A?4754",
    "number": null,
    "team": 0,
    "pts": 0,
@@ -133,44 +163,14 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 3.0,
-   "distance_m": 6.1,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.012
-  },
-  {
-   "key": "A?5273",
-   "number": null,
-   "team": 0,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 2.4,
-   "distance_m": 7.2,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.01
-  },
-  {
-   "key": "A?7038",
-   "number": null,
-   "team": 0,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 2.2,
-   "distance_m": 6.3,
+   "possession_s": 1.9,
+   "distance_m": 2.3,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.009
   },
   {
-   "key": "A?2271",
+   "key": "A?9775",
    "number": null,
    "team": 0,
    "pts": 0,
@@ -178,41 +178,11 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 1.9,
-   "distance_m": 8.5,
+   "possession_s": 0.0,
+   "distance_m": 3.4,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.008
-  },
-  {
-   "key": "A?8995",
-   "number": null,
-   "team": 0,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 1.9,
-   "distance_m": 3.2,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.008
-  },
-  {
-   "key": "A?8258",
-   "number": null,
-   "team": 0,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 0.3,
-   "distance_m": 0.5,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.001
+   "possession_share": 0.0
   },
   {
    "key": "A others",
@@ -221,13 +191,13 @@
    "pts": 0,
    "fga": 0,
    "fgm": 0,
-   "possession_s": 165.8,
-   "distance_m": 1845.4,
-   "tracks": 329,
+   "possession_s": 148.2,
+   "distance_m": 1857.9,
+   "tracks": 330,
    "fg_pct": null,
    "threes": 0,
    "identified": false,
-   "possession_share": 0.667
+   "possession_share": 0.716
   },
   {
    "key": "A55",
@@ -238,26 +208,26 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 20.2,
+   "possession_s": 18.2,
    "distance_m": 71.8,
    "identified": true,
    "tracks": 5,
-   "possession_share": 0.081
+   "possession_share": 0.088
   },
   {
-   "key": "A41",
-   "number": 41,
+   "key": "A24",
+   "number": 24,
    "team": 0,
    "pts": 0,
    "fga": 0,
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 3.4,
-   "distance_m": 35.1,
+   "possession_s": 4.9,
+   "distance_m": 68.8,
    "identified": true,
-   "tracks": 3,
-   "possession_share": 0.014
+   "tracks": 5,
+   "possession_share": 0.024
   },
   {
    "key": "A2",
@@ -268,11 +238,41 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 2.8,
+   "possession_s": 2.4,
    "distance_m": 25.1,
    "identified": true,
    "tracks": 2,
-   "possession_share": 0.011
+   "possession_share": 0.012
+  },
+  {
+   "key": "A44",
+   "number": 44,
+   "team": 0,
+   "pts": 0,
+   "fga": 0,
+   "fgm": 0,
+   "fg_pct": null,
+   "threes": 0,
+   "possession_s": 2.0,
+   "distance_m": 19.1,
+   "identified": true,
+   "tracks": 2,
+   "possession_share": 0.01
+  },
+  {
+   "key": "A41",
+   "number": 41,
+   "team": 0,
+   "pts": 0,
+   "fga": 0,
+   "fgm": 0,
+   "fg_pct": null,
+   "threes": 0,
+   "possession_s": 1.8,
+   "distance_m": 35.1,
+   "identified": true,
+   "tracks": 3,
+   "possession_share": 0.009
   },
   {
    "key": "A5~2935",
@@ -283,23 +283,8 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 1.5,
+   "possession_s": 1.3,
    "distance_m": 19.7,
-   "identified": true,
-   "tracks": 1,
-   "possession_share": 0.006
-  },
-  {
-   "key": "A23",
-   "number": 23,
-   "team": 0,
-   "pts": 0,
-   "fga": 0,
-   "fgm": 0,
-   "fg_pct": null,
-   "threes": 0,
-   "possession_s": 1.5,
-   "distance_m": 26.2,
    "identified": true,
    "tracks": 1,
    "possession_share": 0.006
@@ -320,6 +305,66 @@
    "possession_share": 0.0
   },
   {
+   "key": "A23",
+   "number": 23,
+   "team": 0,
+   "pts": 0,
+   "fga": 0,
+   "fgm": 0,
+   "fg_pct": null,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 26.2,
+   "identified": true,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?6663",
+   "number": null,
+   "team": 1,
+   "pts": 4,
+   "fga": 2,
+   "fgm": 2,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 4.1,
+   "distance_m": 2.9,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.021
+  },
+  {
+   "key": "B9",
+   "number": 9,
+   "team": 1,
+   "pts": 3,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 1,
+   "possession_s": 12.0,
+   "distance_m": 51.1,
+   "identified": true,
+   "tracks": 3,
+   "possession_share": 0.061
+  },
+  {
+   "key": "B?7606",
+   "number": null,
+   "team": 1,
+   "pts": 3,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 1,
+   "possession_s": 3.7,
+   "distance_m": 10.2,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.019
+  },
+  {
    "key": "B?4910",
    "number": null,
    "team": 1,
@@ -335,22 +380,22 @@
    "possession_share": 0.0
   },
   {
-   "key": "B9",
-   "number": 9,
+   "key": "B?2070",
+   "number": null,
    "team": 1,
    "pts": 2,
-   "fga": 1,
+   "fga": 2,
    "fgm": 1,
-   "fg_pct": 1.0,
+   "fg_pct": 0.5,
    "threes": 0,
-   "possession_s": 7.7,
-   "distance_m": 51.1,
-   "identified": true,
-   "tracks": 3,
-   "possession_share": 0.041
+   "possession_s": 1.0,
+   "distance_m": 4.8,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.005
   },
   {
-   "key": "B?3576",
+   "key": "B?3110",
    "number": null,
    "team": 1,
    "pts": 2,
@@ -358,14 +403,14 @@
    "fgm": 1,
    "fg_pct": 1.0,
    "threes": 0,
-   "possession_s": 4.2,
-   "distance_m": 12.6,
+   "possession_s": 4.4,
+   "distance_m": 0.0,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.022
   },
   {
-   "key": "B?2803",
+   "key": "B?3017",
    "number": null,
    "team": 1,
    "pts": 2,
@@ -373,29 +418,14 @@
    "fgm": 1,
    "fg_pct": 1.0,
    "threes": 0,
-   "possession_s": 3.4,
-   "distance_m": 7.0,
+   "possession_s": 1.3,
+   "distance_m": 1.9,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.018
+   "possession_share": 0.007
   },
   {
-   "key": "B?6663",
-   "number": null,
-   "team": 1,
-   "pts": 2,
-   "fga": 1,
-   "fgm": 1,
-   "fg_pct": 1.0,
-   "threes": 0,
-   "possession_s": 2.9,
-   "distance_m": 2.9,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.016
-  },
-  {
-   "key": "B?6667",
+   "key": "B?2287",
    "number": null,
    "team": 1,
    "pts": 2,
@@ -404,13 +434,73 @@
    "fg_pct": 1.0,
    "threes": 0,
    "possession_s": 0.0,
-   "distance_m": 1.0,
+   "distance_m": 11.9,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.0
   },
   {
-   "key": "B?10292",
+   "key": "B?2584",
+   "number": null,
+   "team": 1,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 8.4,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?7400",
+   "number": null,
+   "team": 1,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 6.6,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?8290",
+   "number": null,
+   "team": 1,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 0.2,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?10535",
+   "number": null,
+   "team": 1,
+   "pts": 2,
+   "fga": 1,
+   "fgm": 1,
+   "fg_pct": 1.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 1.3,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?5261",
    "number": null,
    "team": 1,
    "pts": 0,
@@ -418,11 +508,26 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 2.6,
-   "distance_m": 6.8,
+   "possession_s": 2.4,
+   "distance_m": 4.8,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.014
+   "possession_share": 0.012
+  },
+  {
+   "key": "B?8254",
+   "number": null,
+   "team": 1,
+   "pts": 0,
+   "fga": 1,
+   "fgm": 0,
+   "fg_pct": 0.0,
+   "threes": 0,
+   "possession_s": 1.4,
+   "distance_m": 3.2,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.007
   },
   {
    "key": "B?5856",
@@ -433,44 +538,14 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 1.1,
+   "possession_s": 0.5,
    "distance_m": 2.6,
    "identified": false,
    "tracks": 1,
-   "possession_share": 0.006
-  },
-  {
-   "key": "B?9771",
-   "number": null,
-   "team": 1,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 1.0,
-   "distance_m": 1.8,
-   "identified": false,
-   "tracks": 1,
-   "possession_share": 0.005
-  },
-  {
-   "key": "B15",
-   "number": 15,
-   "team": 1,
-   "pts": 0,
-   "fga": 1,
-   "fgm": 0,
-   "fg_pct": 0.0,
-   "threes": 0,
-   "possession_s": 0.5,
-   "distance_m": 32.1,
-   "identified": true,
-   "tracks": 2,
    "possession_share": 0.003
   },
   {
-   "key": "B?7958",
+   "key": "B?6562",
    "number": null,
    "team": 1,
    "pts": 0,
@@ -478,14 +553,14 @@
    "fgm": 0,
    "fg_pct": 0.0,
    "threes": 0,
-   "possession_s": 0.3,
-   "distance_m": 7.9,
+   "possession_s": 0.4,
+   "distance_m": 5.3,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.002
   },
   {
-   "key": "B?2070",
+   "key": "B?8941",
    "number": null,
    "team": 1,
    "pts": 0,
@@ -494,7 +569,22 @@
    "fg_pct": 0.0,
    "threes": 0,
    "possession_s": 0.0,
-   "distance_m": 4.8,
+   "distance_m": 7.4,
+   "identified": false,
+   "tracks": 1,
+   "possession_share": 0.0
+  },
+  {
+   "key": "B?10272",
+   "number": null,
+   "team": 1,
+   "pts": 0,
+   "fga": 1,
+   "fgm": 0,
+   "fg_pct": 0.0,
+   "threes": 0,
+   "possession_s": 0.0,
+   "distance_m": 2.6,
    "identified": false,
    "tracks": 1,
    "possession_share": 0.0
@@ -506,13 +596,13 @@
    "pts": 0,
    "fga": 0,
    "fgm": 0,
-   "possession_s": 147.1,
-   "distance_m": 1599.9,
-   "tracks": 260,
+   "possession_s": 144.6,
+   "distance_m": 1576.6,
+   "tracks": 256,
    "fg_pct": null,
    "threes": 0,
    "identified": false,
-   "possession_share": 0.787
+   "possession_share": 0.735
   },
   {
    "key": "B6",
@@ -523,26 +613,11 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 7.4,
+   "possession_s": 10.6,
    "distance_m": 44.2,
    "identified": true,
    "tracks": 3,
-   "possession_share": 0.04
-  },
-  {
-   "key": "B12",
-   "number": 12,
-   "team": 1,
-   "pts": 0,
-   "fga": 0,
-   "fgm": 0,
-   "fg_pct": null,
-   "threes": 0,
-   "possession_s": 5.9,
-   "distance_m": 36.6,
-   "identified": true,
-   "tracks": 2,
-   "possession_share": 0.032
+   "possession_share": 0.054
   },
   {
    "key": "B5",
@@ -553,11 +628,41 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 1.4,
+   "possession_s": 4.9,
    "distance_m": 43.4,
    "identified": true,
    "tracks": 3,
-   "possession_share": 0.007
+   "possession_share": 0.025
+  },
+  {
+   "key": "B15",
+   "number": 15,
+   "team": 1,
+   "pts": 0,
+   "fga": 0,
+   "fgm": 0,
+   "fg_pct": null,
+   "threes": 0,
+   "possession_s": 2.0,
+   "distance_m": 32.1,
+   "identified": true,
+   "tracks": 2,
+   "possession_share": 0.01
+  },
+  {
+   "key": "B12",
+   "number": 12,
+   "team": 1,
+   "pts": 0,
+   "fga": 0,
+   "fgm": 0,
+   "fg_pct": null,
+   "threes": 0,
+   "possession_s": 1.7,
+   "distance_m": 36.6,
+   "identified": true,
+   "tracks": 2,
+   "possession_share": 0.009
   },
   {
    "key": "B7",
@@ -568,11 +673,11 @@
    "fgm": 0,
    "fg_pct": null,
    "threes": 0,
-   "possession_s": 0.9,
+   "possession_s": 1.1,
    "distance_m": 15.1,
    "identified": true,
    "tracks": 1,
-   "possession_share": 0.005
+   "possession_share": 0.006
   },
   {
    "key": "B13",
@@ -608,186 +713,201 @@
  "shots": [
   {
    "t": 36.2,
-   "frame": 1806,
-   "player_key": "A?661",
+   "frame": 1712,
+   "player_key": "A?665",
    "team": 0,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    22.75,
-    2.04
+    22.38,
+    7.26
    ],
-   "shooter_confirmed": false,
+   "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
    "t": 53.72,
-   "frame": 2584,
-   "player_key": "A?1067",
+   "frame": 2602,
+   "player_key": "A?1171",
    "team": 0,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    23.76,
-    4.78
+    22.81,
+    8.86
    ],
-   "shooter_confirmed": false,
+   "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
    "t": 117.56,
-   "frame": 5822,
-   "player_key": "A24",
-   "team": 0,
-   "made": false,
-   "points": 0,
-   "three_estimated": false,
-   "court_m": [
-    2.42,
-    4.66
-   ],
-   "shooter_confirmed": false,
-   "made_confirmed": true
-  },
-  {
-   "t": 121.24,
-   "frame": 6020,
+   "frame": 5806,
    "player_key": "B?2070",
    "team": 1,
    "made": false,
    "points": 0,
    "three_estimated": false,
    "court_m": [
-    6.21,
-    7.15
+    6.13,
+    7.18
    ],
    "shooter_confirmed": true,
-   "made_confirmed": false
-  },
-  {
-   "t": 138.32,
-   "frame": 6904,
-   "player_key": "A?2271",
-   "team": 0,
-   "made": false,
-   "points": 0,
-   "three_estimated": false,
-   "court_m": [
-    2.24,
-    7.57
-   ],
-   "shooter_confirmed": false,
    "made_confirmed": true
   },
   {
-   "t": 151.2,
-   "frame": 7518,
-   "player_key": "B9",
+   "t": 121.12,
+   "frame": 6012,
+   "player_key": "B?2070",
    "team": 1,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    24.89,
-    5.09
+    6.17,
+    7.08
    ],
-   "shooter_confirmed": false,
+   "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 153.28,
-   "frame": 7596,
-   "player_key": "A44",
-   "team": 0,
+   "t": 138.92,
+   "frame": 6860,
+   "player_key": "B?2287",
+   "team": 1,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    26.23,
-    7.33
+    5.91,
+    7.66
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 151.2,
+   "frame": 7454,
+   "player_key": "B?2584",
+   "team": 1,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    21.61,
+    6.5
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
    "t": 165.24,
-   "frame": 8122,
-   "player_key": "B?2803",
+   "frame": 8158,
+   "player_key": "B9",
+   "team": 1,
+   "made": true,
+   "points": 3,
+   "three_estimated": true,
+   "court_m": [
+    4.93,
+    13.74
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 172.64,
+   "frame": 8574,
+   "player_key": "B?3017",
    "team": 1,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    4.56,
-    8.04
+    6.75,
+    8.89
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 181.76,
+   "frame": 9078,
+   "player_key": "B?3110",
+   "team": 1,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    24.34,
+    7.03
    ],
    "shooter_confirmed": false,
    "made_confirmed": true
   },
   {
    "t": 212.32,
-   "frame": 10526,
+   "frame": 10520,
    "player_key": "A5",
    "team": 0,
    "made": false,
    "points": 0,
    "three_estimated": true,
    "court_m": [
-    20.7,
-    3.12
-   ],
-   "shooter_confirmed": false,
-   "made_confirmed": true
-  },
-  {
-   "t": 216.6,
-   "frame": 10648,
-   "player_key": "B?3576",
-   "team": 1,
-   "made": true,
-   "points": 2,
-   "three_estimated": false,
-   "court_m": [
-    26.51,
-    9.1
-   ],
-   "shooter_confirmed": false,
-   "made_confirmed": true
-  },
-  {
-   "t": 238.6,
-   "frame": 11862,
-   "player_key": "B15",
-   "team": 1,
-   "made": false,
-   "points": 0,
-   "three_estimated": false,
-   "court_m": [
-    2.16,
-    3.78
+    20.59,
+    2.89
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 258.92,
-   "frame": 12886,
-   "player_key": "A?4754",
+   "t": 216.6,
+   "frame": 10756,
+   "player_key": "A?3486",
    "team": 0,
    "made": true,
    "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    25.59,
+    11.87
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 237.92,
+   "frame": 11818,
+   "player_key": "A?4324",
+   "team": 0,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    2.96,
+    4.14
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 258.24,
+   "frame": 12886,
+   "player_key": "A?4754",
+   "team": 0,
+   "made": false,
+   "points": 0,
    "three_estimated": false,
    "court_m": [
     25.84,
     6.88
    ],
    "shooter_confirmed": true,
-   "made_confirmed": true
+   "made_confirmed": false
   },
   {
-   "t": 268.36,
+   "t": 268.24,
    "frame": 13358,
    "player_key": "B?4910",
    "team": 1,
@@ -803,165 +923,255 @@
   },
   {
    "t": 286.16,
-   "frame": 14178,
-   "player_key": "A?5273",
-   "team": 0,
+   "frame": 14190,
+   "player_key": "B?5261",
+   "team": 1,
    "made": false,
    "points": 0,
-   "three_estimated": false,
+   "three_estimated": true,
    "court_m": [
-    7.47,
-    5.59
+    7.45,
+    10.89
    ],
-   "shooter_confirmed": false,
+   "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
    "t": 315.84,
-   "frame": 15726,
+   "frame": 15716,
    "player_key": "B?5856",
    "team": 1,
    "made": false,
    "points": 0,
    "three_estimated": true,
    "court_m": [
-    0.89,
-    0.68
+    1.18,
+    0.52
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 361.6,
-   "frame": 17998,
-   "player_key": "B?6667",
-   "team": 1,
+   "t": 325.72,
+   "frame": 16188,
+   "player_key": "A?6072",
+   "team": 0,
    "made": true,
-   "points": 2,
+   "points": 3,
+   "three_estimated": true,
+   "court_m": [
+    20.59,
+    2.77
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 351.8,
+   "frame": 17546,
+   "player_key": "B?6562",
+   "team": 1,
+   "made": false,
+   "points": 0,
    "three_estimated": false,
    "court_m": [
-    3.24,
-    10.34
+    1.93,
+    8.35
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 366.0,
-   "frame": 18260,
+   "t": 361.52,
+   "frame": 18018,
    "player_key": "B?6663",
    "team": 1,
    "made": true,
    "points": 2,
    "three_estimated": false,
    "court_m": [
-    6.14,
-    6.99
+    5.88,
+    7.4
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 389.16,
-   "frame": 19380,
+   "t": 366.0,
+   "frame": 18234,
+   "player_key": "B?6663",
+   "team": 1,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    6.01,
+    7.15
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 389.2,
+   "frame": 19378,
    "player_key": "A?7038",
    "team": 0,
-   "made": false,
-   "points": 0,
+   "made": true,
+   "points": 3,
    "three_estimated": true,
    "court_m": [
-    19.23,
+    19.22,
     8.89
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 443.16,
-   "frame": 22126,
-   "player_key": "B?7958",
+   "t": 410.32,
+   "frame": 20456,
+   "player_key": "B?7400",
+   "team": 1,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    4.39,
+    9.83
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 426.0,
+   "frame": 21218,
+   "player_key": "B?7606",
+   "team": 1,
+   "made": true,
+   "points": 3,
+   "three_estimated": true,
+   "court_m": [
+    9.19,
+    8.94
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 460.4,
+   "frame": 23018,
+   "player_key": "B?8254",
    "team": 1,
    "made": false,
    "points": 0,
    "three_estimated": false,
    "court_m": [
-    24.54,
-    5.94
+    3.54,
+    4.63
    ],
    "shooter_confirmed": false,
    "made_confirmed": true
   },
   {
-   "t": 460.92,
-   "frame": 22976,
-   "player_key": "A?8258",
-   "team": 0,
-   "made": false,
-   "points": 0,
+   "t": 464.4,
+   "frame": 23174,
+   "player_key": "B?8290",
+   "team": 1,
+   "made": true,
+   "points": 2,
    "three_estimated": false,
    "court_m": [
-    6.24,
-    7.11
+    6.26,
+    6.9
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
-   "t": 499.56,
-   "frame": 24952,
-   "player_key": "A?8995",
-   "team": 0,
-   "made": false,
-   "points": 0,
-   "three_estimated": false,
-   "court_m": [
-    0.88,
-    10.61
-   ],
-   "shooter_confirmed": true,
-   "made_confirmed": true
-  },
-  {
-   "t": 524.84,
-   "frame": 26230,
-   "player_key": "A?9436",
-   "team": 0,
-   "made": false,
-   "points": 0,
-   "three_estimated": false,
-   "court_m": [
-    23.34,
-    6.43
-   ],
-   "shooter_confirmed": true,
-   "made_confirmed": false
-  },
-  {
-   "t": 545.68,
-   "frame": 27192,
-   "player_key": "B?9771",
+   "t": 483.04,
+   "frame": 24118,
+   "player_key": "X?8738",
    "team": 1,
    "made": false,
    "points": 0,
    "three_estimated": false,
    "court_m": [
-    2.15,
-    12.52
+    26.37,
+    7.38
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": false
+  },
+  {
+   "t": 499.56,
+   "frame": 24910,
+   "player_key": "B?8941",
+   "team": 1,
+   "made": false,
+   "points": 0,
+   "three_estimated": true,
+   "court_m": [
+    8.01,
+    1.66
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 503.92,
+   "frame": 25154,
+   "player_key": "A?9008",
+   "team": 0,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    3.12,
+    7.32
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 545.68,
+   "frame": 27186,
+   "player_key": "A?9775",
+   "team": 0,
+   "made": false,
+   "points": 0,
+   "three_estimated": false,
+   "court_m": [
+    4.35,
+    9.1
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
   },
   {
    "t": 570.8,
-   "frame": 28502,
-   "player_key": "B?10292",
+   "frame": 28478,
+   "player_key": "B?10272",
    "team": 1,
    "made": false,
    "points": 0,
    "three_estimated": false,
    "court_m": [
-    25.97,
-    7.03
+    26.66,
+    6.05
+   ],
+   "shooter_confirmed": true,
+   "made_confirmed": true
+  },
+  {
+   "t": 580.56,
+   "frame": 28970,
+   "player_key": "B?10535",
+   "team": 1,
+   "made": true,
+   "points": 2,
+   "three_estimated": false,
+   "court_m": [
+    5.97,
+    2.66
    ],
    "shooter_confirmed": true,
    "made_confirmed": true
