@@ -50,6 +50,25 @@ def _hhmm(ts: float | None) -> str:
     return time.strftime("%H:%M:%S", time.localtime(ts)) if ts else ""
 
 
+def _ttl_cache(seconds: float):
+    """Memoise a zero-arg function for a few seconds (subprocess calls stay cheap)."""
+
+    def deco(fn):
+        state = {"t": 0.0, "v": None}
+
+        def wrapped():
+            now = time.time()
+            if state["v"] is None or now - state["t"] > seconds:
+                state["v"] = fn()
+                state["t"] = now
+            return state["v"]
+
+        wrapped.reset = lambda: state.update(t=0.0, v=None)  # type: ignore[attr-defined]
+        return wrapped
+
+    return deco
+
+
 # ---------------------------------------------------------------- LABEL ----
 
 _label_counts: dict[str, tuple[float, int, dict[int, int]]] = {}
@@ -464,6 +483,7 @@ def qa_section() -> dict:
 # ----------------------------------------------------------------- LIVE ----
 
 
+@_ttl_cache(5.0)
 def live_processes() -> list[str]:
     try:
         res = subprocess.run(["pgrep", "-fl", "vision[/.]live[/.]live"], capture_output=True, text=True, timeout=2)
@@ -567,6 +587,89 @@ def footage_section() -> dict:
         items.append({"name": c.name, "mb": round(st.st_size / 1e6, 1), "time": _hhmm(st.st_mtime), **info})
     return {"ok": bool(items), "clips": items}
 
+
+# ------------------------------------------------------------------- PR ----
+
+PR_NUMBER = 1
+PR_TTL = 60.0
+_pr_lock = threading.Lock()
+_pr_state: dict = {"data": None, "fetched": 0.0, "running": False, "error": None}
+_pr_fields = "state,title,url,isDraft,reviewDecision,mergeable,headRefName,baseRefName,reviews,commits"
+
+
+def _run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=str(ROOT))
+    return res.returncode, res.stdout, res.stderr
+
+
+def _fetch_pr() -> None:
+    try:
+        code, out, err = _run(["gh", "pr", "view", str(PR_NUMBER), "--json", _pr_fields], timeout=15)
+        if code != 0:
+            raise RuntimeError((err or out).strip().splitlines()[-1] if (err or out).strip() else f"gh exit {code}")
+        data = json.loads(out)
+        reviews = []
+        for r in data.get("reviews") or []:
+            reviews.append({
+                "author": (r.get("author") or {}).get("login"),
+                "state": r.get("state"),
+                "at": (r.get("submittedAt") or "")[11:16],
+                "body": (r.get("body") or "").strip()[:160],
+            })
+        summary = {
+            "number": PR_NUMBER,
+            "state": data.get("state"),
+            "title": data.get("title"),
+            "url": data.get("url"),
+            "draft": data.get("isDraft"),
+            "decision": data.get("reviewDecision") or "",
+            "mergeable": data.get("mergeable"),
+            "head": data.get("headRefName"),
+            "base": data.get("baseRefName"),
+            "commits": len(data.get("commits") or []),
+            "reviews": reviews[-8:],
+        }
+        with _pr_lock:
+            _pr_state.update(data=summary, error=None, fetched=time.time())
+    except Exception as exc:  # noqa: BLE001
+        with _pr_lock:
+            _pr_state.update(error=f"{type(exc).__name__}: {exc}", fetched=time.time())
+    finally:
+        with _pr_lock:
+            _pr_state["running"] = False
+
+
+@_ttl_cache(15.0)
+def _git_ahead() -> dict:
+    """Local commits not yet on origin (ORCH pushes every ~15 min)."""
+    try:
+        code, branch, _ = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], timeout=3)
+        branch = branch.strip() if code == 0 else "?"
+        code, out, _ = _run(["git", "rev-list", "--count", f"origin/{branch}..HEAD"], timeout=3)
+        ahead = int(out.strip()) if code == 0 and out.strip().isdigit() else None
+        code, last, _ = _run(["git", "log", "-1", "--format=%h %s"], timeout=3)
+        return {"branch": branch, "ahead": ahead, "last": last.strip() if code == 0 else ""}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"branch": "?", "ahead": None, "last": ""}
+
+
+@_safe
+def pr_section() -> dict:
+    with _pr_lock:
+        stale = time.time() - _pr_state["fetched"] > PR_TTL
+        if stale and not _pr_state["running"]:
+            _pr_state["running"] = True
+            threading.Thread(target=_fetch_pr, name="pr-fetch", daemon=True).start()
+        data, error, fetched = _pr_state["data"], _pr_state["error"], _pr_state["fetched"]
+    return {
+        "ok": data is not None,
+        "pr": data,
+        "gh_error": error,
+        "fetched": _hhmm(fetched) if fetched else "",
+        "loading": data is None and error is None,
+        "git": _git_ahead(),
+    }
+
 # ------------------------------------------------------------- COLLECT ----
 
 _lock = threading.Lock()
@@ -594,6 +697,7 @@ def collect() -> dict:
             "qa": qa_section(),
             "live": live_section(),
             "footage": footage_section(),
+            "pr": pr_section(),
             "logs": logs_section(),
             "images": images.tokens(),
         }

@@ -16,12 +16,13 @@ def _point_to(tmp: Path):
     status._tracks_counter = status._LineCounter(status.OUT_DIR / "tracks.jsonl")
     status._memo = None
     images._cache.clear()
+    status._pr_state.update(data=None, fetched=1e12, running=False, error=None)  # never call gh in tests
 
 
 def test_empty_root_degrades(tmp_path):
     _point_to(tmp_path)
     snap = status.collect()
-    for key in ("label", "track", "stats", "court", "numbers", "qa", "live", "footage", "logs"):
+    for key in ("label", "track", "stats", "court", "numbers", "qa", "live", "footage", "pr", "logs"):
         assert "error" not in snap[key], snap[key]
     assert snap["label"]["labels"] == 0 and snap["label"]["frames"] == 0
     assert snap["track"]["ok"] is False

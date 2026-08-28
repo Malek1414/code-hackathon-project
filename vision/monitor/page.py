@@ -31,7 +31,9 @@ HTML = r"""<!doctype html>
   .big { font-size: 22px; font-weight: 600; }
   .nothing { color: var(--muted); font-style: italic; }
   .error { color: var(--red); white-space: pre-wrap; }
-  img.shot { width: 100%; height: auto; display: block; border-radius: 4px; border: 1px solid var(--line); background: #000; }
+  img.shot { width: 100%; height: auto; max-height: 70vh; object-fit: contain; display: block; border-radius: 4px; border: 1px solid var(--line); background: #000; }
+  .scrollbox { max-height: 440px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: #000; }
+  .scrollbox img.shot { max-height: none; border: 0; border-radius: 0; }
   table { border-collapse: collapse; width: 100%; margin-top: 6px; }
   th, td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; }
@@ -49,6 +51,9 @@ HTML = r"""<!doctype html>
   a { color: var(--blue); }
   .on { color: var(--green); font-weight: 600; } .off { color: var(--muted); }
   .score { font-size: 26px; font-weight: 600; letter-spacing: .04em; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); font-size: 12px; }
+  .pill.open { color: var(--green); border-color: var(--green); } .pill.merged { color: var(--violet); border-color: var(--violet); }
+  .pill.closed { color: var(--red); border-color: var(--red); } .pill.draft { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -67,6 +72,7 @@ HTML = r"""<!doctype html>
   <section id="live"><h2>LIVE</h2><div class="nothing">noch nichts</div></section>
   <section id="qa"><h2>QA</h2><div class="nothing">noch nichts</div></section>
   <section id="footage"><h2>FOOTAGE</h2><div class="nothing">noch nichts</div></section>
+  <section id="pr"><h2>PR</h2><div class="nothing">noch nichts</div></section>
   <section id="logs" class="wide"><h2>LOGS</h2><div class="nothing">noch nichts</div></section>
 </main>
 <script>
@@ -257,7 +263,7 @@ function renderLogs(d) {
 function renderNumbers(d, images) {
   if (!d) return NOTHING;
   if (d.error) return errBox(d.error);
-  if (!d.ok) return NOTHING + (images.numbers ? image('numbers', images.numbers, 'numbers_preview.jpg') : '');
+  if (!d.ok) return NOTHING + (images.numbers ? `<div class="scrollbox">${image('numbers', images.numbers, 'numbers_preview.jpg')}</div>` : '');
   let html = kv([
     ['Tracks', `<span class="big">${d.tracks_numbered}</span> von ${d.tracks_total} mit Nummer &nbsp; <span class="tx">${esc(d.clip || '')}, ${esc(d.time)}</span>`],
     ['Spieler', `${d.players_numbered} mit Nummer, ${d.players_total} Keys gesamt`],
@@ -270,7 +276,7 @@ function renderNumbers(d, images) {
     });
     html += '</table>';
   }
-  html += '<div style="margin-top:8px"></div>' + image('numbers', images.numbers, 'numbers_preview.jpg');
+  html += '<div style="margin-top:8px"></div>' + (images.numbers ? `<div class="scrollbox">${image('numbers', images.numbers, 'numbers_preview.jpg')}</div><div class="tx">numbers_preview.jpg, scrollbar</div>` : image('numbers', images.numbers, 'numbers_preview.jpg'));
   return html;
 }
 
@@ -320,6 +326,35 @@ function renderFootage(d) {
   return html + '</table>';
 }
 
+function renderPr(d) {
+  if (!d) return NOTHING;
+  if (d.error) return errBox(d.error);
+  const g = d.git || {};
+  const gitRow = ['lokal', `${esc(g.branch || '?')}` + (g.ahead === null || g.ahead === undefined ? '' : (g.ahead ? `, <b>${g.ahead}</b> Commit${g.ahead === 1 ? '' : 's'} noch nicht gepusht` : ', alles gepusht')) + (g.last ? ` <span class="tx">${esc(g.last)}</span>` : '')];
+  if (d.loading) return kv([['PR', '<span class="nothing">wird geladen</span>'], gitRow]);
+  if (!d.pr) return kv([['PR', `<span class="nothing">noch nichts</span> <span class="error">${esc(d.gh_error || '')}</span>`], gitRow]);
+  const p = d.pr;
+  const st = (p.state || '').toLowerCase();
+  const pill = `<span class="pill ${p.draft ? 'draft' : st}">${p.draft ? 'Entwurf' : esc(p.state)}</span>`;
+  const decision = {APPROVED: '<span class="made">freigegeben</span>', CHANGES_REQUESTED: '<span class="miss">Änderungen gewünscht</span>', REVIEW_REQUIRED: '<span class="unconf">Review offen</span>'}[p.decision] || '<span class="tx">kein Review</span>';
+  let html = kv([
+    ['PR #' + p.number, `${pill} &nbsp; <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>`],
+    ['Branch', `${esc(p.head)} nach ${esc(p.base)}, ${p.commits} Commits` + (p.mergeable ? ` <span class="tx">${esc(String(p.mergeable).toLowerCase())}</span>` : '')],
+    ['Review', decision + ` <span class="tx">Stand ${esc(d.fetched)}</span>`],
+    gitRow,
+  ]);
+  if (p.reviews && p.reviews.length) {
+    html += '<table><tr><th>Wer</th><th>Status</th><th class="num">Uhrzeit</th><th>Kommentar</th></tr>';
+    p.reviews.forEach(r => {
+      const cls = r.state === 'APPROVED' ? 'made' : (r.state === 'CHANGES_REQUESTED' ? 'miss' : 'tx');
+      html += `<tr><td>${esc(r.author || '?')}</td><td class="${cls}">${esc(r.state)}</td><td class="num">${esc(r.at)}</td><td style="white-space:normal">${esc(r.body)}</td></tr>`;
+    });
+    html += '</table>';
+  }
+  if (d.gh_error) html += `<div class="error">gh: ${esc(d.gh_error)}</div>`;
+  return html;
+}
+
 function setSection(id, title, body) {
   const el = document.getElementById(id);
   el.innerHTML = `<h2>${title}</h2>` + body;
@@ -341,6 +376,7 @@ async function tick() {
     setSection('live', 'LIVE', renderLive(s.live));
     setSection('qa', 'QA', renderQa(s.qa));
     setSection('footage', 'FOOTAGE', renderFootage(s.footage));
+    setSection('pr', 'PR', renderPr(s.pr));
     setSection('logs', 'LOGS', renderLogs(s.logs));
     syncImages();
   } catch (e) {
