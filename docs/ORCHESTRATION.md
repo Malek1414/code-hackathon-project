@@ -20,6 +20,7 @@ done or it is blocked. Sami can talk to any session directly in its terminal.
 | **MONITOR** (added 11:57) | `vision/monitor/` | local status board at 127.0.0.1:8600: labeling progress + latest labeled frame, training curve, tracking progress, shots, calibration state, log tails |
 | **FRONTEND** (added 11:57, takes `vision/dashboard/` from COURT) | `vision/dashboard/`, `out/dashboard.html` | coach-facing analytics page for the judges: score, timeline, shot chart, player table, overlay + minimap side by side |
 | **QA** (added 11:57) | `vision/qa/`, `out/qa/` | human verification sheets: per-shot frame strips with verdict checkboxes, ball recall sample, team assignment sample |
+| **FOOTAGE**, **PITCH**, **PIPELINE**, **DOCS**, **PRIVACY**, **RIG**, **DECK**, **RISK** (added 12:10) | see `docs/tasks/<ROLE>.md` | continuous single-camera footage; pitch content; one-command pipeline; docs + PR body; face blur + retention; YOLO ball tracker for the rig; HTML deck; adversarial demo review |
 | **NUMBERS** (added 12:05) | `vision/numbers/`, `out/identities.json` | jersey-number recognition per track, vote over time, merge track ids into real players (team + number) so stats are per player, not per track id |
 
 Hard rules:
