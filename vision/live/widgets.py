@@ -21,14 +21,15 @@ import numpy as np
 from vision.live.state import hex_to_bgr
 
 CANVAS = (1920, 1080)
-GEOMETRY = {  # id: (x, y, w, h) on the 1920x1080 canvas
-    "score_bug": (700, 24, 520, 88),
-    "made_flash": (700, 24, 520, 88),
-    "player_card": (40, 880, 420, 160),
+GEOMETRY = {  # id: (x, y, w, h) on the 1920x1080 canvas (placeholders; FRONTEND's PNGs are full-canvas)
+    "score_bug": (700, 64, 520, 88),
+    "made_flash": (700, 64, 520, 88),
+    "player_card": (48, 872, 480, 160),
     "team_overview": (510, 330, 900, 420),
     "lower_third": (0, 960, 1920, 120),
     "end_summary": (0, 0, 1920, 1080),
     "heat_map": (0, 0, 1920, 1080),
+    "heat_map_frame": (0, 0, 1920, 1080),
 }
 GLASS = (28, 28, 32)
 TEXT = (240, 240, 240)
@@ -36,7 +37,12 @@ DIM = (170, 170, 170)
 
 
 class Assets:
-    def __init__(self, folder: str | Path = "broadcast/assets", refresh_s: float = 30.0) -> None:
+    """FRONTEND renders every widget as a full 1920x1080 BGRA canvas with the
+    live numbers already in it (broadcast/render_widgets.py reads
+    out/live_state.json), so a present PNG is composited as is and no text is
+    drawn over it; a missing PNG gets a placeholder panel with text."""
+
+    def __init__(self, folder: str | Path = "broadcast/assets", refresh_s: float = 1.0) -> None:
         self.folder = Path(folder)
         self._cache: dict[str, np.ndarray | None] = {}
         self._mtime: dict[str, float] = {}
@@ -57,28 +63,53 @@ class Assets:
             return self._cache[wid]
         self._mtime[wid] = mtime
         img = None
-        for name in (f"{wid}.png",):
-            p = self.folder / name
-            if p.exists():
-                raw = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
-                if raw is not None:
-                    if raw.ndim == 2:
-                        raw = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGRA)
-                    elif raw.shape[2] == 3:
-                        raw = cv2.cvtColor(raw, cv2.COLOR_BGR2BGRA)
+        if path.exists():
+            raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if raw is not None:
+                if raw.ndim == 2:
+                    raw = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGRA)
+                elif raw.shape[2] == 3:
+                    raw = cv2.cvtColor(raw, cv2.COLOR_BGR2BGRA)
+                if (raw.shape[1], raw.shape[0]) != CANVAS:
                     x, y, w, h = GEOMETRY[wid]
-                    img = cv2.resize(raw, (w, h)) if raw.shape[1] != w or raw.shape[0] != h else raw
+                    full = np.zeros((CANVAS[1], CANVAS[0], 4), np.uint8)  # a cropped widget: place it at its slot
+                    full[y:y + h, x:x + w] = cv2.resize(raw, (w, h))
+                    raw = full
+                img = _crop_to_alpha(raw)
         self._cache[wid] = img
         return img
 
     def external(self, name: str) -> np.ndarray | None:
-        """COURT's renders (heat_map.png) from broadcast/assets or out/."""
+        """COURT's renders (heat_map.png) from broadcast/assets or out/ (cached)."""
+        key = f"ext:{name}"
+        if key in self._cache:
+            return self._cache[key]
+        raw = None
         for p in (self.folder / name, Path("out") / name):
             if p.exists():
                 raw = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
                 if raw is not None:
-                    return raw
+                    break
+        self._cache[key] = raw
+        return raw
+
+
+class Sprite:
+    """A widget's opaque region only: blending the full 1920x1080 canvas per
+    frame costs ~40 ms, the cropped region ~2 ms."""
+
+    __slots__ = ("bgra", "x", "y")
+
+    def __init__(self, bgra: np.ndarray, x: int, y: int) -> None:
+        self.bgra, self.x, self.y = bgra, x, y
+
+
+def _crop_to_alpha(raw: np.ndarray) -> Sprite | None:
+    ys, xs = np.where(raw[:, :, 3] > 0)
+    if len(xs) == 0:
         return None
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+    return Sprite(np.ascontiguousarray(raw[y0:y1, x0:x1]), x0, y0)
 
 
 def _scale(frame: np.ndarray) -> float:
@@ -121,15 +152,33 @@ def _geom(frame: np.ndarray, wid: str) -> tuple[int, int, int, int]:
     return int(x * k), int(y * k), int(w * k), int(h * k)
 
 
-def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None) -> tuple[int, int, int, int, float]:
-    x, y, w, h = _geom(frame, wid)
+def composite(frame: np.ndarray, sprite, alpha_scale: float = 1.0) -> None:
+    """A widget sprite (canvas coordinates) onto the frame, scaled if the frame is not 1080p."""
+    if sprite is None:
+        return
+    if isinstance(sprite, np.ndarray):
+        sprite = _crop_to_alpha(sprite)
+        if sprite is None:
+            return
+    k = _scale(frame)
+    img = sprite.bgra
+    if alpha_scale != 1.0:
+        img = img.copy()
+        img[:, :, 3] = (img[:, :, 3].astype(np.float32) * alpha_scale).astype(np.uint8)
+    if k != 1.0:
+        img = cv2.resize(img, (max(int(img.shape[1] * k), 1), max(int(img.shape[0] * k), 1)))
+    blend(frame, img, int(sprite.x * k), int(sprite.y * k))
+
+
+def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None) -> tuple[int, int, int, int, float] | None:
+    """Composite FRONTEND's rendered widget (returns None: nothing more to draw)
+    or draw the placeholder panel and return its geometry for the text."""
     img = assets.get(wid)
     if img is not None:
-        if (img.shape[1], img.shape[0]) != (w, h):
-            img = cv2.resize(img, (w, h))
-        blend(frame, img, x, y)
-    else:
-        glass(frame, x, y, w, h, accent=accent)
+        composite(frame, img)
+        return None
+    x, y, w, h = _geom(frame, wid)
+    glass(frame, x, y, w, h, accent=accent)
     return x, y, w, h, _scale(frame)
 
 
@@ -137,7 +186,10 @@ def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None) -> tuple[in
 
 
 def draw_score_bug(frame, assets: Assets, teams: list[dict], clock: str) -> None:
-    x, y, w, h, k = _place(frame, assets, "score_bug")
+    placed = _place(frame, assets, "score_bug")
+    if placed is None:
+        return
+    x, y, w, h, k = placed
     a, b = teams
     ca, cb = hex_to_bgr(a["color"]), hex_to_bgr(b["color"])
     cv2.rectangle(frame, (x, y), (x + int(10 * k), y + h), ca, -1)
@@ -157,9 +209,8 @@ def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s:
     col = hex_to_bgr(team["color"]) if team else (60, 200, 60)
     img = assets.get("made_flash")
     if img is not None:
-        img = img.copy()
-        img[:, :, 3] = (img[:, :, 3].astype(np.float32) * fade).astype(np.uint8)
-        blend(frame, img, x, y)
+        composite(frame, img, alpha_scale=fade)
+        return
     else:
         overlay = frame.copy()
         cv2.rectangle(overlay, (x, y + h + int(6 * k)), (x + w, y + h + int(46 * k)), col, -1)
@@ -169,7 +220,10 @@ def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s:
 
 
 def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
-    x, y, w, h, k = _place(frame, assets, "player_card", accent=hex_to_bgr(team["color"]))
+    placed = _place(frame, assets, "player_card", accent=hex_to_bgr(team["color"]))
+    if placed is None:
+        return
+    x, y, w, h, k = placed
     num = f"#{player['number']}" if player.get("number") else player["key"]
     text(frame, num, x + int(24 * k), y + int(58 * k), 1.4 * k, TEXT, 3)
     text(frame, team["name"][:16], x + int(24 * k), y + int(96 * k), 0.7 * k, DIM, 2)
@@ -179,7 +233,10 @@ def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
 
 
 def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[dict]) -> None:
-    x, y, w, h, k = _place(frame, assets, "team_overview")
+    placed = _place(frame, assets, "team_overview")
+    if placed is None:
+        return
+    x, y, w, h, k = placed
     text(frame, "TEAM OVERVIEW", x + int(30 * k), y + int(50 * k), 0.9 * k, DIM, 2)
     for i, t in enumerate(teams):
         cx = x + int(30 * k) + i * (w // 2)
@@ -198,14 +255,20 @@ def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[d
 
 
 def draw_lower_third(frame, assets: Assets, title: str) -> None:
-    x, y, w, h, k = _place(frame, assets, "lower_third")
+    placed = _place(frame, assets, "lower_third")
+    if placed is None:
+        return
+    x, y, w, h, k = placed
     text(frame, "BIG BALL BALLER", x + int(40 * k), y + int(78 * k), 1.6 * k, TEXT, 3)
     (tw, _), _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_DUPLEX, 0.9 * k, 2)
     text(frame, title, x + w - int(40 * k) - tw, y + int(74 * k), 0.9 * k, DIM, 2)
 
 
 def draw_end_summary(frame, assets: Assets, teams: list[dict], players: list[dict]) -> None:
-    x, y, w, h, k = _place(frame, assets, "end_summary")
+    placed = _place(frame, assets, "end_summary")
+    if placed is None:
+        return
+    x, y, w, h, k = placed
     text(frame, "BIG BALL BALLER   GAME SUMMARY", x + int(60 * k), y + int(90 * k), 1.5 * k, TEXT, 3)
     text(frame, f"{teams[0]['name']} {teams[0]['score']} : {teams[1]['score']} {teams[1]['name']}",
          x + int(60 * k), y + int(160 * k), 1.2 * k, DIM, 2)
@@ -226,17 +289,23 @@ def draw_end_summary(frame, assets: Assets, teams: list[dict], players: list[dic
 
 
 def draw_heat_map(frame, assets: Assets) -> bool:
-    """COURT's heat_map.png full frame; False when it does not exist yet."""
-    img = assets.external("heat_map.png")
-    if img is None:
-        x, y, w, h, k = _place(frame, assets, "heat_map")
-        text(frame, "HEAT MAP (COURT render pending)", x + int(60 * k), y + int(90 * k), 1.3 * k, DIM, 3)
+    """FRONTEND's heat_map_frame.png (full canvas with alpha) over COURT's
+    heat_map.png; False when neither exists yet."""
+    base = assets.external("heat_map.png")
+    frame_png = assets.get("heat_map_frame")
+    if base is None and frame_png is None:
+        placed = _place(frame, assets, "heat_map")
+        if placed:
+            x, y, w, h, k = placed
+            text(frame, "HEAT MAP (COURT render pending)", x + int(60 * k), y + int(90 * k), 1.3 * k, DIM, 3)
         return False
-    if img.ndim == 3 and img.shape[2] == 4:
-        img = cv2.resize(img, (frame.shape[1], frame.shape[0]))
-        blend(frame, img, 0, 0)
-    else:
-        frame[:] = cv2.resize(img[:, :, :3], (frame.shape[1], frame.shape[0]))
+    if base is not None:
+        if base.ndim == 3 and base.shape[2] == 4:
+            frame[:] = cv2.resize(base[:, :, :3], (frame.shape[1], frame.shape[0]))
+        else:
+            frame[:] = cv2.resize(base[:, :, :3], (frame.shape[1], frame.shape[0]))
+    if frame_png is not None:
+        composite(frame, frame_png)
     return True
 
 

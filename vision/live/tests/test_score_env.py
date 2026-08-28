@@ -159,7 +159,7 @@ def test_widget_scheduler_timing():
     assert frame[1020, 960].any()  # lower third visible in the first 10 s
     frame[:] = 0
     ws.render(frame, 20.0, teams, players, "00:20")
-    assert not frame[1020, 960].any() and frame[60, 960].any()  # lower third gone, score bug always
+    assert not frame[1020, 960].any() and frame[100, 960].any()  # lower third gone, score bug always
     ws.made(30.0, 0, "A5", "BASKET Team A +2")
     frame[:] = 0
     ws.render(frame, 31.0, teams, players, "00:31")
