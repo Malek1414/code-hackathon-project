@@ -61,6 +61,11 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
     img = canvas.base.copy()
     frame = int(rec["frame"])
     players = rec.get("players") or []
+    calibrated = cal is not None and np.isfinite(cal.H_m_to_px(frame)).all()
+    if not calibrated:
+        cv2.putText(img, "uncalibrated", (canvas.w - 190, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 240), 2, cv2.LINE_AA)
+        players = []
+        trail.append(None)
     if players:
         feet = cal.project(frame, [p["foot"] for p in players])
         ok = cal.on_court(feet)
@@ -74,7 +79,7 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
             if show_ids:
                 cv2.putText(img, str(p["id"]), (c[0] + 11, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, TEXT, 1, cv2.LINE_AA)
     ball = rec.get("ball")
-    if ball and ball.get("center"):
+    if calibrated and ball and ball.get("center"):
         # a ball in flight projects "too far" along the ground plane; the bottom of its box is closer
         bx, by = ball["center"]
         if ball.get("bbox"):
@@ -90,7 +95,7 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
         cv2.line(img, pts[i - 1], pts[i], tuple(int(v * a) for v in BALL), 2, cv2.LINE_AA)
     if trail and trail[-1] is not None:
         cv2.circle(img, trail[-1], 6, BALL, -1, cv2.LINE_AA)
-    t = rec.get("t", frame / cal.fps)
+    t = rec.get("t", frame / (cal.fps if cal else 50.0))
     cv2.putText(img, f"{t:6.1f} s", (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, TEXT, 1, cv2.LINE_AA)
     return img
 
@@ -107,16 +112,18 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", type=Path, default=None, help="also write one PNG of the first frame with players")
     args = ap.parse_args(argv)
 
-    cal = load_calibration(args.calib)
+    cal = load_calibration(args.calib) if args.calib.exists() else None
+    if cal is None:
+        print(f"{args.calib} fehlt: Platzhalter ohne Spieler, als uncalibrated markiert.")
     canvas = CourtCanvas(scale=args.scale)
     records = list(iter_tracks(args.tracks))
     if not records:
         raise SystemExit(f"keine Frames in {args.tracks}")
     frames = np.array([r["frame"] for r in records])
     stride = int(np.median(np.diff(frames))) if len(frames) > 1 else 1
-    fps = args.fps or cal.fps / max(stride, 1)
+    fps = args.fps or (cal.fps if cal else 50.0) / max(stride, 1)
     trail: deque = deque(maxlen=max(1, int(args.trail * fps)))
-    print(f"{len(records)} Frames, Stride {stride}, {fps:.1f} fps, Kalibrierung: {cal.mode}, Canvas {canvas.w}x{canvas.h}")
+    print(f"{len(records)} Frames, Stride {stride}, {fps:.1f} fps, Kalibrierung: {cal.mode if cal else 'keine'}, Canvas {canvas.w}x{canvas.h}")
 
     preview_done = args.preview is None
     with FfmpegWriter(args.out, canvas.w, canvas.h, fps) as writer:

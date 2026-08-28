@@ -100,6 +100,8 @@ def chain_camera(clip: Path, *, scale: float, boxes: dict[int, np.ndarray], keyf
     S_inv = np.linalg.inv(S)
 
     frames, mats = [], []
+    thumbs: dict[int, np.ndarray] = {}
+    thumb_w, thumb_h = 192, 108
     C = np.eye(3)
     prev_grey = None
     prev_boxes: np.ndarray | None = None
@@ -137,48 +139,129 @@ def chain_camera(clip: Path, *, scale: float, boxes: dict[int, np.ndarray], keyf
             anchor_grey, anchor_C = grey, C.copy()
         frames.append(index)
         mats.append(C.copy())
+        if index % THUMB_EVERY == 0:
+            thumbs[index] = cv2.resize(grey, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
         prev_grey = grey
         if len(frames) % 500 == 0:
             el = time.time() - t0
             log(f"  {index}/{end} frames, {el:.0f} s, {len(frames) / el:.1f} fps, {failed} failed, {reanchors} re-anchors")
     cap.release()
-    return np.array(frames, np.int64), np.array(mats, np.float64), {"failed": failed, "reanchors": reanchors, "fps_processed": len(frames) / max(time.time() - t0, 1e-6)}
+    frames_arr, mats_arr = np.array(frames, np.int64), np.array(mats, np.float64)
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if cap.isOpened() else None
+    cuts, aligned = detect_cuts(frames_arr, mats_arr, thumbs, full_size=(prev_grey.shape[1] / scale, prev_grey.shape[0] / scale))
+    return frames_arr, mats_arr, {"failed": failed, "reanchors": reanchors, "cuts": cuts, "aligned_diff": aligned,
+                                  "fps_processed": len(frames) / max(time.time() - t0, 1e-6)}
 
 
-def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[int, np.ndarray]) -> tuple[np.ndarray, dict]:
-    """Court->pixel H for every frame from the camera chain and the keyframe truths."""
+THUMB_EVERY = 5
+CUT_LAG = 50  # frames, 1 s at 50 fps
+CUT_THRESHOLD = 22.0
+"""Mean grey difference (0..255) between a frame and the frame one second earlier
+AFTER aligning the earlier one with the tracked camera motion. A pan aligns
+away, moving players cost a few units, a cut or a dissolve to another view
+does not align at all and scores far higher. Measured on dev60: game segments
+sit around 6 to 10, the dissolves at 30+."""
+
+
+def detect_cuts(frames: np.ndarray, C: np.ndarray, thumbs: dict[int, np.ndarray], full_size: tuple[float, float]) -> tuple[list[int], dict[int, float]]:
+    """Frames where the content changed in a way camera motion cannot explain."""
+    if not thumbs:
+        return [], {}
+    W, H = full_size
+    sample = next(iter(thumbs.values()))
+    th, tw = sample.shape[:2]
+    S = np.diag([tw / W, th / H, 1.0])
+    S_inv = np.linalg.inv(S)
+    pos = {int(f): i for i, f in enumerate(frames)}
+    aligned: dict[int, float] = {}
+    for t, thumb in thumbs.items():
+        t0 = t - CUT_LAG
+        if t0 not in thumbs or t0 not in pos or t not in pos:
+            continue
+        T = C[pos[t]] @ np.linalg.inv(C[pos[t0]])  # px(t0) -> px(t), full res
+        Ts = S @ T @ S_inv
+        if not np.all(np.isfinite(Ts)):
+            aligned[t] = 255.0
+            continue
+        warped = cv2.warpPerspective(thumbs[t0], Ts.astype(np.float64), (tw, th), flags=cv2.INTER_LINEAR, borderValue=0)
+        valid = cv2.warpPerspective(np.full_like(thumbs[t0], 255), Ts.astype(np.float64), (tw, th), flags=cv2.INTER_NEAREST, borderValue=0) > 0
+        if valid.sum() < 0.3 * valid.size:
+            aligned[t] = 255.0
+            continue
+        aligned[t] = float(np.abs(warped.astype(np.float32) - thumb.astype(np.float32))[valid].mean())
+    return cuts_from_signal(aligned, first_frame=int(frames[0])), aligned
+
+
+def cuts_from_signal(aligned: dict[int, float], first_frame: int = 0, threshold: float = CUT_THRESHOLD,
+                     min_run: int = 2) -> list[int]:
+    """One cut per run of at least `min_run` consecutive high samples, placed at the
+    start of the run minus half the lag so it lands inside a dissolve, not after it."""
+    cuts: list[int] = []
+    ts = sorted(aligned)
+    i = 0
+    while i < len(ts):
+        if aligned[ts[i]] > threshold:
+            j = i
+            while j < len(ts) and aligned[ts[j]] > threshold:
+                j += 1
+            if j - i >= min_run:
+                cuts.append(max(first_frame, ts[i] - CUT_LAG // 2))
+            i = j
+        else:
+            i += 1
+    return cuts
+
+
+def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[int, np.ndarray],
+                           cuts: list[int] | None = None) -> tuple[np.ndarray, dict, list[dict]]:
+    """Court->pixel H for every frame from the camera chain and the keyframe truths.
+
+    The clip is split at cuts; keyframes only ever carry within their own
+    segment, never across a cut. A segment without a keyframe gets NaN
+    matrices, which every consumer treats as "position unknown"."""
+    from vision.court.homography import apply_h
+
     keys = sorted(keyframes)
     pos = {int(f): i for i, f in enumerate(frames)}
     for k in keys:
         if k not in pos:
             raise SystemExit(f"Keyframe {k} wurde nicht verarbeitet (stride/end prüfen).")
     inv = np.linalg.inv
+    bounds = sorted(set([int(frames[0])] + [c for c in (cuts or []) if frames[0] < c <= frames[-1]] + [int(frames[-1]) + 1]))
+    segments = list(zip(bounds[:-1], bounds[1:]))
 
     def carried(k: int, i: int) -> np.ndarray:
         # T(k -> f) = C_f @ inv(C_k); court->px at f = T @ H_m2px(k)
         return _normalise(C[i] @ inv(C[pos[k]]) @ keyframes[k])
 
-    out = np.empty_like(C)
-    drift_px = {}
-    for i, f in enumerate(frames):
-        f = int(f)
-        if f <= keys[0]:
-            out[i] = carried(keys[0], i)
-        elif f >= keys[-1]:
-            out[i] = carried(keys[-1], i)
-        else:
-            a = max(k for k in keys if k <= f)
-            b = min(k for k in keys if k >= f)
-            s = (f - a) / (b - a) if b > a else 0.0
-            out[i] = interpolate_m_to_px(carried(a, i), carried(b, i), s)
-    # how far the forward chain is off when it reaches the next keyframe: the honest drift number
+    out = np.full_like(C, np.nan)
+    drift_px: dict[str, float] = {}
+    report: list[dict] = []
     corners = np.float64([[0, 0], [28, 0], [28, 15], [0, 15]])
-    for a, b in zip(keys[:-1], keys[1:]):
-        est = carried(a, pos[b])
-        from vision.court.homography import apply_h
-        d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
-        drift_px[f"{a}->{b}"] = round(float(np.nanmean(d)), 1)
-    return out, drift_px
+    for seg_start, seg_end in segments:
+        seg_keys = [k for k in keys if seg_start <= k < seg_end]
+        report.append({"start": seg_start, "end": seg_end - 1, "keyframes": seg_keys})
+        if not seg_keys:
+            continue
+        for i, f in enumerate(frames):
+            f = int(f)
+            if not (seg_start <= f < seg_end):
+                continue
+            if f <= seg_keys[0]:
+                out[i] = carried(seg_keys[0], i)
+            elif f >= seg_keys[-1]:
+                out[i] = carried(seg_keys[-1], i)
+            else:
+                a = max(k for k in seg_keys if k <= f)
+                b = min(k for k in seg_keys if k >= f)
+                s = (f - a) / (b - a) if b > a else 0.0
+                out[i] = interpolate_m_to_px(carried(a, i), carried(b, i), s)
+        # how far the forward chain is off when it reaches the next keyframe: the honest drift number
+        for a, b in zip(seg_keys[:-1], seg_keys[1:]):
+            est = carried(a, pos[b])
+            d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
+            drift_px[f"{a}->{b}"] = round(float(np.nanmean(d)), 1)
+    return out, drift_px, report
 
 
 def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Path, every: int, scale: float = 0.5) -> None:
@@ -195,7 +278,10 @@ def write_preview(clip: Path, frames: np.ndarray, H_m_to_px: np.ndarray, out: Pa
             if not ok:
                 break
             frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
-            draw_court(frame, S @ H_m_to_px[i], FIBA, thickness=2)
+            if np.isfinite(H_m_to_px[i]).all():
+                draw_court(frame, S @ H_m_to_px[i], FIBA, thickness=2)
+            else:
+                cv2.putText(frame, "unkalibriert", (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (60, 60, 240), 2, cv2.LINE_AA)
             cv2.putText(frame, f"frame {int(f)}  t={f / fps:5.1f}s", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
             writer.write(frame)
     cap.release()
@@ -212,6 +298,7 @@ def main(argv=None) -> int:
     ap.add_argument("--end", type=int, default=None, help="nur bis zu diesem Frame")
     ap.add_argument("--reanchor-every", type=int, default=60)
     ap.add_argument("--no-cache", action="store_true", help="Kamerakette neu rechnen")
+    ap.add_argument("--cut-threshold", type=float, default=CUT_THRESHOLD, help="Schnitt-Schwelle auf der ausgerichteten Differenz")
     ap.add_argument("--chain-only", action="store_true", help="nur die Kamerakette cachen, keine Keyframes nötig")
     ap.add_argument("--preview", action="store_true", help="out/court_propagate_preview.mp4 mit Linien-Overlay schreiben")
     ap.add_argument("--preview-every", type=int, default=5)
@@ -234,24 +321,38 @@ def main(argv=None) -> int:
     if cache.exists() and not args.no_cache:
         npz = np.load(cache)
         frames, C = npz["frames"], npz["C"]
-        stats = {"failed": int(npz["failed"]), "reanchors": 0, "cached": str(cache)}
+        aligned = dict(zip(npz["aligned_t"].tolist(), npz["aligned_v"].tolist())) if "aligned_t" in npz else {}
+        stats = {"failed": int(npz["failed"]), "reanchors": 0, "cached": str(cache), "aligned_diff": aligned,
+                 "cuts": cuts_from_signal(aligned, int(frames[0]), args.cut_threshold) if aligned else [int(c) for c in npz["cuts"]]}
         print(f"Kamerakette aus Cache: {rel(cache)} ({len(frames)} Frames)")
     else:
         frames, C, stats = chain_camera(args.clip, scale=args.scale, boxes=boxes, keyframes=keyframes, end=args.end,
                                         stride=args.stride, reanchor_every=args.reanchor_every)
         if args.end is None:
-            np.savez_compressed(cache, frames=frames, C=C, failed=stats["failed"])
+            al = stats.get("aligned_diff") or {}
+            np.savez_compressed(cache, frames=frames, C=C, failed=stats["failed"], cuts=np.array(stats["cuts"], np.int64),
+                                aligned_t=np.array(sorted(al), np.int64), aligned_v=np.array([al[k] for k in sorted(al)], np.float64))
+        vals = np.array(list(stats["aligned_diff"].values())) if stats.get("aligned_diff") else np.zeros(1)
+        print(f"Schnitt-Signal (ausgerichtete Differenz) Median {np.median(vals):.1f}, 90% {np.percentile(vals, 90):.1f}, max {vals.max():.1f}")
+    cuts = cuts_from_signal(stats["aligned_diff"], int(frames[0]), args.cut_threshold) if stats.get("aligned_diff") else stats.get("cuts", [])
+    print(f"{len(cuts)} Schnitte/Überblendungen erkannt (Schwelle {args.cut_threshold}): {cuts}")
     if args.chain_only:
         print("nur Kamerakette berechnet.")
         return 0
-    H_m_to_px, drift = per_frame_homographies(frames, C, keyframes)
-    H_px_to_m = np.linalg.inv(H_m_to_px)
+    H_m_to_px, drift, segments = per_frame_homographies(frames, C, keyframes, cuts)
+    H_px_to_m = np.full_like(H_m_to_px, np.nan)
+    ok = np.isfinite(H_m_to_px).all(axis=(1, 2))
+    H_px_to_m[ok] = np.linalg.inv(H_m_to_px[ok])
+    for seg in segments:
+        state = f"Keyframes {seg['keyframes']}" if seg["keyframes"] else "OHNE Keyframe, bleibt unkalibriert"
+        print(f"  Segment {seg['start']}..{seg['end']} ({seg['start'] / 50:.0f}s bis {seg['end'] / 50:.0f}s): {state}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.out, frames=frames, H_m_to_px=H_m_to_px, H_px_to_m=H_px_to_m)
 
     data["per_frame"] = rel(args.out)
     data["propagation"] = {"frames": int(len(frames)), "stride": args.stride, "scale": args.scale,
                            "failed_transitions": stats["failed"], "reanchors": stats["reanchors"],
+                           "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),
                            "chain_drift_px_at_next_keyframe": drift}
     args.calib.write_text(json.dumps(data, indent=1))
     print(f"gespeichert: {rel(args.out)} ({len(frames)} Frames), Drift zum nächsten Keyframe: {drift or 'nur ein Keyframe'}")

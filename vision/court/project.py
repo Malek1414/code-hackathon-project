@@ -90,7 +90,8 @@ class Calibration:
         return np.linalg.inv(self.single_px_to_m)
 
     def H_px_to_m(self, frame: int | None = None) -> np.ndarray:
-        return np.linalg.inv(self.H_m_to_px(frame))
+        H = self.H_m_to_px(frame)
+        return np.linalg.inv(H) if np.isfinite(H).all() else np.full((3, 3), np.nan)
 
     def project(self, frame: int | None, points) -> np.ndarray:
         """Pixels -> metres for one frame. [N, 2] in, [N, 2] out."""
