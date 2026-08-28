@@ -20,3 +20,5 @@ ml/.venv/
 ml/data/
 *.pt
 runs/
+*.xcuserdata/
+xcuserdata/

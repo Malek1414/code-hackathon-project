@@ -10,14 +10,14 @@ phone (this app) --ws://laptop:8765--> software/pan_bridge.py --serial--> Arduin
 
 ## Run it (needs Xcode + an iPhone)
 
-1. Xcode → New Project → iOS App, name **FollowCam**, interface SwiftUI.
-2. Delete the template `ContentView.swift`/`FollowCamApp.swift`; drag the five
-   files from `FollowCamApp/` into the project.
-3. Target → Info: add
-   - `NSCameraUsageDescription` — "Films the game and tracks the ball."
-   - `NSPhotoLibraryAddUsageDescription` — "Saves recordings."
-   - `NSLocalNetworkUsageDescription` — "Steers the FollowCam rig."
-4. Signing: your personal team. Build to the phone.
+1. Open `app/FollowCam.xcodeproj` (already generated; verified with an
+   unsigned `xcodebuild` — BUILD SUCCEEDED).
+2. Target FollowCam → Signing & Capabilities → pick your personal team.
+3. Plug in the phone, hit Run. Camera/Photos/network permission strings are
+   already configured.
+
+(To regenerate the project after adding files: `brew install xcodegen`,
+then `xcodegen generate` in `app/`.)
 
 ## Use it (court test flow)
 

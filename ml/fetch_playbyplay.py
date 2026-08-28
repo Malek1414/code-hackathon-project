@@ -14,10 +14,11 @@ import csv
 import time
 from pathlib import Path
 
-from nba_api.stats.endpoints import leaguegamefinder, playbyplayv2
+from nba_api.stats.endpoints import leaguegamefinder, playbyplayv3
 
-# EVENTMSGTYPE: 1 = made shot, 2 = missed shot, 4 = rebound
-EVENT_TYPES = {1: "made_shot", 2: "missed_shot", 4: "rebound"}
+# PlayByPlayV3 actionType -> our label (v2 is geo-blocked outside the US)
+EVENT_TYPES = {"Made Shot": "made_shot", "Missed Shot": "missed_shot",
+               "Rebound": "rebound"}
 
 
 def main():
@@ -35,17 +36,17 @@ def main():
     games = finder.get_data_frames()[0]["GAME_ID"].drop_duplicates().head(a.games)
 
     for game_id in games:
-        rows = playbyplayv2.PlayByPlayV2(game_id=game_id).get_data_frames()[0]
-        rows = rows[rows["EVENTMSGTYPE"].isin(EVENT_TYPES)]
+        rows = playbyplayv3.PlayByPlayV3(game_id=game_id).get_data_frames()[0]
+        rows = rows[rows["actionType"].isin(EVENT_TYPES)]
         path = outdir / f"{game_id}.csv"
         with open(path, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["event_num", "event", "period", "clock",
-                        "home_desc", "visitor_desc"])
+            w.writerow(["action_number", "event", "period", "clock",
+                        "team", "player", "description"])
             for _, r in rows.iterrows():
-                w.writerow([r["EVENTNUM"], EVENT_TYPES[r["EVENTMSGTYPE"]],
-                            r["PERIOD"], r["PCTIMESTRING"],
-                            r["HOMEDESCRIPTION"] or "", r["VISITORDESCRIPTION"] or ""])
+                w.writerow([r["actionNumber"], EVENT_TYPES[r["actionType"]],
+                            r["period"], r["clock"], r["teamTricode"],
+                            r["playerName"], r["description"]])
         print(f"{game_id}: {len(rows)} events -> {path}")
         time.sleep(0.6)  # stats.nba.com rate limit
 
