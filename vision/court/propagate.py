@@ -248,7 +248,9 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
     out = np.full_like(C, np.nan)
     drift_px: dict[str, float] = {}
     report: list[dict] = []
-    corners = np.float64([[0, 0], [28, 0], [28, 15], [0, 15]])
+    # drift is measured on points that are actually in the picture (paint corners of both
+    # ends); court corners near the horizon would turn a 50 px error into thousands
+    probes = np.float64([[0, 5.05], [0, 9.95], [5.8, 5.05], [5.8, 9.95], [22.2, 5.05], [22.2, 9.95], [28, 5.05], [28, 9.95], [14, 7.5]])
     for seg_start, seg_end in segments:
         seg_keys = [k for k in keys if seg_start <= k < seg_end]
         report.append({"start": seg_start, "end": seg_end - 1, "keyframes": seg_keys})
@@ -270,8 +272,10 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
         # how far the forward chain is off when it reaches the next keyframe: the honest drift number
         for a, b in zip(seg_keys[:-1], seg_keys[1:]):
             est = carried(a, pos[b])
-            d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
-            mean = float(np.nanmean(d)) if np.isfinite(d).any() else None
+            truth = apply_h(keyframes[b], probes)
+            inside = np.isfinite(truth).all(axis=1) & (truth[:, 0] > 0) & (truth[:, 0] < 1920) & (truth[:, 1] > 0) & (truth[:, 1] < 1080)
+            d = np.linalg.norm(apply_h(est, probes) - truth, axis=1)[inside]
+            mean = float(np.nanmean(d)) if len(d) and np.isfinite(d).any() else None
             drift_px[f"{a}->{b}"] = round(mean, 1) if mean is not None else None
     return out, drift_px, report
 
