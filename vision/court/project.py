@@ -115,7 +115,10 @@ class Calibration:
         px = apply_h(H, corners)
         return px.astype(np.float32) if np.isfinite(px).all() else None
 
-    def on_court(self, xy_m, tolerance_m: float = 1.5) -> np.ndarray:
+    def on_court(self, xy_m, tolerance_m: float = 0.5) -> np.ndarray:
+        """Bool per point: inside the court plus `tolerance_m`. Default 0.5 m, measured by QA
+        on dev60: bench and scorer's table sit 0.5 to 1.5 m behind the baseline, so 1.5 m
+        still counted them as players; 0.5 m keeps a foot on the line and drops the bench."""
         xy = np.asarray(xy_m, np.float64).reshape(-1, 2)
         ok = np.isfinite(xy).all(axis=1)
         ok &= (xy[:, 0] >= -tolerance_m) & (xy[:, 0] <= self.spec.length_m + tolerance_m)
