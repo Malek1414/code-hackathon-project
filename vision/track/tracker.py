@@ -138,7 +138,7 @@ class Tracker:
             if pred is not None and getattr(pred, "trackers", None):
                 for t in pred.trackers:
                     t.reset()
-        self.gate = BallGate()  # blacklists are per camera segment
+        self.gate = BallGate(counts=self.gate.counts)  # blacklists per camera segment, counts kept
         self.last_hoop, self.last_hoop_frame = None, -10**9
         self.hoop_streak, self.hoop_pending = 0, None
         self.teams.reset_votes()

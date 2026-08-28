@@ -18,9 +18,12 @@ them. What separates them is time and motion:
   pixel position, so it cannot win even in frames without a hoop. Cleared
   when the hoop box jumps > 10 px (pan) or at cuts. An accepted ball that has
   not moved > `static_px` in `static_frames` frames is blacklisted too.
-* radius consistency: the ball does not change size between frames. A
-  candidate whose radius is off by more than `radius_tol` (40 %) from the
-  running median of the last accepted radii is a head, a hand or a sign.
+* radius plausibility, perspective-aware: a ball is ~24 cm next to ~190 cm
+  players, so its radius must be 3-14 % of the height of the nearest player
+  box (no check without a player within 500 px). A rolling-median rule was
+  tried first and measured wrong: dev60 frames 1800-1816 the real ball at
+  0.87-0.91 conf was rejected because it flew towards the camera and doubled
+  in size while the median came from far-away frames.
 * heads: a candidate whose center lies in the top 20 % of any player box is a
   head, unless the previous ball was already there (a ball held overhead).
 * trajectory: the ball's next position is extrapolated from the last two
@@ -55,13 +58,14 @@ class BallGate:
                  max_gate_px: float = 900.0, near_px: float = 120.0, near_grow_px: float = 40.0,
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
                  rel_px: float = 8.0, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
-                 radius_tol: float = 0.4, radius_min_samples: int = 5, head_frac: float = 0.2,
-                 pan_px: float = 10.0, still_px: float = 4.0) -> None:
+                 radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
+                 pan_px: float = 10.0, still_px: float = 4.0,
+                 counts: dict | None = None) -> None:
         self.base_px, self.per_frame_px, self.max_gate_px = base_px, per_frame_px, max_gate_px
         self.near_px, self.near_grow_px = near_px, near_grow_px
         self.static_px, self.static_frames, self.blacklist_px = static_px, static_frames, blacklist_px
         self.rel_px, self.rel_min, self.rel_window, self.rel_span = rel_px, rel_min, rel_window, rel_span
-        self.radius_tol, self.radius_min_samples, self.head_frac = radius_tol, radius_min_samples, head_frac
+        self.radius_frac, self.head_frac = radius_frac, head_frac
         self.pan_px, self.still_px = pan_px, still_px
 
         self.step_no = 0
@@ -78,8 +82,9 @@ class BallGate:
         self.prev_hoop_c: np.ndarray | None = None
         self.camera_still = False
         self.rejects: list[dict] = []
-        self.counts = {"gate": 0, "static_rel": 0, "blacklist_abs": 0, "blacklist_rel": 0,
-                       "radius": 0, "head": 0, "static_abs": 0}
+        self.counts = counts if counts is not None else {  # shared across cut resets
+            "gate": 0, "static_rel": 0, "blacklist_abs": 0, "blacklist_rel": 0,
+            "radius": 0, "head": 0, "static_abs": 0, "accepted_near_blacklist": 0}
         self.accepted_near_blacklist = 0
 
     # ----- helpers -------------------------------------------------------------
@@ -92,12 +97,20 @@ class BallGate:
         if not any(np.linalg.norm(c - b) < self.blacklist_px for b in self.blacklist_abs):
             self.blacklist_abs.append(c.copy())
 
-    def _bad_radius(self, box) -> bool:
-        if len(self.radii) < self.radius_min_samples:
+    def _bad_radius(self, box, players) -> bool:
+        if not len(players):
             return False
+        c = _center(box)
         r = max(box[2] - box[0], box[3] - box[1]) / 2
-        med = float(np.median(self.radii))
-        return abs(r - med) > self.radius_tol * med
+        best, best_h = 1e9, 0.0
+        for b in players:
+            d = float(np.hypot((b[0] + b[2]) / 2 - c[0], (b[1] + b[3]) / 2 - c[1]))
+            if d < best:
+                best, best_h = d, float(b[3] - b[1])
+        if best > 500 or best_h <= 0:
+            return False
+        frac = r / best_h
+        return not (self.radius_frac[0] <= frac <= self.radius_frac[1])
 
     def _is_head(self, c: np.ndarray, players) -> bool:
         if self.last is not None and float(np.linalg.norm(c - self.last)) < 60:
@@ -181,7 +194,7 @@ class BallGate:
             if any(np.linalg.norm(c - b) < self.blacklist_px for b in self.blacklist_abs):
                 self._reject(box, conf, "blacklist_abs")
                 continue
-            if self._bad_radius(box):
+            if self._bad_radius(box, players):
                 self._reject(box, conf, "radius")
                 continue
             if self._is_head(c, players):
@@ -215,6 +228,7 @@ class BallGate:
                 return None
         if self._near_blacklist(c, hoop_c):
             self.accepted_near_blacklist += 1
+            self.counts["accepted_near_blacklist"] += 1
         self.prev, self.prev_step = self.last, self.last_step
         self.last, self.last_step = c, self.step_no
         self.last_known = c
@@ -222,7 +236,7 @@ class BallGate:
         return conf, box
 
     def summary(self) -> dict:
-        return {"ball_rejected": dict(self.counts),
-                "ball_accepted_near_blacklist": self.accepted_near_blacklist,
+        return {"ball_rejected": {k: v for k, v in self.counts.items() if k != "accepted_near_blacklist"},
+                "ball_accepted_near_blacklist": self.counts["accepted_near_blacklist"],
                 "ball_blacklist_abs": [b.round(1).tolist() for b in self.blacklist_abs],
                 "ball_blacklist_rel": [b.round(1).tolist() for b in self.blacklist_rel]}
