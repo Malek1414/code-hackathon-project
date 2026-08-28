@@ -19,9 +19,10 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .io import Frame, clean_ball, infer_fps, median_dt, read_tracks, synthetic_scenario
-from .possession import PossessionParams, PossessionResult, possession_seconds, track_possession
-from .shots import ShotEvent, ShotParams, detect_shots
+from .engine import StatsEngine
+from .io import Frame, infer_fps, median_dt, read_tracks, synthetic_scenario
+from .possession import PossessionParams, PossessionResult, possession_seconds
+from .shots import ShotEvent, ShotParams
 
 MIN_SEEN_S = 2.0  # players seen shorter than this (and without a shot) are tracker fragments
 MAX_PLAYER_SPEED_MS = 12.0  # steps faster than this are id swaps, not running
@@ -38,9 +39,12 @@ def build(
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
     """`distances` (player id -> metres) wins over `calib` (own projection)."""
-    clean_ball(frames)
-    possession = track_possession(frames, possession_params)
-    shots = detect_shots(frames, possession, shot_params)
+    engine = StatsEngine(dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params)
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    possession = engine.possession.result()
+    shots = engine.shots
     events = {
         "fps": fps,
         "clip": clip,

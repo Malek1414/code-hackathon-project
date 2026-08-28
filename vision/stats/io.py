@@ -146,6 +146,23 @@ MAX_BALL_SPEED_DIAMETERS_S = 45.0  # ~10 m/s for a 0.24 m ball
 BALL_DIAMETER_FALLBACK_PX = 20.0
 
 
+def is_round_ball(bbox: BBox) -> bool:
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return min(w, h) <= 0 or max(w, h) / min(w, h) <= MAX_BALL_ASPECT
+
+
+def plausible_move(a: Frame, b: Frame, max_gap_s: float = 0.6) -> bool:
+    """Could the ball have travelled from a to b? (After a long gap: yes.)"""
+    dt = b.t - a.t
+    if dt <= 0 or dt > max_gap_s:
+        return True
+    d = math.hypot(b.ball.center[0] - a.ball.center[0], b.ball.center[1] - a.ball.center[1])
+    diam = BALL_DIAMETER_FALLBACK_PX
+    if a.ball.bbox is not None:
+        diam = max((a.ball.bbox[2] - a.ball.bbox[0] + a.ball.bbox[3] - a.ball.bbox[1]) / 2, 4.0)
+    return d / dt <= MAX_BALL_SPEED_DIAMETERS_S * diam
+
+
 def clean_ball(frames: list[Frame], *, max_gap_s: float = 0.6) -> int:
     """Drop stray ball detections in place, returns how many were dropped.
 
@@ -153,41 +170,27 @@ def clean_ball(frames: list[Frame], *, max_gap_s: float = 0.6) -> int:
     boxes that are clearly not round, and isolated points that would need an
     impossible speed from the previous kept detection *and* to the next raw
     detection. A jump that the next detection confirms is kept (the ball
-    really was somewhere else, e.g. after a long occlusion).
+    really was somewhere else, e.g. after a long occlusion). StatsEngine
+    applies the same rules incrementally.
     """
     dropped = 0
-    idx = [i for i, fr in enumerate(frames) if fr.ball is not None]
-    for i in idx:
-        b = frames[i].ball
-        if b.bbox is not None:
-            w, h = b.bbox[2] - b.bbox[0], b.bbox[3] - b.bbox[1]
-            if min(w, h) > 0 and max(w, h) / min(w, h) > MAX_BALL_ASPECT:
-                frames[i].ball = None
-                dropped += 1
+    for fr in frames:
+        if fr.ball is not None and fr.ball.bbox is not None and not is_round_ball(fr.ball.bbox):
+            fr.ball = None
+            dropped += 1
     idx = [i for i, fr in enumerate(frames) if fr.ball is not None]
     last_kept: int | None = None
     for n, i in enumerate(idx):
         fr = frames[i]
         nxt = frames[idx[n + 1]] if n + 1 < len(idx) else None
-        ok_prev = last_kept is None or _plausible(frames[last_kept], fr, max_gap_s)
-        ok_next = nxt is None or _plausible(fr, nxt, max_gap_s)
+        ok_prev = last_kept is None or plausible_move(frames[last_kept], fr, max_gap_s)
+        ok_next = nxt is None or plausible_move(fr, nxt, max_gap_s)
         if ok_prev or ok_next:
             last_kept = i
         else:
             fr.ball = None
             dropped += 1
     return dropped
-
-
-def _plausible(a: Frame, b: Frame, max_gap_s: float) -> bool:
-    dt = b.t - a.t
-    if dt <= 0 or dt > max_gap_s:
-        return True  # after a long gap anything goes
-    d = math.hypot(b.ball.center[0] - a.ball.center[0], b.ball.center[1] - a.ball.center[1])
-    diam = BALL_DIAMETER_FALLBACK_PX
-    if a.ball.bbox is not None:
-        diam = max((a.ball.bbox[2] - a.ball.bbox[0] + a.ball.bbox[3] - a.ball.bbox[1]) / 2, 4.0)
-    return d / dt <= MAX_BALL_SPEED_DIAMETERS_S * diam
 
 
 def infer_fps(frames: list[Frame]) -> float | None:

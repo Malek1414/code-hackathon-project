@@ -1,4 +1,4 @@
-"""Ball possession from per-frame tracks.
+"""Ball possession from per-frame tracks, incremental.
 
 Rule (docs/ORCHESTRATION.md, STATS milestone 12:00): the holder is the player
 whose bbox is nearest to the ball center, but only if the ball center lies
@@ -10,7 +10,8 @@ backdated to the first frame of the streak. Frames without a ball detection
 carry the previous state.
 
 Everything is measured inside one frame (ball vs. player in the same image),
-so a panning camera does not disturb it.
+so a panning camera does not disturb it. `PossessionTracker.push` takes one
+frame at a time (live mode); `track_possession` runs it over a list.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from collections import Counter
 from dataclasses import dataclass
 
 from .io import Frame, Player, median_dt
-
 
 _NO_PENDING = object()  # distinct from None, which is a valid candidate (loose ball)
 
@@ -84,54 +84,80 @@ def nearest_player(fr: Frame, params: PossessionParams = PossessionParams()) -> 
     return best if best_d <= params.max_dist_heights else None
 
 
-def track_possession(frames: list[Frame], params: PossessionParams = PossessionParams()) -> PossessionResult:
-    holder: list[int | None] = []
-    current: int | None = None
-    pending: object = _NO_PENDING  # candidate (id or None) that differs from `current`
-    pending_start = 0
-    pending_len = 0
-    dt = median_dt(frames)
-    need_hold = params.frames_for(dt, loose=False)
-    need_loose = params.frames_for(dt, loose=True)
+class PossessionTracker:
+    """Feed frames in order; `holder[i]` is the holder of the i-th pushed frame.
 
-    for i, fr in enumerate(frames):
+    `dt` is the typical frame spacing in seconds (drives the hysteresis
+    lengths). Live mode passes its processing interval; batch passes the
+    median spacing of the file.
+    """
+
+    def __init__(self, params: PossessionParams = PossessionParams(), dt: float = 0.1) -> None:
+        self.params = params
+        self.dt = dt
+        self.frames: list[Frame] = []
+        self.holder: list[int | None] = []
+        self._current: int | None = None
+        self._pending: object = _NO_PENDING
+        self._pending_start = 0
+        self._pending_len = 0
+
+    @property
+    def current(self) -> int | None:
+        return self._current
+
+    def push(self, fr: Frame) -> int | None:
+        self.frames.append(fr)
+        i = len(self.frames) - 1
         if fr.ball is None:
-            holder.append(current)  # no information: carry the state, don't count
-            continue
-        cand = nearest_player(fr, params)
+            self.holder.append(self._current)  # no information: carry the state, don't count
+            return self._current
+        cand = nearest_player(fr, self.params)
         cand_id = cand.id if cand else None
 
-        if cand_id == current:
-            pending, pending_len = _NO_PENDING, 0
-            holder.append(current)
-            continue
+        if cand_id == self._current:
+            self._pending, self._pending_len = _NO_PENDING, 0
+            self.holder.append(self._current)
+            return self._current
 
-        if cand_id == pending:
-            pending_len += 1
+        if cand_id == self._pending:
+            self._pending_len += 1
         else:
-            pending, pending_start, pending_len = cand_id, i, 1
+            self._pending, self._pending_start, self._pending_len = cand_id, i, 1
 
-        if pending_len >= (need_loose if pending is None else need_hold):
-            current = pending
-            for j in range(pending_start, i):  # backdate to the start of the streak
-                holder[j] = current
-            pending, pending_len = _NO_PENDING, 0
-        holder.append(current)
+        need = self.params.frames_for(self.dt, loose=self._pending is None)
+        if self._pending_len >= need:
+            self._current = self._pending
+            for j in range(self._pending_start, i):  # backdate to the start of the streak
+                self.holder[j] = self._current
+            self._pending, self._pending_len = _NO_PENDING, 0
+        self.holder.append(self._current)
+        return self._current
 
-    return PossessionResult(holder=holder, segments=_segments(frames, holder))
+    @property
+    def segments(self) -> list[Possession]:
+        """Possession segments so far; the last one may still be open."""
+        segments: list[Possession] = []
+        frames, holder = self.frames, self.holder
+        start = None
+        for i in range(len(frames) + 1):
+            pid = holder[i] if i < len(frames) else None
+            if start is not None and (i == len(frames) or pid != holder[start]):
+                segments.append(_make_segment(frames, holder[start], start, i - 1))
+                start = None
+            if pid is not None and start is None:
+                start = i
+        return segments
+
+    def result(self) -> PossessionResult:
+        return PossessionResult(holder=list(self.holder), segments=self.segments)
 
 
-def _segments(frames: list[Frame], holder: list[int | None]) -> list[Possession]:
-    segments: list[Possession] = []
-    start = None
-    for i in range(len(frames) + 1):
-        pid = holder[i] if i < len(frames) else None
-        if start is not None and (i == len(frames) or pid != holder[start]):
-            segments.append(_make_segment(frames, holder[start], start, i - 1))
-            start = None
-        if pid is not None and start is None:
-            start = i
-    return segments
+def track_possession(frames: list[Frame], params: PossessionParams = PossessionParams()) -> PossessionResult:
+    tracker = PossessionTracker(params, dt=median_dt(frames))
+    for fr in frames:
+        tracker.push(fr)
+    return tracker.result()
 
 
 def _make_segment(frames: list[Frame], pid: int, a: int, b: int) -> Possession:
