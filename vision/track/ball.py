@@ -45,12 +45,16 @@ them. What separates them is time and motion:
   ball was already there. High-confidence candidates are exempt on purpose:
   measured on dev60 frame 2336 the rule threw away the ball at the release
   of a shot (0.87 conf, above the shooter's hands, top of his box).
-* trajectory: the ball's next position is extrapolated from the last two
-  accepted positions (damped). Candidates within `near_px` (+ growth per
-  missed frame) of that prediction form the first tier and always beat
-  candidates outside it, whatever their confidence: measured on dev60 57.0 s,
-  a 0.75 fixture 320 px away must not outscore a 0.5 ball on the rim. Inside a
-  tier, confidence minus a distance penalty decides.
+* prediction first (Sami, 28.08. 14:02: "when the ball is not obviously seen
+  near where it was, the tracker must not ping somewhere on the wall; it
+  should anticipate where the ball is flying"): the next position is
+  extrapolated from the last accepted positions (damped velocity). While the
+  ball was seen within the last `lock_frames` (1 s), only a candidate within
+  `near_px` (+ growth per missed frame) of the prediction can be accepted;
+  anything farther is rejected as "far", whatever its confidence, and the
+  frame stays without a ball (coasting). Only after a full second without a
+  plausible candidate may the ball be re-acquired anywhere (occlusion, out of
+  frame). Inside the near set, confidence minus a distance penalty decides.
 * gate: a candidate must lie within `base + per_frame * gap` px of the last
   accepted ball; the gate grows with the gap, so a lost ball (out of frame,
   occluded) is re-acquired anywhere, but a wall object while the ball is in
@@ -79,6 +83,7 @@ class BallGate:
                  rel_tol: float = 0.12, rel_min: int = 3, rel_window: int = 150, rel_span: int = 8,
                  radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
                  head_conf: float = 0.75, wall_hoop_widths: float = 2.5, wall_player_px: float = 150.0,
+                 lock_frames: int = 25,
                  pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 5,
                  takeover_px: float = 8.0, counts: dict | None = None,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
@@ -89,6 +94,7 @@ class BallGate:
         self.takeover_frames, self.takeover_px = takeover_frames, takeover_px
         self.radius_frac, self.head_frac, self.head_conf = radius_frac, head_frac, head_conf
         self.wall_hoop_widths, self.wall_player_px = wall_hoop_widths, wall_player_px
+        self.lock_frames = lock_frames
         self.pan_px, self.still_px = pan_px, still_px
 
         self.step_no = 0
@@ -107,7 +113,7 @@ class BallGate:
         self.rejects: list[dict] = []
         self.counts = counts if counts is not None else {  # shared across cut resets
             "gate": 0, "static_rel": 0, "blacklist_abs": 0, "blacklist_rel": 0,
-            "radius": 0, "head": 0, "wall": 0, "static_abs": 0, "accepted_near_blacklist": 0}
+            "radius": 0, "head": 0, "wall": 0, "far": 0, "static_abs": 0, "accepted_near_blacklist": 0}
         self.accepted_near_blacklist = 0
 
     # ----- helpers -------------------------------------------------------------
@@ -266,6 +272,9 @@ class BallGate:
             dist_pred = float(np.linalg.norm(c - pred))
             if stuck:
                 tier2.append((conf, conf, box, c))
+                continue
+            if dist_pred > near and gap <= self.lock_frames:
+                self._reject(box, conf, "far")  # prediction first: coast, do not jump
                 continue
             score = conf - 0.5 * dist_pred / gate
             (tier1 if dist_pred <= near else tier2).append((score, conf, box, c))
