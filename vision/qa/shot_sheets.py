@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import time
 from pathlib import Path
 
@@ -21,6 +22,7 @@ import cv2
 import numpy as np
 
 from .clips import render_clip
+from .numbers_sheet import IDENTITIES, build_number_cards
 from .common import (
     ROOT,
     BALL_COLOR,
@@ -122,10 +124,9 @@ def _local(iso: str | None) -> str:
     if not iso:
         return "?"
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
-        return dt.strftime("%H:%M")
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
     except ValueError:
         return iso
 
@@ -134,205 +135,110 @@ def verdicts_file(out: Path, clip: str) -> Path:
     return out / f"verdicts_{Path(clip).stem}.json"
 
 
-def write_index(out: Path, sheets: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
+TEAM_LETTER = {0: "A", 1: "B"}
+
+
+def key_number(key: str | None) -> int | None:
+    """'A24' -> 24, 'B?805' -> None, 'A12~5' -> 12."""
+    if not key:
+        return None
+    m = re.match(r"^[ABX](\d{1,2})(?:~|$)", key)
+    return int(m.group(1)) if m else None
+
+
+def _shot_block(s: dict) -> str:
+    n = s["n"]
+    letter = TEAM_LETTER.get(s["team"])
+    team_txt = f"Team {letter}" if letter else "Team unbekannt"
+    call = "Treffer" if s["made"] else "Fehlwurf"
+    shooter = f"Werfer Track {s['player_id']}" if s["player_id"] is not None else "Werfer unbekannt"
+    if s.get("player_key"):
+        shooter += f" ({s['player_key']})"
+    title = f"Wurf {n}, {s['t_label']}, {team_txt}, {call}, {shooter}"
+    flipped = "war ein Fehlwurf" if s["made"] else "war ein Treffer"
+    number = s.get("number_prefill")
+    num_val = f' value="{number}"' if number is not None else ""
+    if s.get("video_half"):
+        cap = s.get("video_caption_de", "")
+        video = f"""
+  <video controls muted loop autoplay playsinline preload="metadata" src="{s['video_half']}" data-normal="{s['video']}" data-half="{s['video_half']}"></video>
+  <div class="speed">
+    <button type="button" data-speed="half" class="on">halbe Geschwindigkeit</button>
+    <button type="button" data-speed="normal">normal</button>
+    <span class="cap">{html.escape(cap)}</span>
+  </div>"""
+    else:
+        video = f"""
+  <div class="cap">{html.escape(s.get('video_caption_de', 'kein Video'))}</div>"""
+    return f"""
+<section class="shot" id="shot-{n}" data-n="{n}">
+  <h2>{html.escape(title)}</h2>{video}
+  <div class="cap">Bildstreifen, 1,5 s vor bis 1,0 s nach dem Ereignis. Gelb = Ball, gruen = Korb, farbige Box = markierter Werfer, weisser Kreis = Standpunkt des Werfers.</div>
+  <a href="{s['file']}" target="_blank"><img src="{s['file']}" alt="{html.escape(title)}" loading="lazy"></a>
+  <div class="q">
+    <div class="qt">1. War das ein Wurf, und stimmt {call}?</div>
+    <div class="row">
+      <label><input type="radio" name="s{n}" value="ok"> stimmt</label>
+      <label><input type="radio" name="s{n}" value="flipped"> {flipped}</label>
+      <label><input type="radio" name="s{n}" value="no_shot"> war kein Wurf</label>
+    </div>
+  </div>
+  <div class="q">
+    <div class="qt">2. Ist der markierte Werfer die richtige Person?</div>
+    <div class="row">
+      <label><input type="radio" name="h{n}" value="yes"> ja</label>
+      <label><input type="radio" name="h{n}" value="no"> nein</label>
+    </div>
+  </div>
+  <div class="q">
+    <div class="qt">3. Welche Rueckennummer hat der Werfer?</div>
+    <div class="row">
+      <input type="number" class="num" name="num{n}" min="0" max="99" step="1" placeholder="Nr."{num_val}>
+      <span class="toggle">
+        <label><input type="radio" name="t{n}" value="0"{' checked' if s['team'] == 0 else ''}> Team A</label>
+        <label><input type="radio" name="t{n}" value="1"{' checked' if s['team'] == 1 else ''}> Team B</label>
+      </span>
+      <input type="text" class="note" name="n{n}" placeholder="Notiz (optional)">
+    </div>
+  </div>
+</section>"""
+
+
+def _number_card(i: int, c: dict) -> str:
+    detected = f"erkannt: {c['detected']}" if c.get("detected") is not None else "erkannt: keine"
+    team = f"Team {c['team_letter']}" if c["team_letter"] in ("A", "B") else "Team unbekannt"
+    tracks = ", ".join(str(t) for t in c["track_ids"][:6]) + (" ..." if len(c["track_ids"]) > 6 else "")
+    span = f"{fmt_t(c['first_t'])} bis {fmt_t(c['last_t'])}" if c.get("first_t") is not None else ""
+    img = f'<img src="{c["img"]}" alt="{html.escape(c["key"] or "")}" loading="lazy">' if c.get("img") else '<div class="noimg">keine Box gefunden</div>'
+    return f"""
+<div class="card" data-i="{i}">
+  {img}
+  <div class="cardmeta"><b>{html.escape(detected)}</b>, {team}, {html.escape(c['key'] or '')}<br><span class="dim">Tracks {tracks}, {c.get('frames') or 0} Frames, {span}</span></div>
+  <div class="row">
+    <input type="number" class="num" name="nn{i}" min="0" max="99" step="1" placeholder="richtige Nr.">
+    <label><input type="checkbox" name="un{i}"> nicht lesbar</label>
+  </div>
+</div>"""
+
+
+def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     made = sum(1 for s in sheets if s["made"])
     stored = read_json(verdicts_file(out, clip)) or {}
     stored_line = (
-        f"Stored verdicts from {verdicts_file(out, clip).name} (reviewed {_local(stored.get('reviewed'))}) are pre-selected; "
-        f"shots are matched by time, so they survive a rebuild."
-        if stored.get("shots")
-        else "No stored verdicts yet. Verdicts are kept in this browser until you download them."
+        f"Gespeicherte Antworten aus {verdicts_file(out, clip).name} (Stand {_local(stored.get('reviewed'))}) sind vorbelegt."
+        if stored.get("shots") or stored.get("numbers")
+        else "Noch keine gespeicherten Antworten."
     )
-    rows = []
-    for s in sheets:
-        n = s["n"]
-        title = (
-            f"shot {n}  {s['t_label']}  {TEAM_NAMES.get(s['team'], s['team'])}  "
-            f"{'MADE' if s['made'] else 'MISS'}  "
-            + (f"shooter #{s['player_id']}" if s["player_id"] is not None else "shooter unknown")
-            + (f" ({s['player_key']})" if s.get("player_key") else "")
-        )
-        if s.get("video_half"):
-            video = f"""
-  <video controls muted loop autoplay playsinline preload="metadata" src="{s['video_half']}" data-normal="{s['video']}" data-half="{s['video_half']}"></video>
-  <div class="speed">
-    <button type="button" data-speed="half" class="on">half speed</button>
-    <button type="button" data-speed="normal">normal speed</button>
-    <span class="cap">{html.escape(s.get('video_caption', ''))}</span>
-  </div>"""
-        else:
-            video = f"""
-  <div class="cap">{html.escape(s.get('video_caption', 'no video'))}</div>"""
-        rows.append(
-            f"""
-<section class="shot" id="shot-{n}" data-n="{n}">
-  <h2>{html.escape(title)}</h2>{video}
-  <div class="cap">frame strip, -1.5 s to +1.0 s, frame-exact reference</div>
-  <a href="{s['file']}" target="_blank"><img src="{s['file']}" alt="{html.escape(title)}" loading="lazy"></a>
-  <div class="row">
-    <label><input type="radio" name="v{n}" value="correct"> correct</label>
-    <label><input type="radio" name="v{n}" value="wrong"> wrong</label>
-    <label><input type="radio" name="v{n}" value="missed_shooter"> missed shooter</label>
-    <input type="text" class="note" name="n{n}" placeholder="note (optional)">
-  </div>
-</section>"""
-        )
-    manifest = json.dumps(
-        {"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets}
-    )
-    stored_js = json.dumps({"reviewed": stored.get("reviewed"), "uncalled": stored.get("uncalled_shots", 0), "shots": stored.get("shots", [])})
-    page = f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shot QA</title>
-<style>
-  :root {{ color-scheme: dark; }}
-  body {{ margin: 0; padding: 20px 24px 120px; font: 15px/1.45 -apple-system, system-ui, sans-serif; background: #161616; color: #ececec; }}
-  h1 {{ font-size: 20px; margin: 0 0 4px; }}
-  .meta {{ color: #9a9a9a; font-size: 13px; margin-bottom: 18px; }}
-  .howto {{ background: #222; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; margin-bottom: 22px; }}
-  .howto b {{ color: #ffd23f; }}
-  .shot {{ border-top: 1px solid #2c2c2c; padding: 16px 0 10px; }}
-  .shot h2 {{ font-size: 16px; margin: 0 0 8px; font-weight: 600; }}
-  .shot img {{ display: block; width: 100%; max-width: 1700px; height: auto; border-radius: 6px; }}
-  .shot video {{ display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }}
-  .speed {{ display: flex; gap: 8px; align-items: center; margin: 8px 0 14px; flex-wrap: wrap; }}
-  .speed button {{ font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid #444; background: #242424; color: #ddd; cursor: pointer; }}
-  .speed button.on {{ background: #3a3a3a; border-color: #777; color: #fff; }}
-  .cap {{ color: #9a9a9a; font-size: 13px; margin: 4px 0 6px; }}
-  .row {{ display: flex; gap: 22px; align-items: center; margin-top: 10px; flex-wrap: wrap; }}
-  .row label {{ cursor: pointer; user-select: none; padding: 6px 10px; border-radius: 6px; background: #242424; }}
-  .row label:has(input:checked) {{ background: #3a3a3a; outline: 1px solid #666; }}
-  .row input[type=radio] {{ margin-right: 6px; }}
-  .note {{ flex: 1; min-width: 200px; max-width: 480px; background: #1e1e1e; color: #ddd; border: 1px solid #3a3a3a; border-radius: 6px; padding: 6px 8px; }}
-  .extra {{ border-top: 1px solid #2c2c2c; padding: 18px 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }}
-  .extra input[type=number] {{ width: 70px; background: #1e1e1e; color: #ddd; border: 1px solid #3a3a3a; border-radius: 6px; padding: 6px 8px; }}
-  .bar {{ position: fixed; left: 0; right: 0; bottom: 0; background: #202020; border-top: 1px solid #383838; padding: 12px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }}
-  .bar button {{ font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid #555; background: #2c2c2c; color: #fff; cursor: pointer; }}
-  .bar button.primary {{ background: #ffd23f; color: #111; border-color: #ffd23f; font-weight: 600; }}
-  #summary {{ color: #bbb; }}
-  .empty {{ padding: 40px 0; color: #999; }}
-</style>
-</head>
-<body>
-<h1>Shot QA: {html.escape(Path(clip).name)}</h1>
-<div class="meta">{len(sheets)} shots called by the system ({made} made, {len(sheets) - made} missed), {tracks_n} tracked frames, sheets generated {stamp}. {html.escape(stored_line)}</div>
-<div class="howto">Per sheet: <b>correct</b> = shot and made/miss are right. <b>wrong</b> = no shot here or made/miss is flipped. <b>missed shooter</b> = the shot is right but the shooter id is wrong or unknown. Click a sheet to open it full size. Below the list: how many real shots the system did not call at all.</div>
-{''.join(rows) if rows else '<div class="empty">No shots in events.json yet.</div>'}
-<div class="extra">
-  <label>shots the system did not call (seen in overlay.mp4 but not listed above): <input type="number" id="uncalled" min="0" step="1" value="0"></label>
-</div>
-<div class="bar">
-  <button class="primary" id="download">Download verdicts json</button>
-  <button id="reset">Reset</button>
-  <span id="summary"></span>
-</div>
-<script>
-const MANIFEST = {manifest};
-const STORED = {stored_js};
-const KEY = "followcam-qa-verdicts:" + MANIFEST.clip;
-const MATCH_S = 0.5;
-function state() {{
-  const shots = MANIFEST.shots.map(s => {{
-    const r = document.querySelector('input[name="v' + s.n + '"]:checked');
-    const note = document.querySelector('input[name="n' + s.n + '"]');
-    return {{ n: s.n, t: s.t, frame: s.frame, team: s.team, made: s.made, player_id: s.player_id,
-      verdict: r ? r.value : null, note: note && note.value ? note.value : "" }};
-  }});
-  return {{ shots, uncalled: Number(document.getElementById("uncalled").value || 0), saved: new Date().toISOString() }};
-}}
-function counts(shots) {{
-  const c = {{ correct: 0, wrong: 0, missed_shooter: 0, open: 0 }};
-  for (const s of shots) {{ if (s.verdict) c[s.verdict]++; else c.open++; }}
-  return c;
-}}
-function summary() {{
-  const st = state();
-  const c = counts(st.shots);
-  const rated = c.correct + c.wrong + c.missed_shooter;
-  const prec = rated ? Math.round(100 * (c.correct + c.missed_shooter) / rated) : 0;
-  document.getElementById("summary").textContent =
-    c.correct + " correct, " + c.wrong + " wrong, " + c.missed_shooter + " missed shooter, " + c.open + " open" +
-    (rated ? "   shot precision " + prec + "%" : "") +
-    (st.uncalled ? "   " + st.uncalled + " uncalled" : "");
-  try {{ localStorage.setItem(KEY, JSON.stringify(st)); }} catch (e) {{}}
-}}
-function apply(src) {{
-  if (!src || !src.shots) return false;
-  let hit = 0;
-  for (const s of MANIFEST.shots) {{
-    let best = null;
-    for (const v of src.shots) {{
-      const d = Math.abs((v.t || 0) - s.t);
-      if (d <= MATCH_S && (!best || d < Math.abs(best.t - s.t))) best = v;
-    }}
-    if (!best) continue;
-    if (best.verdict) {{ const r = document.querySelector('input[name="v' + s.n + '"][value="' + best.verdict + '"]'); if (r) {{ r.checked = true; hit++; }} }}
-    const note = document.querySelector('input[name="n' + s.n + '"]'); if (note && best.note) note.value = best.note;
-  }}
-  document.getElementById("uncalled").value = src.uncalled || 0;
-  return hit > 0;
-}}
-function restore() {{
-  let local = null;
-  try {{ local = JSON.parse(localStorage.getItem(KEY) || "null"); }} catch (e) {{}}
-  const fileNewer = STORED.reviewed && (!local || !local.saved || STORED.reviewed > local.saved);
-  if (fileNewer) {{ if (!apply(STORED)) apply(local); }}
-  else {{ if (!apply(local)) apply(STORED); }}
-}}
-document.addEventListener("change", summary);
-document.addEventListener("input", summary);
-document.getElementById("reset").onclick = () => {{
-  if (!confirm("Clear all verdicts?")) return;
-  document.querySelectorAll("input[type=radio]").forEach(r => r.checked = false);
-  document.querySelectorAll("input.note").forEach(n => n.value = "");
-  document.getElementById("uncalled").value = 0;
-  try {{ localStorage.removeItem(KEY); }} catch (e) {{}}
-  summary();
-}};
-document.getElementById("download").onclick = () => {{
-  const st = state();
-  const doc = {{ clip: MANIFEST.clip, events: MANIFEST.events, sheets_generated: MANIFEST.generated,
-    reviewed: st.saved, counts: counts(st.shots), uncalled_shots: st.uncalled, shots: st.shots }};
-  const blob = new Blob([JSON.stringify(doc, null, 1)], {{ type: "application/json" }});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "verdicts_" + MANIFEST.clip.split("/").pop().replace(/\.[^.]+$/, "") + ".json";
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}};
-document.querySelectorAll(".speed button").forEach(btn => {{
-  btn.onclick = () => {{
-    const wrap = btn.closest(".shot");
-    const v = wrap.querySelector("video");
-    const speed = btn.dataset.speed;
-    const next = v.dataset[speed];
-    if (!next || v.getAttribute("src") === next) return;
-    const ratio = v.duration ? v.currentTime / v.duration : 0;
-    v.setAttribute("src", next);
-    v.load();
-    v.addEventListener("loadedmetadata", () => {{ v.currentTime = ratio * v.duration; v.play().catch(() => {{}}); }}, {{ once: true }});
-    wrap.querySelectorAll(".speed button").forEach(b => b.classList.toggle("on", b === btn));
-  }};
-}});
-if ("IntersectionObserver" in window) {{
-  const io = new IntersectionObserver(entries => {{
-    for (const e of entries) {{
-      const v = e.target;
-      if (e.isIntersecting) v.play().catch(() => {{}}); else v.pause();
-    }}
-  }}, {{ threshold: 0.2 }});
-  document.querySelectorAll(".shot video").forEach(v => io.observe(v));
-}}
-restore();
-summary();
-</script>
-</body>
-</html>
-"""
+    shots_html = "".join(_shot_block(s) for s in sheets) if sheets else '<div class="empty">Noch keine Wuerfe in events.json.</div>'
+    cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers)) if numbers else '<div class="empty">Noch keine identities.json.</div>'
+    manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers})
+    stored_js = json.dumps({"reviewed": stored.get("reviewed"), "uncalled": stored.get("uncalled_shots", 0), "shots": stored.get("shots", []), "numbers": stored.get("numbers", [])})
+    page = PAGE.replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
+        "{{META}}",
+        f"{len(sheets)} Wuerfe vom System erkannt ({made} Treffer, {len(sheets) - made} Fehlwuerfe), {tracks_n} verfolgte Frames, "
+        f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}",
+    ).replace("{{SHOTS}}", shots_html).replace("{{CARDS}}", cards_html).replace("{{MANIFEST}}", manifest).replace("{{STORED}}", stored_js)
     path = out / "index.html"
     tmp = path.with_suffix(".tmp.html")
     tmp.write_text(page)
@@ -340,10 +246,207 @@ summary();
     return path
 
 
+PAGE = r"""<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wurf-Check</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 20px 24px 120px; font: 15px/1.45 -apple-system, system-ui, sans-serif; background: #161616; color: #ececec; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 0 0 8px; font-weight: 600; }
+  h3 { font-size: 18px; margin: 30px 0 6px; }
+  .intro { font-size: 15px; color: #ddd; margin-bottom: 4px; }
+  .meta { color: #9a9a9a; font-size: 13px; margin-bottom: 18px; }
+  .shot { border-top: 1px solid #2c2c2c; padding: 16px 0 10px; }
+  .shot video { display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }
+  .speed { display: flex; gap: 8px; align-items: center; margin: 8px 0 14px; flex-wrap: wrap; }
+  .speed button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid #444; background: #242424; color: #ddd; cursor: pointer; }
+  .speed button.on { background: #3a3a3a; border-color: #777; color: #fff; }
+  .cap { color: #9a9a9a; font-size: 13px; margin: 4px 0 6px; }
+  .shot img { display: block; width: 100%; max-width: 1700px; height: auto; border-radius: 6px; }
+  .q { margin-top: 12px; }
+  .qt { font-weight: 600; margin-bottom: 4px; }
+  .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .row label { cursor: pointer; user-select: none; padding: 6px 10px; border-radius: 6px; background: #242424; }
+  .row label:has(input:checked) { background: #3a3a3a; outline: 1px solid #666; }
+  .row input[type=radio], .row input[type=checkbox] { margin-right: 6px; }
+  .toggle { display: inline-flex; gap: 4px; }
+  .num { width: 90px; background: #1e1e1e; color: #ddd; border: 1px solid #3a3a3a; border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .note { flex: 1; min-width: 200px; max-width: 480px; background: #1e1e1e; color: #ddd; border: 1px solid #3a3a3a; border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .extra { border-top: 1px solid #2c2c2c; padding: 18px 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .extra input[type=number] { width: 70px; background: #1e1e1e; color: #ddd; border: 1px solid #3a3a3a; border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; }
+  .card { background: #1e1e1e; border: 1px solid #2c2c2c; border-radius: 8px; padding: 10px; }
+  .card img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+  .cardmeta { margin: 8px 0; font-size: 14px; }
+  .dim { color: #9a9a9a; font-size: 13px; }
+  .noimg { height: 120px; display: flex; align-items: center; justify-content: center; color: #777; border: 1px dashed #333; border-radius: 4px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: #202020; border-top: 1px solid #383838; padding: 12px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .bar button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid #555; background: #2c2c2c; color: #fff; cursor: pointer; }
+  .bar button.primary { background: #ffd23f; color: #111; border-color: #ffd23f; font-weight: 600; }
+  #summary { color: #bbb; }
+  .empty { padding: 30px 0; color: #999; }
+</style>
+</head>
+<body>
+<h1>Wurf-Check: {{TITLE}}</h1>
+<div class="intro">Diese Seite prueft, ob das System Wuerfe, Werfer und Rueckennummern richtig erkannt hat. Deine Antworten werden als JSON gespeichert und fuer Tests und Training genutzt.</div>
+<div class="meta">{{META}}</div>
+<h3>Wuerfe</h3>
+{{SHOTS}}
+<div class="extra">
+  <label>Wuerfe, die das System nicht erkannt hat (im Video gesehen, oben nicht aufgefuehrt): <input type="number" id="uncalled" min="0" step="1" value="0"></label>
+</div>
+<h3>Nummern pruefen</h3>
+<div class="cap">Pro Spieler drei Ausschnitte aus dem Video. Trage die Nummer ein, die du auf dem Trikot siehst, oder markiere "nicht lesbar". Leer lassen heisst: die erkannte Nummer stimmt.</div>
+<div class="cards">{{CARDS}}</div>
+<div class="bar">
+  <button class="primary" id="download">Antworten als JSON herunterladen</button>
+  <button id="reset">Zuruecksetzen</button>
+  <span id="summary"></span>
+</div>
+<script>
+const MANIFEST = {{MANIFEST}};
+const STORED = {{STORED}};
+const KEY = "followcam-qa-verdicts:" + MANIFEST.clip;
+const MATCH_S = 0.5;
+const $ = (sel) => document.querySelector(sel);
+function radio(name) { const r = $('input[name="' + name + '"]:checked'); return r ? r.value : null; }
+function setRadio(name, value) { if (value === null || value === undefined) return; const r = $('input[name="' + name + '"][value="' + value + '"]'); if (r) r.checked = true; }
+function numVal(name) { const el = $('input[name="' + name + '"]'); if (!el || el.value === "") return null; const v = Number(el.value); return Number.isFinite(v) ? v : null; }
+function setVal(name, v) { const el = $('input[name="' + name + '"]'); if (el && v !== null && v !== undefined) el.value = v; }
+function state() {
+  const shots = MANIFEST.shots.map(s => {
+    const h = radio("h" + s.n);
+    const t = radio("t" + s.n);
+    return { n: s.n, t: s.t, frame: s.frame, team: s.team, made: s.made, player_id: s.player_id, player_key: s.player_key || null,
+      shot: radio("s" + s.n), shooter_ok: h === null ? null : h === "yes",
+      number: numVal("num" + s.n), number_team: t === null ? null : Number(t),
+      note: ($('input[name="n' + s.n + '"]') || {}).value || "" };
+  });
+  const numbers = MANIFEST.numbers.map((c, i) => ({ key: c.key, track_ids: c.track_ids, team: c.team, detected: c.detected,
+    true_number: numVal("nn" + i), unreadable: !!($('input[name="un' + i + '"]') || {}).checked }));
+  return { shots, numbers, uncalled: Number($("#uncalled").value || 0), saved: new Date().toISOString() };
+}
+function counts(st) {
+  const c = { shots_answered: 0, shots_open: 0, shot_ok: 0, shot_flipped: 0, shot_no_shot: 0, shooter_ok: 0, shooter_wrong: 0, numbers_answered: 0, numbers_confirmed: 0, numbers_corrected: 0, numbers_unreadable: 0 };
+  for (const s of st.shots) {
+    if (s.shot) { c.shots_answered++; c["shot_" + s.shot]++; } else c.shots_open++;
+    if (s.shooter_ok === true) c.shooter_ok++; else if (s.shooter_ok === false) c.shooter_wrong++;
+  }
+  for (const n of st.numbers) {
+    if (n.unreadable) { c.numbers_answered++; c.numbers_unreadable++; }
+    else if (n.true_number !== null) { c.numbers_answered++; if (n.detected !== null && n.true_number === n.detected) c.numbers_confirmed++; else c.numbers_corrected++; }
+  }
+  return c;
+}
+function summary() {
+  const st = state();
+  const c = counts(st);
+  $("#summary").textContent =
+    "Wuerfe: " + c.shots_answered + " von " + st.shots.length + " beantwortet (" + c.shot_ok + " stimmt, " + c.shot_flipped + " vertauscht, " + c.shot_no_shot + " kein Wurf), " +
+    "Werfer richtig " + c.shooter_ok + ", falsch " + c.shooter_wrong + ".  " +
+    "Nummern: " + c.numbers_answered + " von " + st.numbers.length + " (" + c.numbers_confirmed + " bestaetigt, " + c.numbers_corrected + " korrigiert, " + c.numbers_unreadable + " nicht lesbar)" +
+    (st.uncalled ? ".  " + st.uncalled + " nicht erkannte Wuerfe" : "");
+  try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+}
+function applyShot(s, v) {
+  if (v.shot) setRadio("s" + s.n, v.shot);
+  else if (v.verdict) { // legacy correct / wrong / missed_shooter
+    if (v.verdict === "correct") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "yes"); }
+    if (v.verdict === "missed_shooter") { setRadio("s" + s.n, "ok"); setRadio("h" + s.n, "no"); }
+  }
+  if (v.shooter_ok === true) setRadio("h" + s.n, "yes");
+  if (v.shooter_ok === false) setRadio("h" + s.n, "no");
+  if (v.number !== null && v.number !== undefined) setVal("num" + s.n, v.number);
+  if (v.number_team !== null && v.number_team !== undefined) setRadio("t" + s.n, v.number_team);
+  if (v.note) setVal("n" + s.n, v.note);
+}
+function apply(src) {
+  if (!src) return false;
+  let hit = 0;
+  for (const s of MANIFEST.shots) {
+    let best = null;
+    for (const v of src.shots || []) {
+      const d = Math.abs((v.t || 0) - s.t);
+      if (d <= MATCH_S && (!best || d < Math.abs(best.t - s.t))) best = v;
+    }
+    if (best) { applyShot(s, best); hit++; }
+  }
+  MANIFEST.numbers.forEach((c, i) => {
+    const v = (src.numbers || []).find(x => x.key === c.key) ||
+      (src.numbers || []).find(x => (x.track_ids || []).some(t => c.track_ids.includes(t)));
+    if (!v) return;
+    if (v.true_number !== null && v.true_number !== undefined) setVal("nn" + i, v.true_number);
+    const un = $('input[name="un' + i + '"]'); if (un) un.checked = !!v.unreadable;
+    hit++;
+  });
+  if (src.uncalled) $("#uncalled").value = src.uncalled;
+  return hit > 0;
+}
+function restore() {
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) {}
+  const fileNewer = STORED.reviewed && (!local || !local.saved || STORED.reviewed > local.saved);
+  if (fileNewer) { if (!apply(STORED)) apply(local); }
+  else { if (!apply(local)) apply(STORED); }
+}
+document.addEventListener("change", summary);
+document.addEventListener("input", summary);
+$("#reset").onclick = () => {
+  if (!confirm("Alle Antworten loeschen?")) return;
+  document.querySelectorAll("input[type=radio], input[type=checkbox]").forEach(r => r.checked = false);
+  document.querySelectorAll("input.note, input.num").forEach(n => n.value = "");
+  $("#uncalled").value = 0;
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  summary();
+};
+$("#download").onclick = () => {
+  const st = state();
+  const doc = { clip: MANIFEST.clip, events: MANIFEST.events, sheets_generated: MANIFEST.generated,
+    reviewed: st.saved, counts: counts(st), uncalled_shots: st.uncalled, shots: st.shots, numbers: st.numbers };
+  const blob = new Blob([JSON.stringify(doc, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "verdicts_" + MANIFEST.clip.split("/").pop().replace(/\.[^.]+$/, "") + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+document.querySelectorAll(".speed button").forEach(btn => {
+  btn.onclick = () => {
+    const wrap = btn.closest(".shot");
+    const v = wrap.querySelector("video");
+    const next = v.dataset[btn.dataset.speed];
+    if (!next || v.getAttribute("src") === next) return;
+    const ratio = v.duration ? v.currentTime / v.duration : 0;
+    v.setAttribute("src", next);
+    v.load();
+    v.addEventListener("loadedmetadata", () => { v.currentTime = ratio * v.duration; v.play().catch(() => {}); }, { once: true });
+    wrap.querySelectorAll(".speed button").forEach(b => b.classList.toggle("on", b === btn));
+  };
+});
+if ("IntersectionObserver" in window) {
+  const io = new IntersectionObserver(entries => {
+    for (const e of entries) { const v = e.target; if (e.isIntersecting) v.play().catch(() => {}); else v.pause(); }
+  }, { threshold: 0.2 });
+  document.querySelectorAll(".shot video").forEach(v => io.observe(v));
+}
+restore();
+summary();
+</script>
+</body>
+</html>
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--events", type=Path, default=EVENTS)
     ap.add_argument("--tracks", type=Path, default=TRACKS)
+    ap.add_argument("--identities", type=Path, default=IDENTITIES)
     ap.add_argument("--clip", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=QA_DIR)
     args = ap.parse_args(argv)
@@ -364,19 +467,28 @@ def main(argv: list[str] | None = None) -> int:
     for n, shot in enumerate(shots, 1):
         img, m = render_shot(n, shot, grab, index)
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
+        m["number_prefill"] = key_number(m.get("player_key"))
         save_jpg(args.out / m["file"], img)
         try:
             m.update(render_clip(n, m["t"], clip, args.out))
         except RuntimeError as exc:
             print(f"  shot {n}: no video ({exc})")
             m.update({"video": None, "video_half": None, "video_source": None, "video_caption": f"video failed: {exc}"})
+        m["video_caption_de"] = (
+            "Video aus overlay.mp4 mit Boxen, 2,0 s vor bis 1,5 s nach dem Ereignis"
+            if m.get("video_source") == "overlay"
+            else f"Video aus dem Rohclip ohne Boxen ({m.get('video_reason', 'kein Overlay')}), 2,0 s vor bis 1,5 s nach dem Ereignis"
+            if m.get("video_source") == "raw"
+            else f"Kein Video: {m.get('video_caption')}"
+        )
         sheets.append(m)
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
+    numbers = build_number_cards(frames, grab, args.out, args.identities)
     grab.close()
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
-    (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets}, indent=1))
-    page = write_index(args.out, sheets, clip_label, args.events, len(frames))
-    print(f"{len(sheets)} sheets -> {args.out}, index {page}")
+    (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets, "numbers": numbers}, indent=1))
+    page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames))
+    print(f"{len(sheets)} sheets, {len(numbers)} number cards -> {args.out}, index {page}")
     return 0
 
 
