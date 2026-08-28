@@ -14,3 +14,11 @@ viz/clips/
 bridge-annotate*.md
 bridge-annotate*-result.log
 bridge-annotate-result.log
+
+# vision pipeline: data, weights, outputs, env (regenerable / too big)
+.venv/
+data/
+models/*.pt
+*.pt
+out/
+runs/
