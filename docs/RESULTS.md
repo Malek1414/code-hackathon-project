@@ -83,6 +83,37 @@ auto-labels the model learned from, right `best.pt` predictions on the same
 frames, which the model never saw in training). Built with
 `vision/label/results_sheet.py`, CPU.
 
+### Ball fine-tune on 80 coach-labeled frames, 12 min on the laptop GPU
+Sami hand-labeled the ball on 120 game10 frames (`out/qa/ball_labels.json`,
+90 with ball, 30 without, radius 12 to 17.5 px). `vision/label/build_ball_dataset.py`
+made `data/dataset_ball/` (classes of `ball_hoop_avishah.pt`): train 122
+images (60 ball + 20 none hand-labeled, plus 42 cleaned auto ball frames from
+before the first val frame), val 40 images (30 ball + 10 none), split by
+frame index. `vision/label/train_ball.py`: from `ball_hoop_avishah.pt`, imgsz
+1280, batch 4, lr0 0.002 AdamW, no frozen layers, 12 epochs in 12.1 min on
+MPS, output `models/ball_hoop_v2.pt` (6.3 MB), 13:39 to 13:52.
+
+Held-out val, `vision/label/eval_ball.py` (40 frames, 30 with ball, IoU 0.3
+vs the hand boxes, imgsz 1280, CPU):
+
+| Model | conf | Ball recall | False positives / 40 frames | Precision |
+|---|---|---|---|---|
+| avishah | 0.35 | 13/30 = 43 % | 36 | 27 % |
+| **v2** | 0.35 | **16/30 = 53 %** | **8** | **67 %** |
+| avishah | 0.45 | 10/30 = 33 % | 29 | 26 % |
+| v2 | 0.45 | 13/30 = 43 % | 4 | 76 % |
+| v2 | 0.30 | 16/30 = 53 % | 9 | 64 % |
+
+Ultralytics AP50 on the same val: Basketball 0.153 (v2) vs 0.021 (avishah),
+Hoop 0.982 vs 0.994 (IoU 0.5 on 30 px boxes is strict for both; the ratio is
+the signal). TRACK's measurement on all 120 labeled frames (which include
+the 80 training frames, so recall there is optimistic): recall 0.59 vs 0.46 at
+conf 0.25, frames with a false ball 12 % vs 67 %; at conf 0.35 recall 0.52
+vs 0.41, false 8 % vs 57 %. Reading: 80 labels from the coach and 12
+minutes on a laptop cut false balls on wall objects by a factor of 4 to 5
+and lifted recall by 10 points; the remaining misses are the ball in a
+player's hands.
+
 ### 14:15 comparison (measured by TRACK, `best.pt` vs COCO weights)
 Setup (TRACK): `data/clips/dev60.mp4`, frames 900 to 3121, stride 4, 526
 frames, 40 sample frames per config in `out/compare/`.

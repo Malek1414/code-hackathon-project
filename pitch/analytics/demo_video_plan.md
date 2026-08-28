@@ -10,6 +10,7 @@ when they exist under the same names.
 | `out/minimap.mp4` | 1200x680, 25 fps, 20 s, 2D court with team dots | exists, says "uncalibrated" until COURT's calibration lands |
 | `out/dashboard.html` | shot chart, per-player table, minimap embed | exists, screen-record it |
 | `out/results_labels.jpg` | 2x3 sheet, auto-labels vs fine-tuned predictions | exists |
+| `out/pitch/court_lines_10s.mp4` | game10 160 to 170 s, 1920x1080, 50 fps, projected court model drawn on the raw frames while the camera zooms and pans (COURT, 13:55) | exists, the "camera pans, court model follows" shot |
 | `out/label_preview.jpg` | 4x4 sheet of auto-labels | exists |
 | live mode | `vision/live/live.py` window with score bar | screen-record during the rehearsal |
 
@@ -19,7 +20,7 @@ when they exist under the same names.
 |---|---|---|---|---|
 | 1 | 0 to 8 | Side by side: overlay video left, minimap right, wide court play | `out/pitch/analytics_side_by_side.mp4` | "The rig films. The software watches." |
 | 2 | 8 to 18 | Auto-labels, then the fine-tuned model on frames it never saw (Ken Burns over the sheet, left column then right) | `out/results_labels.jpg` | "300 frames labeled by AI, no human drew a box. 25 minutes later the model finds every player and the hoop." |
-| 3 | 18 to 30 | Overlay video full frame, a possession with ids and jersey numbers visible | `out/overlay.mp4`, pick the window with the wide court | "Every player tracked, numbers read off the jerseys." |
+| 3 | 18 to 30 | Overlay video full frame, a possession with ids and jersey numbers visible; optionally cut to 6 s of `court_lines_10s.mp4` (camera pans, court lines stay on the floor) | `out/overlay.mp4` (wide-court window), `out/pitch/court_lines_10s.mp4` | "Every player tracked, numbers read off the jerseys. The court model follows the camera." |
 | 4 | 30 to 42 | Dashboard screen recording: shot chart, then the per-player table | `out/dashboard.html` in a browser, 1920x1080 window | "Shots, made and missed, per player. The table a coach never had for a Landesliga game." |
 | 5 | 42 to 55 | Live mode: score bar, a made shot flashes, a hotkey veto | screen recording of `vision/live/live.py` | "Live, the score keeps itself. One key to veto." |
 | 6 | 55 to 60 | Back to the rig following the ball (Malek's footage) | phone footage | "One tripod. One phone. The whole game, filmed, tracked, scored." |

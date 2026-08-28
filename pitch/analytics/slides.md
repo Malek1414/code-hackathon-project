@@ -22,6 +22,10 @@ The camera that follows the ball is the camera that keeps the stats.
    Payoff in tracking (measured by TRACK on 526 frames): 25 % fewer id switches
    than the COCO model (101 instead of 134 track ids), spectators and referees
    no longer counted as players (9.3 instead of 12.5 per frame).
+   Second payoff: false balls on wall objects from 67 to 12 percent of frames
+   after 12 minutes of training on the coach's own labels (80 frames the coach
+   labeled on the laptop; held-out check: false positives 36 to 8 in 40
+   frames, recall 43 to 53 percent).
 3. Tracked every player with ByteTrack: 10.6 players per frame, 258 track ids over
    60 s, team by jersey color, jersey numbers read and merged into 
    player identities (`out/identities.json`).
@@ -56,6 +60,7 @@ analytics for coaches, and the scoreboard for the volunteer at the table.
 | Val mAP50 player / hoop / referee / ball | 0.957 / 0.973 / 0.755 / 0.207 | `docs/RESULTS.md` |
 | Players per frame tracked | 10.6 (COCO run), 9.3 with best.pt persons | `out/track_summary.json`, `out/compare/` |
 | Track ids on 526 frames, COCO vs best.pt persons | 134 vs 101 (25 % fewer switches) | `out/compare/` (TRACK) |
+| Ball fine-tune on 80 coach-labeled frames, 12 min | false balls 67 % to 12 % of frames (TRACK, 120 frames); held-out: FP 36 to 8, recall 43 % to 53 % | `docs/RESULTS.md` |
 | Ball seen in frames | 41% | `out/track_summary.json` |
 | Tracking speed | 0.56 s per frame at 1080p on MPS (yolo11s + ball model) | `out/track_summary.json` |
 | Live detection rate | about 10 fps | `vision/live/live.py` |
