@@ -3,7 +3,7 @@
     .venv/bin/python -m vision.qa.ball_label [--every 5] [--frames data/frames]
 
 Every 5th of data/frames/f_00001.jpg..f_00600.jpg (game10 at 1 fps, frame i =
-game10 frame (i-1)*50). One click = ball centre, prefilled in grey from the
+game10 frame (i-1)*50+24, see FRAME_OFFSET). One click = ball centre, prefilled in grey from the
 game10 tracks when they exist. Export: ball_labels.json
 {"frames": [{"file": "f_00006.jpg", "game10_frame": 250, "ball": [cx, cy, r] | null, "status": "ball"|"none"|"open"}]}.
 """
@@ -20,11 +20,17 @@ from .common import OUT, QA_DIR, ROOT, TrackIndex, read_json, read_tracks
 
 FRAMES_DIR = ROOT / "data" / "frames"
 SOURCE_FPS = 50  # game10 is 1080p50, frames were extracted at 1 fps
+FRAME_OFFSET = 24  # ffmpeg fps=1 emits the frame nearest the middle of each second: f_00021.jpg is game10 frame 1024, verified by image diff on 4 frames
 DEFAULT_R = 17
 TRACK_CANDIDATES = (
     (OUT / "game10" / "tracks.jsonl", OUT / "game10" / "tracks_meta.json"),
     (OUT / "tracks.jsonl", OUT / "tracks_meta.json"),
 )
+
+
+def frame_of(index: int) -> int:
+    """data/frames/f_<index>.jpg -> game10 source frame number."""
+    return (index - 1) * SOURCE_FPS + FRAME_OFFSET
 
 
 def game10_tracks() -> tuple[Path, list[dict]] | None:
@@ -44,7 +50,7 @@ def build_frames(frames_dir: Path, every: int) -> list[dict]:
     for p in files:
         i = int(p.stem[2:])
         if (i - 1) % every == 0:
-            out.append({"file": p.name, "index": i, "game10_frame": (i - 1) * SOURCE_FPS, "prefill": None})
+            out.append({"file": p.name, "index": i, "game10_frame": frame_of(i), "prefill": None})
     return out
 
 
