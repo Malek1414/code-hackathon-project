@@ -30,3 +30,13 @@ Tasks, in order:
 4. Report to ORCH via `SendMessage(to: "samimagdouli-61", ...)`, first line
    "FOOTAGE ...": cuts per 10 min for both videos, verdict, clip paths, shot
    timestamps. Target: verdict by 12:30.
+
+## Verdict by ORCH, 12:20 (task closed, do not start it)
+
+Säckingen (`data/clips/saeck_full_1080p.mp4`, downloaded): one wide camera from high
+up at the far side, no editing, but players are ~50 px tall and the ball ~8 px at
+1080p, hoops tiny at the far wall. 25 scene-change triggers per 10 min are zooms and
+fast pans by the operator, not cuts. Unusable for ball and shot detection today.
+Moabit `game10.mp4`: 0 hard cuts at scene threshold 0.35, dissolves and close-ups are
+handled by COURT's cut detection. **Decision: Moabit stays the material for all runs.**
+Säckingen remains as the "what a phone on a balcony looks like" example for the pitch.
