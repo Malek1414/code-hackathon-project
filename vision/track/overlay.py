@@ -14,7 +14,8 @@ What is drawn, and why:
   additionally draws COURT's calibrated court lines.
 * label: jersey number from out/identities.json as "#12" in the team color;
   tracks without a number get a small grey track id.
-* ball: circle only when a ball is in this line, never a stale point. Trail =
+* ball: circle only when a ball is in this line (thin hollow circle while
+  the tracker coasts on its prediction, "predicted": true). Trail =
   last 25 positions, broken at gaps > 0.5 s and at cuts, so it never draws a
   straight line across the hall.
 * hoop: green box; shot flashes ("MADE"/"MISS") from events.json for 1 s.
@@ -50,6 +51,7 @@ BALL_COLOR = (0, 220, 255)
 HOOP_COLOR = (0, 255, 120)
 TRAIL_LEN = 25
 TRAIL_GAP_S = 0.5
+TRAIL_JUMP_PX = 300  # never draw a segment across the hall (ball → wall panel)
 FLASH_S = 1.0
 COURT_TOLERANCE_M = 0.5  # QA measured: 1.5 m keeps the bench on court
 
@@ -181,9 +183,13 @@ class OverlayWriter:
         for i in range(1, len(pts)):
             if pts[i][0] - pts[i - 1][0] > TRAIL_GAP_S:
                 continue
+            if abs(pts[i][1][0] - pts[i - 1][1][0]) + abs(pts[i][1][1] - pts[i - 1][1][1]) > TRAIL_JUMP_PX:
+                continue
             a = (i + 1) / len(pts)
             cv2.line(img, pts[i - 1][1], pts[i][1], BALL_COLOR, max(1, int(4 * a)))
-        if ball:
+        if ball and ball.get("predicted"):
+            cv2.circle(img, pts[-1][1], 10, BALL_COLOR, 1)  # coasting on the prediction: hollow, thin
+        elif ball:
             cv2.circle(img, pts[-1][1], 8, BALL_COLOR, 2)
 
         self._flash(img, t)
