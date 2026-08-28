@@ -39,9 +39,10 @@ log = logging.getLogger("numbers")
 ROOT = Path(__file__).resolve().parents[2]
 TRACKS = ROOT / "out" / "tracks.jsonl"
 META = ROOT / "out" / "tracks_meta.json"
-READS_OUT = ROOT / "out" / "numbers_reads.json"
-PREVIEW_OUT = ROOT / "out" / "numbers_preview.jpg"
-CACHE = ROOT / "out" / "numbers_cache_v3.json"  # v3: {"reads": [...], "team": 0/1/-1, "mode": "orig"|"red"} per crop
+# outputs live next to the tracks file: out/ for the contract paths, out/game10/ for an archive copy
+READS_NAME = "numbers_reads.json"
+PREVIEW_NAME = "numbers_preview.jpg"
+CACHE_NAME = "numbers_cache_v3.json"  # v3: {"reads": [...], "team": 0/1/-1, "mode": "orig"|"red"} per crop
 
 MAX_CROPS = 6  # per track, spread over its lifetime, tallest box per bin
 # (min track length s, crops) per pass, long tracks first so identities.json is useful early; cache makes each
@@ -238,10 +239,10 @@ def vote(reads: list[tuple[str, float]]) -> tuple[int | None, float, dict[str, f
     return None, round(share, 3), dict(mass), dict(count)
 
 
-def load_cache() -> dict:
-    if CACHE.exists():
+def load_cache(cache_path: Path) -> dict:
+    if cache_path.exists():
         try:
-            return json.load(open(CACHE))
+            return json.load(open(cache_path))
         except json.JSONDecodeError:
             pass
     return {}
@@ -303,7 +304,9 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
     t0 = time.time()
     tracks, clip, n_frames = load_tracks(tracks_path)
     video = video or (ROOT / clip)
-    cache = load_cache()
+    out_dir = tracks_path.parent
+    cache_path, reads_out, preview_out = out_dir / CACHE_NAME, out_dir / READS_NAME, out_dir / PREVIEW_NAME
+    cache = load_cache(cache_path)
 
     # which crops do we need
     plan: dict[int, list[dict]] = {}
@@ -351,8 +354,8 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
             n_done += 1
             if n_done % 100 == 0:
                 log.info("ocr %d/%d  %.1f s", n_done, len(order), time.time() - t0)
-                json.dump(cache, open(CACHE, "w"))
-        json.dump(cache, open(CACHE, "w"))
+                json.dump(cache, open(cache_path, "w"))
+        json.dump(cache, open(cache_path, "w"))
 
     # vote
     result_tracks: dict[str, dict] = {}
@@ -408,13 +411,13 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
            "params": {"max_crops": max_crops, "min_track_s": min_track_s, "min_conf": MIN_CONF,
                       "min_reads": MIN_READS, "win_share": WIN_SHARE},
            "n_tracks": len(tracks), "n_assigned": assigned, "tracks": result_tracks}
-    tmp = READS_OUT.with_suffix(".tmp")
+    tmp = reads_out.with_suffix(".tmp")
     json.dump(out, open(tmp, "w"), indent=1)
-    tmp.replace(READS_OUT)
+    tmp.replace(reads_out)
     if preview:
-        build_preview(tiles, PREVIEW_OUT, cols=max_crops)
+        build_preview(tiles, preview_out, cols=max_crops)
     log.info("numbers: %d/%d tracks got a number (%.0f%%)  %.1f s  -> %s",
-             assigned, len(tracks), 100 * assigned / max(1, len(tracks)), time.time() - t0, READS_OUT)
+             assigned, len(tracks), 100 * assigned / max(1, len(tracks)), time.time() - t0, reads_out)
     return out
 
 

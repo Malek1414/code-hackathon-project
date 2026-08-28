@@ -50,7 +50,7 @@ def main(argv=None) -> int:
                 # pass 1: long tracks only, identities.json out fast; pass 2: the fragments, rewrite
                 for min_s, crops in read.PASSES:
                     read.run(a.tracks, min_track_s=min_s, max_crops=crops)
-                    m = merge.run()
+                    m = merge.run(a.tracks.parent / read.READS_NAME, a.tracks.parent / "identities.json")
                     s = m["summary"]
                     print(f"NUMBERS pass >= {min_s:.0f} s: {s['tracks_with_number']}/{s['tracks']} tracks got a "
                           f"number ({100 * s['share']:.0f}%), {s['players_with_number']} numbered players", flush=True)
