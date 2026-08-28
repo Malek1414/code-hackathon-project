@@ -102,6 +102,25 @@ a one-time Grounding DINO hoop box.
   that RTMP URL. `--source data/clips/dev60.mp4 --realtime` simulates a live camera
   for the stage demo.
 
+## GPU schedule (one M3, 16 GB, shared MPS; added 12:02)
+
+Measured: TRACK alone 0.08 s/frame, under three concurrent model jobs 1.7 s/frame.
+So model jobs run one at a time, in this order; a slot owner may start only when
+the previous slot reports done to ORCH:
+
+| Slot | Owner | Job |
+|---|---|---|
+| now → ~12:08 | LABEL + TRACK | autolabel finishes the last ~90 frames; dev60 tracking finishes |
+| 12:08 → 12:30 | TRACK | game10, stride 2 (exclusive MPS) |
+| 12:30 → 12:55 | LABEL | YOLO11n fine-tune (exclusive MPS) |
+| 12:55 → 13:15 | TRACK | re-run dev60 with `models/best.pt`, compare ball recall, then game10 again only if clearly better |
+| 13:15 → | STATS/LIVE | live-mode runs from file and phone |
+
+CPU-only jobs (optical-flow propagation, minimap, dashboard, QA sheets, monitor)
+may run any time but at most one heavy one at a time. Before starting any job that
+loads a model: `ps -axo pid,command | grep .venv/bin/python` and if another model
+job is running, wait or ask ORCH.
+
 ## Milestones and deadlines
 
 | Time | LABEL | TRACK | STATS | COURT |
