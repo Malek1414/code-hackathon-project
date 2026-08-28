@@ -198,3 +198,21 @@ def test_shooter_team_never_unknown_when_shooter_is_known():
     assert shots[0].player_id == FIXTURE_SHOOTER_ID and shots[0].team == 0  # from the players around him
     assert shots[0].team_source == "nearby_players"
     assert detect_shots(synthetic_scenario("made"), track_possession(synthetic_scenario("made")))[0].team_source == "track_majority"
+
+
+def test_free_throw_pass_from_referee_does_not_become_the_release():
+    """game10 121 s: the referee bounces the ball to the shooter (rightwards),
+    the shot then flies leftwards; the chain must stop at the shooter."""
+    from vision.stats.io import Player
+
+    frames = synthetic_scenario("made")
+    ref = Player(id=77, bbox=(1150.0, 560.0, 1230.0, 760.0), foot=(1190.0, 760.0), team=-1)
+    for fr in frames:
+        fr.players.append(ref)
+        if fr.t < 2.0:
+            fr.ball = None
+        elif fr.t < 2.5:  # pass from the referee (right) to the shooter (left), rising slightly
+            s = (fr.t - 2.0) / 0.5
+            fr.ball = Ball(center=(1190.0 - 310.0 * s, 660.0 - 60.0 * s), conf=0.6)
+    shots = detect_shots(frames, track_possession(frames))
+    assert [(s.player_id, s.shooter_confirmed) for s in shots] == [(FIXTURE_SHOOTER_ID, True)]

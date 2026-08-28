@@ -30,7 +30,10 @@ Rule (docs/ORCHESTRATION.md, STATS milestone 12:45), adapted to sparse tracks
   `release_back_samples` further back to the hands; the player whose bbox
   (upper `release_box_top_frac`, widened `release_box_widen` per side for the
   arms) contains that release point is the shooter, else the player whose
-  widened box contains the first flight sample (the ball left his box). QA on dev60: the nearest
+  widened box contains the first flight sample (the ball left his box), else
+  the box whose top edge is nearest to the release point (within half a box
+  height). The backward chain stops where the ball's horizontal direction
+  flips: that step is the pass to the shooter (free throw: referee -> shooter). QA on dev60: the nearest
   foot to the first flight sample was a bystander at the lane, the real
   shooter stood alone at the free-throw line. Fallback when no box contains
   the point: holder of the last possession (nearest foot), with
@@ -435,6 +438,14 @@ class ShotDetector:
                 past_apex = True  # clearly on the way up (seen backwards): the ascent has begun
             elif past_apex:
                 break  # the ball is no longer rising fast: it was in the hands (or a dribble/pass)
+            if past_apex and len(chain) >= 2:
+                # a shot keeps its horizontal direction; a step against the flight's x-velocity is the
+                # pass that brought the ball to the shooter (free throw: referee -> shooter), not the flight
+                nxt = self.frames[self._ball_idx[chain[-2]]]
+                vx_flight = (nxt.ball.center[0] - cur.ball.center[0]) / max(nxt.t - cur.t, 1e-3)
+                vx_step = (cur.ball.center[0] - prev.ball.center[0]) / dt
+                if abs(vx_flight) > 2 * diam and abs(vx_step) > 2 * diam and vx_flight * vx_step < 0:
+                    break
             chain.append(j)
             j -= 1
         chain.reverse()
@@ -480,6 +491,16 @@ class ShotDetector:
                 continue
             if rank < best_rank:
                 best, best_rank = pl, rank
+        if best is None:
+            # nobody contains the point: the box whose top edge (hands) is nearest, if reasonably close
+            hoop_w = 0.0
+            for pl in fr.players:
+                dx = max(pl.bbox[0] - p.release_box_widen * pl.width - release[0], 0.0,
+                         release[0] - pl.bbox[2] - p.release_box_widen * pl.width)
+                dy = abs(release[1] - pl.bbox[1])
+                d = math.hypot(dx, dy)
+                if d <= 0.5 * pl.height and (best is None or d < best_rank[1]):
+                    best, best_rank = pl, (2, d)
         if best is None:
             return None
         team, source = self._team_of(best.id), "track_majority"
