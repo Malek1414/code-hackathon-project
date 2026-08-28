@@ -107,6 +107,14 @@ class Identities:
         return (f"track {track_id}" if track_id is not None else "shooter unknown"), None, (str(key) if key else None)
 
 
+MIN_POSSESSION_S = 3.0  # a track without a shot needs this much ball time to make the table
+TABLE_PER_TEAM = 10  # rows shown per team before "show more"
+
+
+def is_active(r: dict) -> bool:
+    return bool(r["fga"] or (r["possession_s"] or 0) >= MIN_POSSESSION_S)
+
+
 def merge_by_identity(rows: list[dict]) -> list[dict]:
     """stats.json rows are per track id until STATS aggregates by key; fold rows
     that resolve to the same identity key into one player row."""
@@ -130,7 +138,7 @@ def merge_by_identity(rows: list[dict]) -> list[dict]:
                 m[f] = round((m[f] or 0) + r[f], 1)
     for m in merged.values():
         m["fg_pct"] = round(m["fgm"] / m["fga"], 3) if m["fga"] else None
-        m["active"] = bool(m["fga"] or (m["possession_s"] or 0) >= 0.5 or (m["distance_m"] or 0) >= 20)
+        m["active"] = is_active(m)
     return out
 
 
@@ -247,10 +255,16 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
             "distance_m": None if dist is None else round(float(dist), 1),
         })
         r = rows[-1]
-        r["active"] = bool(r["fga"] or (r["possession_s"] or 0) >= 0.5 or (r["distance_m"] or 0) >= 20)
+        r["active"] = is_active(r)
     if not any(p.get("key") for p in (stats or {}).get("players") or []) or not any(p.get("number") is not None for p in (stats or {}).get("players") or []):
         rows = merge_by_identity(rows)
     rows.sort(key=lambda r: (r["team"] if r["team"] >= 0 else 9, -r["fga"], -(r["possession_s"] or 0), r["number"] is None, r["number"] or 0, str(r["id"])))
+    shown: dict[int, int] = {}
+    for r in rows:
+        if r["active"]:
+            shown[r["team"]] = shown.get(r["team"], 0) + 1
+            if shown[r["team"]] > TABLE_PER_TEAM and not r["fga"]:
+                r["active"] = False
     return rows
 
 
@@ -427,7 +441,7 @@ JS = r"""
       D.shots.filter(function(s){return String(s.team)===tk&&!s.made}).forEach(function(s){var m=el('line',{x1:x(s.t),x2:x(s.t),y1:base-9,y2:base-1,stroke:tm.color,'class':'tl-miss','data-team':tk},svg);bindTip(m,function(){return shotTip(s)});m.addEventListener('click',function(){seekTo(s.t)})});
       pts=0;made.forEach(function(s){pts+=s.points;var c=el('circle',{cx:x(s.t),cy:y(pts),r:5.5,fill:tm.color,'class':'tl-dot','data-team':tk},svg);bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
     });
-    (D.cuts||[]).forEach(function(c){if(c<=0||c>=dur)return;var l=el('line',{x1:x(c),x2:x(c),y1:T,y2:base,'class':'tl-cut'},svg);bindTip(l,function(){return '<b>Camera cut</b><br><span class="sub">at '+clock(c)+'</span>'})});
+    ((D.cuts||[]).length<=20?D.cuts:[]).forEach(function(c){if(c<=0||c>=dur)return;var l=el('line',{x1:x(c),x2:x(c),y1:T,y2:base,'class':'tl-cut'},svg);bindTip(l,function(){return '<b>Camera cut</b><br><span class="sub">at '+clock(c)+'</span>'})});
     var play=el('line',{x1:x(0),x2:x(0),y1:T,y2:base,'class':'tl-play'},svg);
     if(canSeek){overlay.addEventListener('timeupdate',function(){var t=overlay.currentTime+D.video_offset_s;play.setAttribute('x1',x(Math.min(t,dur)));play.setAttribute('x2',x(Math.min(t,dur)));play.style.opacity=overlay.paused&&overlay.currentTime===0?0:1})}
   })();
@@ -449,7 +463,7 @@ JS = r"""
   })();
 
   var tog=document.getElementById('toggle-inactive');
-  if(tog){tog.addEventListener('click',function(){var tb=tog.parentNode.querySelector('table');var on=tb.classList.toggle('all');tog.textContent=(on?'Hide ':'Show ')+tog.getAttribute('data-n')+' tracks without a shot or possession'})}
+  if(tog){tog.addEventListener('click',function(){var tb=tog.parentNode.querySelector('table');var on=tb.classList.toggle('all');tog.textContent=(on?'Hide ':'Show ')+tog.getAttribute('data-n')+' more tracks'})}
 
   /* team filter, shared by chart, chips, table, timeline */
   var buttons=document.querySelectorAll('[data-filter]');
@@ -493,7 +507,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     timeline = f"""
 <section><h2>Score timeline</h2>
 <svg id="timeline" class="chart" role="img" aria-label="Points over time for both teams"></svg>
-<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks are misses{', dotted lines are camera cuts' if cuts else ''}</span></div>
+<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks are misses{', dotted lines are camera cuts' if cuts and len(cuts) <= 20 else ''}</span></div>
 {tl_note}</section>"""
 
     # shot chart --------------------------------------------------------------
@@ -553,7 +567,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <section><h2>Players</h2>
 <div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th>{'<th class="num">Distance</th>' if has_distance else ''}</tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
-{f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks without a shot or possession</button>' if n_inactive else ''}
+{f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks</button>' if n_inactive else ''}
 <p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{'' if has_distance else ' Distance follows once the court calibration exists.'}</p>
 </section>"""
 
