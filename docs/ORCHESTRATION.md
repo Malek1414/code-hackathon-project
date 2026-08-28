@@ -151,6 +151,39 @@ may run any time but at most one heavy one at a time. Before starting any job th
 loads a model: `ps -axo pid,command | grep .venv/bin/python` and if another model
 job is running, wait or ask ORCH.
 
+## Broadcast package "Big Ball Baller" (added 14:35, Sami)
+
+Product name for the broadcast layer: **Big Ball Baller** (BBB). Deliverables in `broadcast/`,
+spec for Malek's Swift app in `docs/BROADCAST.md`. Owners: FRONTEND = widget designs + start
+menu, COURT = heat map + end-of-game summary renderers, STATS/LIVE = `live_state.json` +
+compositing/timing in `live.py` (after the servo link), MONITOR/RISK = `docs/BROADCAST.md`.
+
+### `out/live_state.json` (LIVE writes every 1 s, also served at `127.0.0.1:8501/state.json`)
+```json
+{"brand": "Big Ball Baller", "clip_or_source": "...", "t": 312.4, "period": 1, "clock": "05:12",
+ "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21},
+           {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}],
+ "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}],
+ "last_event": {"t": 310.2, "type": "made"|"miss"|"manual", "team": 0, "player_key": "A5", "points": 2},
+ "pan_deg": 97, "camera": "ok"|"no-frame"}
+```
+Team names and colors come from the start menu (`--team-a/--team-b/--color-a/--color-b` or the
+menu json `broadcast/config.json`), never guessed.
+
+### Widgets (PNG with alpha on a 1920x1080 canvas, sources as HTML/SVG in `broadcast/widgets/`)
+| id | where | when (LIVE timing rule) |
+|---|---|---|
+| `score_bug` | top centre, 520x88 | always |
+| `made_flash` | over the score bug | 1.5 s after a made basket (auto or manual) |
+| `player_card` | lower left, 420x160: number, name/key, PTS, FGM/FGA, FG% | 3 s after a made basket by that player; and the top scorer of each team every 3 min |
+| `team_overview` | centre, 900x420: both teams score, FG%, possessions, top scorer | every 5 min for 6 s, and on `--timeout` hotkey `t` |
+| `lower_third` | bottom, 1920x120: "Big Ball Baller" brand + game title | first 10 s and on demand hotkey `b` |
+| `end_summary` | full frame 1920x1080: efficiency table (pts, FGA, FGM, FG%, possession share) per player and team | on hotkey `e` or end of file |
+| `heat_map` | full frame or right panel: position density per team on the court (from tracks + calibration), plus shot chart made/missed | with `end_summary`, page 2 |
+
+Design: dark glass panels, team color as the only accent per team, BBB wordmark, no emojis,
+no dashes as bullets, large type readable on a phone stream (min 28 px at 1080p).
+
 ## Milestones and deadlines
 
 | Time | LABEL | TRACK | STATS | COURT |
