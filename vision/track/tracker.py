@@ -195,7 +195,8 @@ class Tracker:
             b = _round(box)
             team = -1 if is_ref else self.teams.assign(tid, torso_color(frame, box))
             players.append({"id": tid, "bbox": b, "foot": [round((b[0] + b[2]) / 2, 1), b[3]],
-                            "team": team, "conf": round(conf, 3)})
+                            "team": team, "conf": round(conf, 3),
+                            "on_court": None})  # STATS fills this from the calibration
 
         # Largest hoop box = the game hoop; the folded wall hoop is smaller.
         # Sanity: upper part of the frame, above the feet of overlapping players.
