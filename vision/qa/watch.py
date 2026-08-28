@@ -73,6 +73,29 @@ def stored_sig(path: Path) -> tuple[float, int] | None:
     return (float(v[0]), int(v[1])) if v else None
 
 
+def archive_complete(tracks: Path) -> bool:
+    """TRACK writes tracks_meta.json (with last_frame) first and streams the lines; a
+    4 s pause must not pass a fragment as a finished run (that happened with dev60_v4)."""
+    meta = {}
+    try:
+        meta = json.loads(tracks.with_name("tracks_meta.json").read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+    last, stride = meta.get("last_frame"), int(meta.get("stride") or 1)
+    if last is None:
+        return False
+    try:
+        with tracks.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - 65536))
+            lines = [ln for ln in fh.read().decode("utf-8", "ignore").splitlines() if ln.strip()]
+        last_written = json.loads(lines[-1])["frame"] if lines else -1
+    except (OSError, json.JSONDecodeError, KeyError, IndexError):
+        return False
+    return last_written >= int(last) - 2 * stride
+
+
 def run_archives() -> None:
     """Ball sheets for archived runs (ORCH 13:39: contract paths stay game10, dev60 vN land in out/dev60_vN/)."""
     now = time.time()
@@ -86,6 +109,8 @@ def run_archives() -> None:
             archive_done[tracks] = stored_sig(tracks)
         if cur is None or cur == archive_done.get(tracks) or now - since < STABLE_S:
             continue
+        if not archive_complete(tracks):
+            continue  # still being written (or no meta): wait for the last frame
         archive_done[tracks] = cur
         save_state({tracks: cur})
         out = QA_DIR / tracks.parent.name
