@@ -19,6 +19,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import sys
@@ -52,7 +53,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--overlay", type=Path, default=Path("out/overlay.mp4"),
                    help="contract path, written atomically at the end")
     p.add_argument("--work-dir", type=Path, default=None,
-                   help="where the run writes while running (default out/<clip>/)")
+                   help="where the run writes while running (default out/<clip>_vN/, N = next "
+                        "free number; older runs are never overwritten)")
     p.add_argument("--no-publish", action="store_true",
                    help="leave the results in the work dir, do not touch the contract paths")
     p.add_argument("--no-overlay", action="store_true")
@@ -138,11 +140,24 @@ def publish(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
+def next_work_dir(clip: Path) -> Path:
+    """out/<clip>_vN with the next free N; every run keeps its own archive."""
+    out = Path("out")
+    used = [1] if (out / clip.stem).exists() else [0]
+    for d in out.glob(f"{clip.stem}_v*"):
+        m = re.fullmatch(r"v(\d+)", d.name[len(clip.stem) + 1:])
+        if m:
+            used.append(int(m.group(1)))
+    return out / f"{clip.stem}_v{max(used) + 1}"
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
     a = parse_args()
-    work = a.work_dir or Path("out") / a.video.stem
+    work = a.work_dir or next_work_dir(a.video)
+    if work.exists() and any(work.iterdir()):
+        raise SystemExit(f"{work} exists and is not empty; runs never overwrite each other")
     work.mkdir(parents=True, exist_ok=True)
     w_tracks, w_meta = work / "tracks.jsonl", work / "tracks_meta.json"
     w_summary, w_overlay = work / "track_summary.json", work / "overlay.mp4"
