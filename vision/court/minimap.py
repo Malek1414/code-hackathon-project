@@ -79,6 +79,7 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
             if show_ids:
                 cv2.putText(img, str(p["id"]), (c[0] + 11, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, TEXT, 1, cv2.LINE_AA)
     ball = rec.get("ball")
+    predicted_px = None
     if calibrated and ball and ball.get("center"):
         # a ball in flight projects "too far" along the ground plane; the bottom of its box is closer
         bx, by = ball["center"]
@@ -86,7 +87,14 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
             by = ball["bbox"][3]
         xy = cal.project(frame, [[bx, by]])[0]
         if cal.on_court(xy)[0]:
-            trail.append(canvas.px(float(xy[0]), float(xy[1])))
+            if ball.get("predicted"):
+                # Kalman coasting from TRACK (conf 0): shown hollow, never part of the trail
+                predicted_px = canvas.px(float(xy[0]), float(xy[1]))
+                trail.append(None)
+            else:
+                trail.append(canvas.px(float(xy[0]), float(xy[1])))
+        else:
+            trail.append(None)
     else:
         trail.append(None)
     pts = [p for p in list(trail) if p is not None]
@@ -95,6 +103,8 @@ def render_frame(canvas: CourtCanvas, cal: Calibration, rec: dict, trail: deque,
         cv2.line(img, pts[i - 1], pts[i], tuple(int(v * a) for v in BALL), 2, cv2.LINE_AA)
     if trail and trail[-1] is not None:
         cv2.circle(img, trail[-1], 6, BALL, -1, cv2.LINE_AA)
+    elif predicted_px is not None:
+        cv2.circle(img, predicted_px, 6, BALL, 2, cv2.LINE_AA)
     t = rec.get("t", frame / (cal.fps if cal else 50.0))
     cv2.putText(img, f"{t:6.1f} s", (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, TEXT, 1, cv2.LINE_AA)
     return img
