@@ -10,6 +10,7 @@ Usage:
 """
 import argparse
 
+from pathlib import Path
 from ultralytics import YOLO
 
 
@@ -23,7 +24,7 @@ def main():
 
     model = YOLO("yolo11n.pt")
     results = model.train(data=a.data, epochs=a.epochs, imgsz=a.imgsz,
-                          project="ml/runs", name=a.name, exist_ok=True,
+                          project=str(Path("ml/runs").resolve()), name=a.name, exist_ok=True,
                           patience=5, verbose=False)
     print(f"best weights: ml/runs/{a.name}/weights/best.pt")
     print("use with: ml/analyze_video.py <clip> --model ml/runs/"
