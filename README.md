@@ -54,3 +54,17 @@ An 8-second demo of the motion, synced to a top-down court-coverage diagram:
 - Push feature branches (`sammy/<topic>`), open a PR, request review.
 - Never commit render intermediates (`viz/work/`, frames, proxies) — they're
   regenerable and gitignored.
+
+## Analytics pipeline
+
+The same camera keeps the stats. `vision/` turns a clip into labeled players,
+ball and hoop, tracks with jersey numbers, a 2D court model, per-player shot
+stats, a coach dashboard and a live score overlay. Stage by stage with the
+exact commands, inputs, outputs and measured numbers: [`docs/VISION.md`](docs/VISION.md);
+results of the fine-tune in [`docs/RESULTS.md`](docs/RESULTS.md); data handling
+in [`docs/PRIVACY.md`](docs/PRIVACY.md).
+
+```
+.venv/bin/python -m vision.run_all --clip data/clips/dev60.mp4        # whole pipeline, or: make demo CLIP=...
+.venv/bin/python -m vision.live.live --source 0 --minimap panel        # live score overlay from a camera
+```
