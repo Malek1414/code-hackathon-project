@@ -113,7 +113,7 @@ In: tracks, optional calibration, identities, cut list. Out: `out/events.json`
 (per player FGA, FGM, FG%, possession seconds, distance in m when calibrated).
 Possession = nearest foot to the ball, shot = ball enters the hoop zone from
 above, made = ball seen below the rim within 0.5 s; bench players and
-spectators filtered unless `--no-court-filter`. Measured: 46 unit tests; 1
+spectators filtered unless `--no-court-filter`. Measured: 52 unit tests pass (3.6 s); 1
 shot attempt, 0 made, on the 60 s dev clip.
 
 ## Dashboard (`vision/dashboard/build.py`, FRONTEND)
