@@ -1,0 +1,16 @@
+# BoT-SORT with global motion compensation. Measured on 1080p50: 0.83 s/frame vs
+# 0.08 with ByteTrack and the same id churn on pans. Kept as an option, not default.
+# fast breaks and plain IoU matching (ByteTrack) hands out a new id to every
+# player on each pan. No ReID (costs too much per frame for the timebox).
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 50
+match_thresh: 0.8
+fuse_score: True
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.25
+with_reid: False
+model: auto

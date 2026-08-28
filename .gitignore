@@ -15,10 +15,31 @@ bridge-annotate*.md
 bridge-annotate*-result.log
 bridge-annotate-result.log
 
+# vision pipeline: data, weights, outputs, env (regenerable / too big)
+.venv/
+data/
+models/*.pt
+*.pt
+out/
+runs/
+
+# third-party reference code without license, local only
+reference/thirdparty/
+
+# secrets (stream keys etc.) live in .env only
+.env
+.env.*
+!.env.example
+
+# --- from main (Malek) ---
+# macOS / python junk
+
+# regenerable render/proxy/QC intermediates (recipes live in viz/EDIT_PLAN.md)
+
+# transient bridge task logs from annotation runs
+
 # ML env, data, weights, ultralytics artifacts
 ml/.venv/
 ml/data/
-*.pt
-runs/
 *.xcuserdata/
 xcuserdata/
