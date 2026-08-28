@@ -417,7 +417,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
                 continue
             tm = TEAMS.get(s["team"], TEAMS[-1])
             items.append(f'<span class="chip" data-i="{i}" data-team="{s["team"]}"><i class="m {"made" if s["made"] else "miss"}" style="background:{tm["color"]};border-color:{tm["color"]}"></i>{fmt_clock(s["t"])}<span class="muted">{html.escape(s["label"])}</span></span>')
-        chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} shots without a court position yet (calibration pending). Time and shooter are known:</p><div class="pending">{"".join(items)}</div>'
+        chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position yet (calibration pending). Time and shooter are known:</p><div class="pending">{"".join(items)}</div>'
     notes = []
     if not has_events:
         notes.append("Shot events not available yet.")
