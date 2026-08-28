@@ -375,16 +375,16 @@ def main(argv: list[str] | None = None) -> int:
         meta_path = Path(args.tracks).parent / "tracks_meta.json"
         candidate = load_identities(ident_path)
         stamped = identities_run_matches(ident_path, Path(args.tracks))
-        if stamped is False:
-            print(f"{ident_path}: tracks_mtime stamp is from another tracks run, ignoring it", file=sys.stderr)
-        elif stamped is None and meta_path.exists() and ident_path.stat().st_mtime < meta_path.stat().st_mtime:
-            print(f"{ident_path} is older than {meta_path}: track ids belong to a previous run, ignoring it",
-                  file=sys.stderr)
-        elif not identities_match_tracks(candidate, frames):
+        if stamped is True:
+            identities = candidate  # NUMBERS built it from exactly this tracks file
+        elif identities_match_tracks(candidate, frames):
+            identities = candidate  # stamp missing or lagging (tracks rewritten), but ids and teams agree
+            if stamped is False:
+                print(f"{ident_path}: tracks_mtime stamp lags behind the tracks file, ids/teams still agree, using it",
+                      file=sys.stderr)
+        else:
             print(f"{ident_path}: track ids/teams do not match these tracks (previous run?), ignoring it",
                   file=sys.stderr)
-        else:
-            identities = candidate
 
     events, stats = build(
         frames,
