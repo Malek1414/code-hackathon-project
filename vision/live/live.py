@@ -76,7 +76,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "as --source (e.g. --source data/clips/dev60.mp4 --replay out/dev60/tracks.jsonl)")
     ap.add_argument("--minimap", choices=["panel", "window", "off"], default="panel",
                     help="2D court: right third of the output (panel), its own window, or off")
-    ap.add_argument("--calib", default="out/court_calib.json")
+    ap.add_argument("--calib", default=None,
+                    help="default: out/court_calib_<source stem>.json, else out/court_calib.json")
     ap.add_argument("--identities", default="out/identities.json")
     ap.add_argument("--no-court-lines", action="store_true", help="do not draw the court on the video")
     return ap.parse_args(argv)
@@ -298,9 +299,13 @@ def main(argv: list[str] | None = None) -> int:
     out_h = int(round(h * out_w / w / 2) * 2)
     minimap = None
     if args.minimap != "off":
-        minimap = MiniMap(try_load_calibration(args.calib), numbers=load_numbers(args.identities))
+        calib_path = args.calib
+        if calib_path is None:
+            per_clip = Path("out") / f"court_calib_{Path(args.source).stem}.json"
+            calib_path = str(per_clip) if per_clip.exists() else "out/court_calib.json"
+        minimap = MiniMap(try_load_calibration(calib_path), numbers=load_numbers(args.identities))
         if minimap.cal is None:
-            log.info("no court calibration at %s: minimap shows 'uncalibrated'", args.calib)
+            log.info("no court calibration at %s: minimap shows 'uncalibrated'", calib_path)
     if args.minimap == "panel":  # video keeps its width, the panel adds a third on the right
         out_w = int(round(out_w * 1.5 / 2) * 2)
 

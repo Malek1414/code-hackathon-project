@@ -158,6 +158,28 @@ def identities_match_tracks(ident: dict[int, Identity], frames: list[Frame], min
     return agree >= min_agree * len(present)
 
 
+def find_calib(clip: str, out_dir: Path, explicit: str | None = None) -> Path | None:
+    """The calibration for this clip: --calib if given, else out/court_calib_<stem>.json,
+    else the contract copy out/court_calib.json when its "clip" is this clip
+    (COURT keeps one file per clip; the contract copy points at the latest)."""
+    stem = Path(clip).stem
+    if explicit:
+        return Path(explicit) if Path(explicit).exists() else None  # the caller's choice is not second-guessed
+    for path in (out_dir / f"court_calib_{stem}.json", out_dir / "court_calib.json"):
+        if not path.exists():
+            continue
+        try:
+            d = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        own = d.get("clip")
+        if own and Path(own).stem != stem and path.name == "court_calib.json":
+            print(f"{path} is for {own}, not {clip}: ignoring it", file=sys.stderr)
+            continue
+        return path
+    return None
+
+
 def find_cuts(clip: str, out_dir: Path) -> list[int]:
     """COURT's cut list for this clip, if any: out/cuts_<stem>.json (list of
     frames, or {"cuts": [...]} / {"frames": [...]} with ints or {"frame": n}),
@@ -344,7 +366,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tracks", default="out/tracks.jsonl")
     ap.add_argument("--clip", default="data/clips/game10.mp4")
     ap.add_argument("--fps", type=float, default=None, help="default: inferred from tracks")
-    ap.add_argument("--calib", default="out/court_calib.json", help="used if the file exists")
+    ap.add_argument("--calib", default=None,
+                    help="default: out/court_calib_<clip>.json, else out/court_calib.json if it is for this clip")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
     ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
@@ -376,11 +399,10 @@ def main(argv: list[str] | None = None) -> int:
 
     calib = None
     distances = None
-    calib_path = Path(args.calib)
-    if calib_path.exists():
+    calib_path = None if args.fixture else find_calib(clip, Path(args.tracks).parent, args.calib)
+    if calib_path is not None:
         calib = json.loads(calib_path.read_text())
-        if not args.fixture:
-            distances = court_distances(calib_path, Path(args.tracks))
+        distances = court_distances(calib_path, Path(args.tracks))
 
     out = Path(args.out_dir)
     tracks_dir = Path(args.tracks).parent  # cuts/identities live next to the tracks, not in --out-dir
@@ -421,8 +443,8 @@ def main(argv: list[str] | None = None) -> int:
         events["note"] = note
     (out / "events.json").write_text(json.dumps(events, indent=1))
     (out / "stats.json").write_text(json.dumps(stats, indent=1))
-    print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'} "
-          f"-> {out / 'events.json'}, {out / 'stats.json'}")
+    print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'}, "
+          f"calib {calib_path.name if calib_path else 'none'} -> {out / 'events.json'}, {out / 'stats.json'}")
     print(summary(events, stats))
     return 0
 

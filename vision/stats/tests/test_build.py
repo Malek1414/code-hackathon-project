@@ -161,3 +161,14 @@ def test_identities_mtime_stamp(tmp_path):
     assert identities_run_matches(ident, tracks) is False
     ident.write_text(json.dumps({"players": []}))
     assert identities_run_matches(ident, tracks) is None
+
+
+def test_find_calib_prefers_the_clip_file_and_checks_the_contract_copy(tmp_path):
+    from vision.stats.build import find_calib
+
+    (tmp_path / "court_calib.json").write_text(json.dumps({"clip": "data/clips/game10.mp4", "H_px_to_m": []}))
+    assert find_calib("data/clips/dev60.mp4", tmp_path) is None  # contract copy is for another clip
+    assert find_calib("data/clips/game10.mp4", tmp_path).name == "court_calib.json"
+    (tmp_path / "court_calib_dev60.json").write_text(json.dumps({"clip": "data/clips/dev60.mp4", "H_px_to_m": []}))
+    assert find_calib("data/clips/dev60.mp4", tmp_path).name == "court_calib_dev60.json"
+    assert find_calib("data/clips/dev60.mp4", tmp_path, str(tmp_path / "court_calib.json")).name == "court_calib.json"
