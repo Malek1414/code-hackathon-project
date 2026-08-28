@@ -165,9 +165,45 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             xy = cal.project(frame, [foot])[0]
             if np.isfinite(xy).all() and cal.on_court(xy)[0]:
                 s["court_m"] = [round(float(xy[0]), 2), round(float(xy[1]), 2)]
+        s["estimated"] = False
+        if s["court_m"] is None:
+            est = estimate_court_m(foot, raw.get("hoop_bbox"), s["team"])
+            if est is not None:
+                s["court_m"], s["estimated"] = est, True
+                s["flags"].append("position estimated from image")
         shots.append(s)
     shots.sort(key=lambda s: s["t"])
     return shots
+
+
+RIM_DIAMETER_M = 0.45
+RIM_HEIGHT_M = 3.05
+
+
+def estimate_court_m(foot, hoop_bbox, team: int) -> list[float] | None:
+    """Court position guessed from the image alone, for clips without calibration.
+
+    Scale: the hoop box is one rim wide (0.45 m). The foot's horizontal offset
+    from the hoop centre runs along the court length (the camera stands at the
+    sideline), the vertical offset below the rim minus the rim height runs
+    across the width towards the camera. Team 0 is drawn at the left basket,
+    team 1 at the right one; the true attacking direction is unknown. Good for
+    "how far from the basket", not for left/right of it."""
+    if not foot or not hoop_bbox:
+        return None
+    x1, y1, x2, y2 = [float(v) for v in hoop_bbox[:4]]
+    hw = x2 - x1
+    if hw <= 2:
+        return None
+    m_per_px = RIM_DIAMETER_M / hw
+    along = abs(float(foot[0]) - (x1 + x2) / 2) * m_per_px
+    across = max(0.3, (float(foot[1]) - y2) * m_per_px - RIM_HEIGHT_M)
+    hx, hy = FIBA.hoops[0] if team != 1 else FIBA.hoops[-1]
+    x = hx + along if team != 1 else hx - along
+    y = hy - across
+    x = min(max(x, 0.2), FIBA.length_m - 0.2)
+    y = min(max(y, 0.2), FIBA.width_m - 0.2)
+    return [round(x, 2), round(y, 2)]
 
 
 def score(shots: list[dict]) -> dict[int, int]:
@@ -320,7 +356,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
 svg.court{width:100%;height:auto;display:block}
 .floor{fill:var(--floor)}.mark{fill:none;stroke:var(--mark);stroke-width:1.4;opacity:.75}.rim{fill:var(--rim);stroke:none}.board{stroke:var(--rim);stroke-width:3;stroke-linecap:round}
 .shot{cursor:pointer;transition:opacity .15s}.shot.made{stroke:rgba(11,13,18,.9);stroke-width:1.5}.shot.miss{fill:var(--floor);stroke-width:2.6}.shot:hover{stroke-width:3;stroke:#fff}
-.shot.unconfirmed{stroke-dasharray:3 2}
+.shot.unconfirmed{opacity:.75}.shot-est{fill:none;stroke-width:1.6;stroke-dasharray:3 3;pointer-events:none}
 .hidden{display:none!important}
 .pending{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chip{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;display:inline-flex;gap:8px;align-items:center;cursor:pointer;background:var(--panel2)}
@@ -398,7 +434,9 @@ JS = r"""
     el('rect',{x:M*S,y:M*S,width:C.length*S,height:C.width*S,rx:3,'class':'floor'},svg);
     C.lines.forEach(function(poly){el('polyline',{points:poly.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)}).join(' '),'class':'mark'},svg)});
     C.hoops.forEach(function(h){var bx=h[0]<C.length/2?h[0]-0.375:h[0]+0.375;el('line',{x1:X(bx),x2:X(bx),y1:Y(h[1]-0.9),y2:Y(h[1]+0.9),'class':'board'},svg);el('circle',{cx:X(h[0]),cy:Y(h[1]),r:(0.225*S).toFixed(1),'class':'rim'},svg)});
-    D.shots.forEach(function(s){if(!s.court_m)return;var tm=team(s.team);var c=el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:s.made?9.5:8.5,'class':'shot '+(s.made?'made':'miss')+(s.unconfirmed?' unconfirmed':''),'data-team':s.team},svg);
+    D.shots.forEach(function(s){if(!s.court_m)return;var tm=team(s.team);
+      if(s.estimated)el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:14,'class':'shot-est','stroke':tm.color,'data-team':s.team},svg);
+      var c=el('circle',{cx:X(s.court_m[0]).toFixed(1),cy:Y(s.court_m[1]).toFixed(1),r:s.made?9.5:8.5,'class':'shot '+(s.made?'made':'miss')+(s.unconfirmed?' unconfirmed':''),'data-team':s.team},svg);
       if(s.made)c.setAttribute('fill',tm.color);else c.setAttribute('stroke',tm.color);
       bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
     document.querySelectorAll('.chip').forEach(function(ch){var s=D.shots[+ch.getAttribute('data-i')];if(!s)return;bindTip(ch,function(){return shotTip(s)});ch.addEventListener('click',function(){seekTo(s.t)})});
@@ -462,7 +500,10 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
             tm = TEAMS.get(s["team"], TEAMS[-1])
             items.append(f'<span class="chip" data-i="{i}" data-team="{s["team"]}"><i class="m {"made" if s["made"] else "miss"}" style="background:{tm["color"]};border-color:{tm["color"]}"></i>{fmt_clock(s["t"])}<span class="muted">{html.escape(s["label"])}</span></span>')
         chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position yet (calibration pending). Time and shooter are known:</p><div class="pending">{"".join(items)}</div>'
+    estimated = sum(1 for s in shots if s.get("estimated"))
     notes = []
+    if estimated:
+        notes.append(f"{estimated} of {len(shots)} shot positions estimated from the image (dashed ring): distance from the basket is roughly right, side is not. Team A is drawn at the left basket, Team B at the right one.")
     if not has_events:
         notes.append("Shot events not available yet.")
     elif not shots:
@@ -477,7 +518,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
 <section><h2>Shot chart</h2>
 <div class="toolbar"><button class="f on" data-filter="all">Both teams</button><button class="f" data-filter="0"><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</button><button class="f" data-filter="1"><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</button><span class="spacer"></span><span id="chart-count" class="muted small"></span></div>
 <svg id="court" class="court" role="img" aria-label="Shot chart on a top-down court"></svg>
-<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span><span class="faint">hover a shot for time and player</span></div>
+<div class="legend"><span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="{T0['color']}"/></svg>made</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="{T0['color']}" stroke-width="2"/></svg>missed</span>{f'<span><svg width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{T0["color"]}" stroke-width="1.5" stroke-dasharray="3 2"/></svg>position estimated from image, no calibration</span>' if estimated else ''}<span class="faint">hover a shot for time and player</span></div>
 {chips}
 {f'<p class="muted small" style="margin:12px 0 0">{" ".join(html.escape(n) for n in notes)}</p>' if notes else ''}
 </section>"""
