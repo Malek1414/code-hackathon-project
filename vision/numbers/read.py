@@ -167,11 +167,17 @@ def red_channel(img: np.ndarray) -> np.ndarray:
 
 def ocr_crop(reader, img: np.ndarray, team: int) -> tuple[list[tuple[str, float]], str]:
     """Reads for one crop by jersey color: blue (0) plain image; black/red (1) red
-    channel, plain as fallback; unknown (-1) plain, red channel as fallback."""
+    channel, plain as fallback; unknown (-1) both images, reads joined."""
     if team == 1:
         order = ("red", "orig")
+    elif team == 0:
+        order = ("orig",)
     else:
-        order = ("orig", "red") if team == -1 else ("orig",)
+        # unknown color (white undershirt, shadow): both images, union of the reads; measured on
+        # game10 4288/2423 (black #9, #77): the plain pass returned a wrong low read and the red
+        # channel was never tried
+        reads = ocr_digits(reader, img) + ocr_digits(reader, red_channel(img))
+        return reads, "both"
     for mode in order:
         reads = ocr_digits(reader, red_channel(img) if mode == "red" else img)
         if reads:
@@ -399,7 +405,7 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
                 continue  # fragment without crops: no row on the sheet
             for i, (k, r, rd, ct) in enumerate(per_crop[:max_crops]):
                 mode = cache.get(k, {}).get("mode", "orig")
-                foot = ("AB"[ct] if ct in (0, 1) else "?") + ("r " if mode == "red" else " ") + \
+                foot = ("AB"[ct] if ct in (0, 1) else "?") + {"red": "r ", "both": "b "}.get(mode, " ") + \
                     (" ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-")
                 tiles.append((crops.get(k), head if i == 0 else f"f{r['frame']}", foot))
             for _ in range(len(per_crop), max_crops):
