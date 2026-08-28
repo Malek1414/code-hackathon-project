@@ -12,6 +12,11 @@ missed shots at most 0.5 s after the ball dropped; the scoreboard auto-calls
 +2 for the shooter's team, a human vetoes with hotkeys.
 
 Hotkeys (window focused): 1/2 = +2 team A/B, 3/4 = +3, z = undo, q = quit.
+2D court (--minimap panel|window|off): COURT's minimap renderer on the last
+tracks line, projected with out/court_calib.json (static calibration from one
+frame: a pan breaks it, the panel says so), jersey numbers from
+out/identities.json when known, possession holder ringed. Team per track is
+TRACK's vote-smoothed value as it arrives in the tracks line.
 Outputs: preview window, MJPEG at http://127.0.0.1:8501/stream, and an RTMP
 push when FOLLOWCAM_RTMP_URL is set (read from .env; never logged).
 """
@@ -30,6 +35,7 @@ from pathlib import Path
 import cv2
 
 from vision.live.env import load_dotenv, rtmp_url
+from vision.live.minimap import MiniMap, compose_side_by_side, load_numbers, try_load_calibration
 from vision.live.overlay import draw_flash, draw_score_bar, draw_tracks
 from vision.live.score import ScoreBoard
 from vision.live.stream import MjpegServer, RtmpPusher
@@ -57,6 +63,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights-ballhoop", default="models/ball_hoop_avishah.pt")
     ap.add_argument("--weights", default=None, help="single contract model (LABEL's best.pt)")
     ap.add_argument("--replay", default=None, help="tracks.jsonl to replay instead of running the models")
+    ap.add_argument("--minimap", choices=["panel", "window", "off"], default="panel",
+                    help="2D court: right third of the output (panel), its own window, or off")
+    ap.add_argument("--calib", default="out/court_calib.json")
+    ap.add_argument("--identities", default="out/identities.json")
     return ap.parse_args(argv)
 
 
@@ -178,6 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     h, w = frame.shape[:2]
     out_w = min(args.out_width, w)
     out_h = int(round(h * out_w / w / 2) * 2)
+    minimap = None
+    if args.minimap != "off":
+        minimap = MiniMap(try_load_calibration(args.calib), numbers=load_numbers(args.identities))
+        if minimap.cal is None:
+            log.info("no court calibration at %s: minimap shows 'uncalibrated'", args.calib)
+    if args.minimap == "panel":  # video keeps its width, the panel adds a third on the right
+        out_w = int(round(out_w * 1.5 / 2) * 2)
 
     mjpeg = None
     if not args.no_mjpeg:
@@ -192,9 +209,12 @@ def main(argv: list[str] | None = None) -> int:
         log.info("no FOLLOWCAM_RTMP_URL set: RTMP push off")
 
     window = "FollowCam LIVE"
+    map_window = "FollowCam court"
     if not args.no_window:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, out_w, out_h)
+        if args.minimap == "window":
+            cv2.namedWindow(map_window, cv2.WINDOW_NORMAL)
 
     realtime = is_cam or args.realtime
     stride = max(1, int(round(src_fps / args.process_fps)))
@@ -250,7 +270,11 @@ def main(argv: list[str] | None = None) -> int:
             draw_score_bar(view, board, t, info)
             if flash:
                 draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
-            small = cv2.resize(view, (out_w, out_h)) if out_w != w else view
+            panel = minimap.render(worker.latest, worker.holder) if minimap else None
+            if args.minimap == "panel":
+                small = compose_side_by_side(view, panel, out_w, out_h)
+            else:
+                small = cv2.resize(view, (out_w, out_h)) if out_w != w else view
             if mjpeg:
                 ok_j, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok_j:
@@ -262,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
 
             if not args.no_window:
                 cv2.imshow(window, small)
+                if args.minimap == "window":
+                    cv2.imshow(map_window, panel)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
