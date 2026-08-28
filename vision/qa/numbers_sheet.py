@@ -28,14 +28,20 @@ def select_players(identities: dict, n_unnumbered: int = 10) -> list[dict]:
     return numbered + rest[:n_unnumbered]
 
 
-def pick_boxes(frames: list[dict], track_ids: set[int]) -> list[tuple[int, float, int, list[float]]]:
-    """(frame, t, id, bbox) for the largest boxes of these tracks, spread in time."""
+def pick_boxes(
+    frames: list[dict], track_ids: set[int], switch_t: dict[int, float] | None = None
+) -> list[tuple[int, float, int, list[float]]]:
+    """(frame, t, id, bbox) for the largest boxes of these tracks, spread in time.
+    `switch_t[id]` = moment a ByteTrack id jumped to another player (NUMBERS);
+    the number and team belong to the later segment, so earlier boxes are skipped."""
+    switch_t = switch_t or {}
     cands = []
     for f in frames:
+        t = f.get("t", 0.0)
         for p in f.get("players") or []:
-            if p["id"] in track_ids:
+            if p["id"] in track_ids and t >= switch_t.get(p["id"], -1.0):
                 x1, y1, x2, y2 = p["bbox"]
-                cands.append(((x2 - x1) * (y2 - y1), f["frame"], f.get("t", 0.0), p["id"], p["bbox"]))
+                cands.append(((x2 - x1) * (y2 - y1), f["frame"], t, p["id"], p["bbox"]))
     cands.sort(reverse=True)
     picked: list[tuple[int, float, int, list[float]]] = []
     for _, frame, t, pid, bbox in cands:
@@ -69,11 +75,16 @@ def build_number_cards(frames: list[dict], grab: FrameGrabber, out: Path, identi
     for old in out.glob("num_*.jpg"):
         old.unlink()
     players = select_players(identities)
+    switch_t = {
+        int(tid): float(info["switch_t"])
+        for tid, info in (identities.get("tracks") or {}).items()
+        if isinstance(info, dict) and info.get("switch_t") is not None
+    }
     jobs = []  # (frame, player index, t, id, bbox)
     cards = []
     for i, p in enumerate(players):
         ids = {int(t) for t in p.get("track_ids", [])}
-        boxes = pick_boxes(frames, ids)
+        boxes = pick_boxes(frames, ids, switch_t)
         cards.append(
             {
                 "key": p.get("key"),
@@ -85,6 +96,7 @@ def build_number_cards(frames: list[dict], grab: FrameGrabber, out: Path, identi
                 "first_t": p.get("first_t"),
                 "last_t": p.get("last_t"),
                 "crops": [{"frame": b[0], "t": b[1], "id": b[2]} for b in boxes],
+                "switch_t": {str(t): switch_t[t] for t in ids if t in switch_t} or None,
                 "img": f"num_{safe_name(p.get('key') or str(i))}.jpg" if boxes else None,
             }
         )
