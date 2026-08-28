@@ -6,6 +6,7 @@ MAX_SIDE px (x3 was the plan; measured on CPU: a 1400 px crop takes 12-27 s,
 256 px takes 0.8 s with the same reads, so small crops are upscaled and big
 ones downscaled), run EasyOCR (CPU only: the MPS is scheduled for other jobs)
 with a digit-only allowlist and keep reads of 1-2 digits with conf >= MIN_CONF.
+Black/red jerseys are read on the red channel (red_channel), blue ones plain.
 
 Vote per track: sum of confidences per number. A number is assigned when the
 winner has >= MIN_READS reads and >= WIN_SHARE of the vote mass, or when the
@@ -40,14 +41,14 @@ TRACKS = ROOT / "out" / "tracks.jsonl"
 META = ROOT / "out" / "tracks_meta.json"
 READS_OUT = ROOT / "out" / "numbers_reads.json"
 PREVIEW_OUT = ROOT / "out" / "numbers_preview.jpg"
-CACHE = ROOT / "out" / "numbers_cache_v2.json"  # v2: {"reads": [...], "team": 0/1/-1} per crop
+CACHE = ROOT / "out" / "numbers_cache_v3.json"  # v3: {"reads": [...], "team": 0/1/-1, "mode": "orig"|"red"} per crop
 
 MAX_CROPS = 6  # per track, spread over its lifetime, tallest box per bin
 # (min track length s, crops) per pass, long tracks first so identities.json is useful early; cache makes each
 # later pass pay only for its new tracks
 PASSES = ((10.0, MAX_CROPS), (5.0, MAX_CROPS), (2.0, MAX_CROPS), (0.0, MAX_CROPS))
 TORSO_TOP, TORSO_BOTTOM = 0.15, 0.60
-TORSO_X0, TORSO_X1 = 0.10, 0.90  # middle 80 % of the width: neighbours' numbers stay out
+TORSO_X0, TORSO_X1 = 0.05, 0.95  # middle 90 % of the width: neighbours out, a 55 still whole (80 % cut it to 5)
 SWITCH_MIN_CROPS = 2  # crops of the final color after >= 1 crop of the other color = id switch
 MAX_SIDE = 256  # px, longest side of the crop fed to the OCR
 CPU_THREADS = 4
@@ -61,9 +62,10 @@ ALLOWLIST = "0123456789"
 TILE_W, TILE_H = 120, 130  # preview tile
 
 
-def load_tracks(path: Path = TRACKS) -> tuple[dict[int, list[dict]], str]:
-    """id -> [{frame, t, team, bbox}], sorted by frame. Tolerates a partial last line."""
+def load_tracks(path: Path = TRACKS) -> tuple[dict[int, list[dict]], str, int]:
+    """(id -> [{frame, t, team, bbox}] sorted by frame, clip, frames read). Tolerates a partial last line."""
     tracks: dict[int, list[dict]] = defaultdict(list)
+    n_frames = 0
     with open(path) as fh:
         for line in fh:
             line = line.strip()
@@ -73,6 +75,7 @@ def load_tracks(path: Path = TRACKS) -> tuple[dict[int, list[dict]], str]:
                 d = json.loads(line)
             except json.JSONDecodeError:
                 continue  # writer is mid-line
+            n_frames += 1
             for p in d.get("players", []):
                 tracks[int(p["id"])].append(
                     {"frame": d["frame"], "t": d["t"], "team": p.get("team", -1), "bbox": p["bbox"]}
@@ -87,7 +90,7 @@ def load_tracks(path: Path = TRACKS) -> tuple[dict[int, list[dict]], str]:
                 break
             except json.JSONDecodeError:
                 pass
-    return dict(tracks), clip
+    return dict(tracks), clip, n_frames
 
 
 def majority_team(rows: list[dict]) -> tuple[int, float]:
@@ -148,6 +151,30 @@ def crop_team(frame: np.ndarray, bbox) -> int:
     """Jersey color of this box in this frame (0/1/-1), TRACK's rule, no history."""
     feat = torso_color(frame, bbox)
     return -1 if feat is None else int(rule_label(feat))
+
+
+def red_channel(img: np.ndarray) -> np.ndarray:
+    """Red minus the other channels, stretched: a red number on a black jersey becomes
+    white on black. Measured on dev60 track 805: the outlined red 9 reads as "0" (conf
+    1.0) on the plain crop and as "9" (conf 1.0) on this image, 6 of 6 crops."""
+    b, g, r = cv2.split(img)
+    red = cv2.subtract(r, cv2.max(g, b))
+    red = cv2.normalize(red, None, 0, 255, cv2.NORM_MINMAX)
+    return cv2.cvtColor(red, cv2.COLOR_GRAY2BGR)
+
+
+def ocr_crop(reader, img: np.ndarray, team: int) -> tuple[list[tuple[str, float]], str]:
+    """Reads for one crop by jersey color: blue (0) plain image; black/red (1) red
+    channel, plain as fallback; unknown (-1) plain, red channel as fallback."""
+    if team == 1:
+        order = ("red", "orig")
+    else:
+        order = ("orig", "red") if team == -1 else ("orig",)
+    for mode in order:
+        reads = ocr_digits(reader, red_channel(img) if mode == "red" else img)
+        if reads:
+            return reads, mode
+    return [], order[-1]
 
 
 def ocr_digits(reader, img: np.ndarray) -> list[tuple[str, float]]:
@@ -274,7 +301,7 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
     """OCR + vote. Tracks shorter than min_track_s get no crops (they stay in the
     output without a number) unless the cache already holds reads for them."""
     t0 = time.time()
-    tracks, clip = load_tracks(tracks_path)
+    tracks, clip, n_frames = load_tracks(tracks_path)
     video = video or (ROOT / clip)
     cache = load_cache()
 
@@ -319,7 +346,8 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
                     color[k] = crop_team(frame, bbox)
         order = sorted((k for k in need_ocr if k in crops), key=lambda k: -len(tracks[todo[k][0][0]]))
         for k in order:
-            cache[k] = {"reads": ocr_digits(reader, crops[k]), "team": color[k]}
+            reads, mode = ocr_crop(reader, crops[k], color[k])
+            cache[k] = {"reads": reads, "team": color[k], "mode": mode}
             n_done += 1
             if n_done % 100 == 0:
                 log.info("ocr %d/%d  %.1f s", n_done, len(order), time.time() - t0)
@@ -366,12 +394,17 @@ def run(tracks_path: Path = TRACKS, video: Path | None = None, preview: bool = T
             if not per_crop:
                 continue  # fragment without crops: no row on the sheet
             for i, (k, r, rd, ct) in enumerate(per_crop[:max_crops]):
-                foot = ("AB"[ct] if ct in (0, 1) else "?") + " " + (" ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-")
+                mode = cache.get(k, {}).get("mode", "orig")
+                foot = ("AB"[ct] if ct in (0, 1) else "?") + ("r " if mode == "red" else " ") + \
+                    (" ".join(f"{t}:{c:.2f}" for t, c in rd[:2]) if rd else "-")
                 tiles.append((crops.get(k), head if i == 0 else f"f{r['frame']}", foot))
             for _ in range(len(per_crop), max_crops):
                 tiles.append((None, "", ""))
 
+    st = tracks_path.stat()
     out = {"clip": clip, "video": str(video.relative_to(ROOT)) if video.is_relative_to(ROOT) else str(video),
+           "tracks_path": str(tracks_path.relative_to(ROOT)) if tracks_path.is_relative_to(ROOT) else str(tracks_path),
+           "tracks_mtime": round(st.st_mtime, 3), "tracks_frames": n_frames, "tracks_ids": len(tracks),
            "params": {"max_crops": max_crops, "min_track_s": min_track_s, "min_conf": MIN_CONF,
                       "min_reads": MIN_READS, "win_share": WIN_SHARE},
            "n_tracks": len(tracks), "n_assigned": assigned, "tracks": result_tracks}

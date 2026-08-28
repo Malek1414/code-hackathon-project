@@ -1,5 +1,7 @@
 from vision.numbers.merge import group_players
-from vision.numbers.read import pick_samples, pixel_team, vote
+import numpy as np
+
+from vision.numbers.read import pick_samples, pixel_team, red_channel, vote
 
 
 def test_vote_assigns_clear_winner():
@@ -89,3 +91,25 @@ def test_pixel_team_single_stray_crop_is_not_a_switch():
     crops = [_crop(1, [], 0), _crop(2, [], 0), _crop(3, [], 0), _crop(4, [], 1)]
     assert pixel_team(crops) == (0, None)
     assert pixel_team([_crop(1, [], -1)]) == (-1, None)
+
+
+def test_red_channel_lifts_red_on_black():
+    img = np.zeros((20, 20, 3), np.uint8)  # black jersey
+    img[5:15, 5:15] = (30, 30, 200)  # red number (BGR)
+    out = red_channel(img)
+    assert out.shape == (20, 20, 3) and out[10, 10, 0] == 255 and out[0, 0, 0] == 0
+
+
+def test_eval_scores_cards_by_key_then_track_ids():
+    from vision.numbers.eval import score
+
+    identities = {"players": [{"key": "A55", "team": 0, "number": 55, "track_ids": [611, 701]},
+                              {"key": "B9", "team": 1, "number": 9, "track_ids": [805]},
+                              {"key": "A?7", "team": 0, "number": None, "track_ids": [7]}],
+                  "tracks": {"805": {"team": 1, "number": 9, "key": "B9"}}}
+    verdicts = {"numbers": [{"key": "A55", "track_ids": [611], "detected": 55, "true_number": None, "unreadable": False},
+                            {"key": "B?805", "track_ids": [805], "detected": None, "true_number": 9, "unreadable": False},
+                            {"key": "A?7", "track_ids": [7], "detected": None, "true_number": None, "unreadable": True}],
+                "shots": [{"n": 1, "t": 56.96, "player_id": 805, "number": 9, "number_team": 1}]}
+    lines, right, wrong, open_ = score(identities, verdicts)
+    assert (right, wrong, open_) == (3, 0, 0) and len(lines) == 4

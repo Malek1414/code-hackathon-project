@@ -122,6 +122,9 @@ def run(reads_path: Path = READS, out_path: Path = IDENTITIES) -> dict:
     n_players = sum(1 for p in players if p["number"] is not None)
     out = {
         "clip": reads["clip"],
+        # which TRACK run the ids belong to (STATS checks this before trusting the mapping)
+        "tracks_path": reads.get("tracks_path"), "tracks_mtime": reads.get("tracks_mtime"),
+        "tracks_frames": reads.get("tracks_frames"), "tracks_ids": reads.get("tracks_ids"),
         "tracks": tracks_out,
         "players": players,
         "summary": {"tracks": n_tracks, "tracks_with_number": n_num, "players_with_number": n_players,
