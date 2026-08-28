@@ -2,11 +2,18 @@
 is ever loaded here; cv2 only draws boxes and grabs the last frame of a video."""
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
-import cv2
-import numpy as np
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")  # a half-written mp4 would spam "moov atom not found"
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+
+try:
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+except Exception:  # noqa: BLE001
+    pass
 
 from vision.monitor import status
 
@@ -99,7 +106,26 @@ def label_image() -> bytes | None:
 # ---------------------------------------------------------------- VIDEO ----
 
 
+def _has_moov(path: Path, window: int = 256_000) -> bool:
+    """An mp4 still open in cv2.VideoWriter has no moov atom yet (it is written on
+    release). Checking head and tail bytes is far cheaper than a failed open."""
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as fh:
+            head = fh.read(min(size, window))
+            if b"moov" in head:
+                return True
+            if size > window:
+                fh.seek(max(0, size - window))
+                return b"moov" in fh.read(window)
+    except OSError:
+        return False
+    return False
+
+
 def _last_frame(path: Path):
+    if path.suffix.lower() in (".mp4", ".mov", ".m4v") and not _has_moov(path):
+        return None
     cap = cv2.VideoCapture(str(path))
     try:
         if not cap.isOpened():
@@ -137,11 +163,31 @@ def video_image(name: str, path: Path) -> bytes | None:
     return _cached(name, _key_of(path), lambda: _render_video(path))
 
 
+def _render_file(path: Path) -> bytes | None:
+    img = cv2.imread(str(path))
+    return _encode(img) if img is not None else None
+
+
+def file_image(name: str, path: Path) -> bytes | None:
+    return _cached(name, _key_of(path), lambda: _render_file(path))
+
+
+def track_image() -> bytes | None:
+    """TRACK writes overlay_latest.jpg while the mp4 is still open; prefer it."""
+    latest = status.OUT_DIR / "overlay_latest.jpg"
+    if latest.exists():
+        data = file_image("track", latest)
+        if data:
+            return data
+    return video_image("track", status.OUT_DIR / "overlay.mp4")
+
+
 # ------------------------------------------------------------------ API ----
 
 SOURCES = {
     "label": label_image,
-    "track": lambda: video_image("track", status.OUT_DIR / "overlay.mp4"),
+    "track": track_image,
+    "numbers": lambda: file_image("numbers", status.OUT_DIR / "numbers_preview.jpg"),
     "court": lambda: video_image("court", status.OUT_DIR / "court_propagate_preview.mp4"),
 }
 

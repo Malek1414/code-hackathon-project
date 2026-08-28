@@ -46,6 +46,9 @@ HTML = r"""<!doctype html>
   .log pre { margin: 0; font-size: 12px; line-height: 1.35; white-space: pre; color: #c9ccd3; }
   svg text { font: 11px ui-monospace, Menlo, monospace; fill: var(--muted); }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  a { color: var(--blue); }
+  .on { color: var(--green); font-weight: 600; } .off { color: var(--muted); }
+  .score { font-size: 26px; font-weight: 600; letter-spacing: .04em; }
 </style>
 </head>
 <body>
@@ -58,8 +61,12 @@ HTML = r"""<!doctype html>
 <main>
   <section id="label"><h2>LABEL</h2><div class="nothing">noch nichts</div></section>
   <section id="track"><h2>TRACK</h2><div class="nothing">noch nichts</div></section>
+  <section id="numbers"><h2>NUMBERS</h2><div class="nothing">noch nichts</div></section>
   <section id="stats"><h2>STATS</h2><div class="nothing">noch nichts</div></section>
   <section id="court"><h2>COURT</h2><div class="nothing">noch nichts</div></section>
+  <section id="live"><h2>LIVE</h2><div class="nothing">noch nichts</div></section>
+  <section id="qa"><h2>QA</h2><div class="nothing">noch nichts</div></section>
+  <section id="footage"><h2>FOOTAGE</h2><div class="nothing">noch nichts</div></section>
   <section id="logs" class="wide"><h2>LOGS</h2><div class="nothing">noch nichts</div></section>
 </main>
 <script>
@@ -171,9 +178,14 @@ function renderTrack(d, images) {
     ['overlay.mp4', d.overlay && d.overlay.exists ? `da, ${d.overlay.mb} MB, ${esc(d.overlay.time)}` : '<span class="nothing">noch nichts</span>'],
   ]);
   if (d.progress_pct !== null && d.progress_pct !== undefined) html += `<div class="bar"><i style="width:${Math.min(100, d.progress_pct)}%"></i></div>`;
-  html += (d.overlay && d.overlay.exists && !images.track)
-    ? '<div class="nothing">overlay.mp4 wird noch geschrieben, noch kein lesbares Bild</div>'
-    : image('track', images.track, 'letztes Overlay-Bild');
+  if (images.track) {
+    html += image('track', images.track, 'letztes Overlay-Bild');
+    if (d.latest_jpg && d.latest_jpg.exists) html += `<div class="tx">overlay_latest.jpg ${esc(d.latest_jpg.time)}</div>`;
+  } else if (d.overlay && d.overlay.exists) {
+    html += '<div class="nothing">overlay.mp4 wird noch geschrieben, noch kein lesbares Bild (TRACK kann out/overlay_latest.jpg liefern)</div>';
+  } else {
+    html += '<div class="nothing">letztes Overlay-Bild: noch nichts</div>';
+  }
   return html;
 }
 
@@ -242,6 +254,72 @@ function renderLogs(d) {
   ).join('') + '</div>';
 }
 
+function renderNumbers(d, images) {
+  if (!d) return NOTHING;
+  if (d.error) return errBox(d.error);
+  if (!d.ok) return NOTHING + (images.numbers ? image('numbers', images.numbers, 'numbers_preview.jpg') : '');
+  let html = kv([
+    ['Tracks', `<span class="big">${d.tracks_numbered}</span> von ${d.tracks_total} mit Nummer &nbsp; <span class="tx">${esc(d.clip || '')}, ${esc(d.time)}</span>`],
+    ['Spieler', `${d.players_numbered} mit Nummer, ${d.players_total} Keys gesamt`],
+  ]);
+  html += `<div class="bar"><i style="width:${d.tracks_total ? Math.min(100, 100 * d.tracks_numbered / d.tracks_total) : 0}%"></i></div>`;
+  if (d.players.length) {
+    html += '<table><tr><th>Key</th><th>Team</th><th class="num">Nummer</th><th class="num">Tracks</th><th class="num">Votes</th><th class="num">Reads</th><th class="num">von</th><th class="num">bis</th></tr>';
+    d.players.forEach(p => {
+      html += `<tr><td><b>${esc(p.key)}</b></td><td class="${teamCls(p.team)}">${teamName(p.team)}</td><td class="num">${p.number === null || p.number === undefined ? '?' : esc(p.number)}</td><td class="num">${p.tracks}</td><td class="num">${p.votes}</td><td class="num">${p.reads}</td><td class="num">${num(p.first_t, 1)} s</td><td class="num">${num(p.last_t, 1)} s</td></tr>`;
+    });
+    html += '</table>';
+  }
+  html += '<div style="margin-top:8px"></div>' + image('numbers', images.numbers, 'numbers_preview.jpg');
+  return html;
+}
+
+function renderQa(d) {
+  if (!d) return NOTHING;
+  if (d.error) return errBox(d.error);
+  if (!d.ok) return NOTHING;
+  const kinds = Object.entries(d.kinds || {}).map(([k, v]) => `${esc(k)} ${v}`).join(', ');
+  return kv([
+    ['Sheets', `<span class="big">${d.sheets}</span> in out/qa` + (kinds ? ` <span class="tx">(${kinds})</span>` : '')],
+    ['index.html', d.index ? `<a href="/qa/index.html" target="_blank" rel="noopener">out/qa/index.html öffnen</a> <span class="tx">${esc(d.index_time)}</span>` : '<span class="nothing">noch nichts</span>'],
+    ['neuestes', d.newest ? `<a href="/qa/${encodeURIComponent(d.newest)}" target="_blank" rel="noopener">${esc(d.newest)}</a> <span class="tx">${esc(d.newest_time)}</span>` : '<span class="nothing">noch nichts</span>'],
+  ]);
+}
+
+function renderLive(d) {
+  if (!d) return NOTHING;
+  if (d.error) return errBox(d.error);
+  let html = kv([
+    ['Prozess', d.running ? `<span class="on">läuft</span> <span class="tx">${esc((d.procs || []).map(p => p.split(' ')[0]).join(', '))}</span>` : '<span class="off">kein live.py Prozess</span>'],
+  ]);
+  const ev = d.events;
+  if (ev) {
+    const a = ev.teams['0'] || {}, b = ev.teams['1'] || {};
+    html += `<div class="score"><span class="t0">A ${a.points ?? 0}</span> : <span class="t1">${b.points ?? 0} B</span></div>`;
+    html += kv([
+      ['FG', `<span class="t0">A ${a.fgm ?? 0}/${a.fga ?? 0}</span> &nbsp; <span class="t1">B ${b.fgm ?? 0}/${b.fga ?? 0}</span>` + (ev.unassigned ? ` &nbsp; <span class="unconf">${ev.unassigned} nicht zugeordnet</span>` : '')],
+      ['Würfe', `${ev.shots}`],
+      ['Frames', `${esc(ev.frames_processed ?? '?')} verarbeitet, ${esc(ev.frames_rendered ?? '?')} gerendert` + (ev.rtmp_frames ? `, ${ev.rtmp_frames} per RTMP` : '')],
+      ['Quelle', `${esc(ev.clip || '?')} <span class="tx">${esc(ev.time)}</span>`],
+    ]);
+  } else {
+    html += '<div class="nothing">live_events.json: noch nichts</div>';
+  }
+  return html;
+}
+
+function renderFootage(d) {
+  if (!d) return NOTHING;
+  if (d.error) return errBox(d.error);
+  if (!d.ok) return NOTHING;
+  const dur = s => s === undefined || s === null ? '?' : (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+  let html = '<table><tr><th>Clip</th><th class="num">Größe</th><th class="num">Dauer</th><th class="num">Format</th></tr>';
+  d.clips.forEach(c => {
+    html += `<tr><td>${esc(c.name)}</td><td class="num">${c.mb} MB</td><td class="num">${dur(c.duration_s)}</td><td class="num">${c.width ? `${c.width}x${c.height}, ${num(c.fps, 0)} fps` : '?'}</td></tr>`;
+  });
+  return html + '</table>';
+}
+
 function setSection(id, title, body) {
   const el = document.getElementById(id);
   el.innerHTML = `<h2>${title}</h2>` + body;
@@ -259,6 +337,10 @@ async function tick() {
     setSection('track', 'TRACK', renderTrack(s.track, images));
     setSection('stats', 'STATS', renderStats(s.stats));
     setSection('court', 'COURT', renderCourt(s.court, images));
+    setSection('numbers', 'NUMBERS', renderNumbers(s.numbers, images));
+    setSection('live', 'LIVE', renderLive(s.live));
+    setSection('qa', 'QA', renderQa(s.qa));
+    setSection('footage', 'FOOTAGE', renderFootage(s.footage));
     setSection('logs', 'LOGS', renderLogs(s.logs));
     syncImages();
   } catch (e) {

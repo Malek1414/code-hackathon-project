@@ -6,6 +6,8 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -16,6 +18,8 @@ DATASET_DIR = ROOT / "data" / "dataset"
 LABELS_DIR = DATASET_DIR / "labels"
 RUNS_DIR = ROOT / "runs"
 OUT_DIR = ROOT / "out"
+CLIPS_DIR = ROOT / "data" / "clips"
+QA_DIR = OUT_DIR / "qa"
 
 CLASSES = {0: "player", 1: "ball", 2: "hoop", 3: "referee"}
 IMG_SUFFIXES = {".jpg", ".jpeg", ".png"}
@@ -274,7 +278,9 @@ def track_section() -> dict:
     if meta and meta.get("last_frame") and last.get("frame") is not None:
         progress = round(100.0 * last["frame"] / max(1, meta["last_frame"]), 1)
     overlay = _stat(OUT_DIR / "overlay.mp4")
+    latest = _stat(OUT_DIR / "overlay_latest.jpg")
     return {
+        "latest_jpg": {"exists": latest is not None, "time": _hhmm(latest[0]) if latest else ""},
         "ok": True,
         "lines": total,
         "window": n,
@@ -387,6 +393,180 @@ def logs_section() -> dict:
     return {"ok": bool(items), "logs": items}
 
 
+
+# -------------------------------------------------------------- NUMBERS ----
+
+
+@_safe
+def numbers_section() -> dict:
+    path = OUT_DIR / "identities.json"
+    if not path.exists():
+        return {"ok": False, "preview": _stat(OUT_DIR / "numbers_preview.jpg") is not None}
+    data = load_json(path)
+    tracks = data.get("tracks") or {}
+    with_number = sum(1 for t in tracks.values() if isinstance(t, dict) and t.get("number") is not None)
+    players = []
+    for pl in data.get("players") or []:
+        ids = pl.get("track_ids") or []
+        votes = 0
+        reads = 0
+        for tid in ids:
+            t = tracks.get(str(tid)) or {}
+            v = t.get("votes") or {}
+            if isinstance(v, dict):
+                votes += sum(int(x) for x in v.values() if isinstance(x, (int, float)))
+            reads += int(t.get("reads") or 0)
+        players.append({
+            "key": pl.get("key"), "team": pl.get("team"), "number": pl.get("number"),
+            "tracks": len(ids), "votes": votes, "reads": reads,
+            "first_t": pl.get("first_t"), "last_t": pl.get("last_t"),
+        })
+    players.sort(key=lambda x: (-(x["votes"] or 0), str(x["key"])))
+    numbered = [x for x in players if x["number"] is not None]
+    return {
+        "ok": True,
+        "clip": data.get("clip"),
+        "tracks_total": len(tracks),
+        "tracks_numbered": with_number,
+        "players": players[:40],
+        "players_total": len(players),
+        "players_numbered": len(numbered),
+        "time": _hhmm(path.stat().st_mtime),
+        "preview": _stat(OUT_DIR / "numbers_preview.jpg") is not None,
+    }
+
+
+# ------------------------------------------------------------------- QA ----
+
+
+@_safe
+def qa_section() -> dict:
+    if not QA_DIR.is_dir():
+        return {"ok": False, "sheets": 0, "index": False}
+    sheets = [p for p in QA_DIR.iterdir() if p.is_file() and p.suffix.lower() in IMG_SUFFIXES]
+    index = QA_DIR / "index.html"
+    newest = max(sheets, key=lambda p: p.stat().st_mtime) if sheets else None
+    kinds: dict[str, int] = {}
+    for sh in sheets:
+        kind = sh.stem.split("_")[0]
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return {
+        "ok": bool(sheets) or index.exists(),
+        "sheets": len(sheets),
+        "kinds": kinds,
+        "index": index.exists(),
+        "index_time": _hhmm(index.stat().st_mtime) if index.exists() else "",
+        "newest": newest.name if newest else None,
+        "newest_time": _hhmm(newest.stat().st_mtime) if newest else "",
+    }
+
+
+# ----------------------------------------------------------------- LIVE ----
+
+
+def live_processes() -> list[str]:
+    try:
+        res = subprocess.run(["pgrep", "-fl", "vision[/.]live[/.]live"], capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+
+
+@_safe
+def live_section() -> dict:
+    procs = live_processes()
+    res: dict = {"ok": bool(procs), "running": bool(procs), "procs": procs[:3], "events": None}
+    path = OUT_DIR / "live_events.json"
+    if path.exists():
+        data = load_json(path)
+        score = data.get("score") or {}
+        teams = {}
+        for k in ("0", "1"):
+            t = score.get(k) or {}
+            teams[k] = {"points": t.get("points", 0), "fga": t.get("fga", 0), "fgm": t.get("fgm", 0)}
+        res["events"] = {
+            "clip": data.get("clip"),
+            "teams": teams,
+            "shots": len(data.get("shots") or []),
+            "unassigned": data.get("unassigned_baskets", 0),
+            "frames_processed": data.get("frames_processed"),
+            "frames_rendered": data.get("frames_rendered"),
+            "rtmp_frames": data.get("rtmp_frames"),
+            "time": _hhmm(path.stat().st_mtime),
+        }
+        res["ok"] = True
+    return res
+
+
+# -------------------------------------------------------------- FOOTAGE ----
+
+_probe_cache: dict[str, tuple[tuple, dict]] = {}
+_DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+_VIDEO_RE = re.compile(r"Video:.*?(\d{3,5})x(\d{3,5}).*?(\d+(?:\.\d+)?)\s*fps")
+
+
+def _ffmpeg_exe() -> str | None:
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def probe_clip(path: Path) -> dict:
+    """Duration/resolution/fps via ffmpeg -i (imageio_ffmpeg ships no ffprobe), cached by mtime+size."""
+    st = _stat(path)
+    if st is None:
+        return {}
+    key = (st[0], st[1])
+    hit = _probe_cache.get(str(path))
+    if hit and hit[0] == key:
+        return hit[1]
+    info: dict = {}
+    exe = _ffmpeg_exe()
+    if exe:
+        try:
+            res = subprocess.run([exe, "-hide_banner", "-i", str(path)], capture_output=True, text=True, timeout=10)
+            m = _DURATION_RE.search(res.stderr)
+            if m:
+                info["duration_s"] = round(int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)), 1)
+            v = _VIDEO_RE.search(res.stderr)
+            if v:
+                info["width"], info["height"], info["fps"] = int(v.group(1)), int(v.group(2)), float(v.group(3))
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if "duration_s" not in info:
+        try:
+            import cv2  # local import, keeps the module importable without cv2
+
+            cap = cv2.VideoCapture(str(path))
+            if cap.isOpened():
+                fps = cap.get(cv2.CAP_PROP_FPS) or 0
+                n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+                if fps > 0 and n > 0:
+                    info["duration_s"] = round(n / fps, 1)
+                    info["fps"] = round(fps, 2)
+                    info["width"], info["height"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+        except Exception:  # noqa: BLE001
+            pass
+    _probe_cache[str(path)] = (key, info)
+    return info
+
+
+@_safe
+def footage_section() -> dict:
+    if not CLIPS_DIR.is_dir():
+        return {"ok": False, "clips": []}
+    clips = sorted((p for p in CLIPS_DIR.iterdir() if p.is_file() and p.suffix.lower() in (".mp4", ".mov", ".mkv")), key=lambda p: p.name)
+    items = []
+    for c in clips:
+        st = c.stat()
+        info = probe_clip(c)
+        items.append({"name": c.name, "mb": round(st.st_size / 1e6, 1), "time": _hhmm(st.st_mtime), **info})
+    return {"ok": bool(items), "clips": items}
+
 # ------------------------------------------------------------- COLLECT ----
 
 _lock = threading.Lock()
@@ -410,6 +590,10 @@ def collect() -> dict:
             "track": track_section(),
             "stats": stats_section(),
             "court": court_section(),
+            "numbers": numbers_section(),
+            "qa": qa_section(),
+            "live": live_section(),
+            "footage": footage_section(),
             "logs": logs_section(),
             "images": images.tokens(),
         }
