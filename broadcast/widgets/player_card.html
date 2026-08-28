@@ -25,11 +25,12 @@ body{width:1920px;height:1080px;overflow:hidden;position:relative;font-family:-a
 #card .stats{display:flex;gap:8px;align-items:baseline;white-space:nowrap;line-height:1.15}
 #card .stats b{font-size:32px;font-weight:800;letter-spacing:-.02em}
 #card .stats span{font-size:28px;color:var(--muted);font-weight:600}
+body.tpl [data-field]{visibility:hidden}
 </style></head>
 <body data-widget="player_card">
 
-<div id="card" class="w glass"><div class="acc" id="acc" style="height:120px"></div><div class="number" id="no"></div>
-<div class="body"><div class="team" id="team"></div><div class="stats"><b id="pts"></b><span>PTS</span></div><div class="stats"><b id="fg"></b><span>FG,</span><b id="pct"></b></div></div></div>
+<div id="card" class="w glass"><div class="acc" id="acc" style="height:120px"></div><div class="number" id="no" data-field="number" data-align="center"></div>
+<div class="body"><div class="team" id="team" data-field="team" data-align="left"></div><div class="stats"><b id="pts" data-field="pts" data-align="left"></b><span>PTS</span></div><div class="stats"><b id="fg" data-field="fg" data-align="left"></b><span>FG,</span><b id="pct" data-field="fg_pct" data-align="left"></b></div></div></div>
 
 <script id="bbb-state" type="application/json">{"brand": "Big Ball Baller", "example": true, "title": "Landesliga Berlin", "clip_or_source": "game10.mp4", "t": 312.4, "period": 1, "clock": "05:12", "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21}, {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}], "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}, {"key": "A44", "number": 44, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 11.4, "distance_m": 388}, {"key": "A24", "number": 24, "team": 0, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 10.1, "distance_m": 402}, {"key": "A55", "number": 55, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 20.2, "distance_m": 365}, {"key": "A23", "number": 23, "team": 0, "pts": 0, "fga": 2, "fgm": 0, "fg_pct": 0.0, "possession_s": 6.4, "distance_m": 290}, {"key": "B9", "number": 9, "team": 1, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 7.7, "distance_m": 351}, {"key": "B12", "number": 12, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 12.3, "distance_m": 377}, {"key": "B13", "number": 13, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 9.0, "distance_m": 340}, {"key": "B55", "number": 55, "team": 1, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 5.2, "distance_m": 298}, {"key": "B1", "number": 1, "team": 1, "pts": 0, "fga": 1, "fgm": 0, "fg_pct": 0.0, "possession_s": 4.4, "distance_m": 255}], "last_event": {"t": 310.2, "type": "made", "team": 0, "player_key": "A5", "points": 2}, "shots": [{"team": 0, "made": true, "court_m": [3.1, 7.4]}, {"team": 0, "made": false, "court_m": [6.8, 3.2]}, {"team": 0, "made": true, "court_m": [2.2, 9.1]}, {"team": 0, "made": false, "court_m": [7.6, 11.0]}, {"team": 0, "made": true, "court_m": [4.9, 5.0]}, {"team": 1, "made": true, "court_m": [25.0, 7.9]}, {"team": 1, "made": false, "court_m": [21.4, 4.1]}, {"team": 1, "made": true, "court_m": [26.1, 6.2]}, {"team": 1, "made": false, "court_m": [20.6, 10.7]}, {"team": 1, "made": true, "court_m": [23.3, 8.8]}], "heat_image": null, "pan_deg": 97, "camera": "ok"}</script>
 <script>
@@ -51,6 +52,21 @@ function teamOf(s,i){return s.teams[i]||s.teams[0]}
 function topScorer(s,team){var ps=s.players.filter(function(p){return p.team===team});ps.sort(function(a,b){return (b.pts||0)-(a.pts||0)||(b.fgm||0)-(a.fgm||0)||(b.possession_s||0)-(a.possession_s||0)});return ps[0]}
 function findPlayer(s,key){for(var i=0;i<s.players.length;i++)if(s.players[i].key===key)return s.players[i];return null}
 
+
+function bbbLayout(s){
+  if(!s.template&&!s.layout)return;
+  document.body.classList.add(s.template?'tpl':'x');
+  var out={};
+  document.querySelectorAll('[data-field]').forEach(function(el){
+    var r=el.getBoundingClientRect();var cs=getComputedStyle(el);var size=parseFloat(cs.fontSize);
+    var align=el.getAttribute('data-align')||'left';
+    var x=align==='right'?r.right:(align==='center'?(r.left+r.right)/2:r.left);
+    out[el.getAttribute('data-field')]={x:Math.round(x),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+      baseline:Math.round(r.top+(r.height+size*0.7)/2),size:Math.round(size),weight:parseInt(cs.fontWeight,10)||400,
+      align:align,color:cs.color,box:[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)],example:el.textContent.trim()};
+  });
+  var pre=document.createElement('pre');pre.id='bbb-layout';pre.style.display='none';pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
+}
 (function(){var s=bbbState();
 var ev=s.last_event||{};var p=(ev.player_key&&findPlayer(s,ev.player_key))||topScorer(s,0)||s.players[0]||{key:'A?',team:0,pts:0,fga:0,fgm:0};
 var T=teamOf(s,p.team||0);document.getElementById('acc').style.background=T.color;
@@ -58,5 +74,5 @@ document.getElementById('no').textContent=label(p);document.getElementById('team
 document.getElementById('pts').textContent=p.pts!=null?p.pts:(2*(p.fgm||0));
 document.getElementById('fg').textContent=(p.fgm||0)+'/'+(p.fga||0);
 document.getElementById('pct').textContent=(pct(p.fg_pct!=null?p.fg_pct:(p.fga?p.fgm/p.fga:null))||'0%');
-})();
+bbbLayout(s);})();
 </script></body></html>

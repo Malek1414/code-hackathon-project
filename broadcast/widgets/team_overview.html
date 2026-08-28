@@ -28,15 +28,16 @@ body{width:1920px;height:1080px;overflow:hidden;position:relative;font-family:-a
 #ov .team .top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-left:10px}
 #ov .team .score{font-size:64px;font-weight:900;letter-spacing:-.03em;line-height:1}
 #ov .team .name{font-size:32px}
-#ov .team .stats{display:flex;gap:26px;padding-left:10px}
+#ov .team .stats{display:grid;grid-template-columns:200px 1fr;gap:26px;padding-left:10px}
 #ov .team .stats .stat .v{font-size:36px}
 #ov .team .stats .stat .l{font-size:28px}
 #ov .team .scorer{padding-left:10px;font-size:28px;color:var(--muted);font-weight:600}
 #ov .team .scorer b{color:var(--text);font-weight:800}
+body.tpl [data-field]{visibility:hidden}
 </style></head>
 <body data-widget="team_overview">
 
-<div id="ov" class="w glass"><div class="head"><div class="brand">BBB <small style="display:inline;margin:0 0 0 10px">Big Ball Baller</small></div><div class="clock" id="clock"></div></div>
+<div id="ov" class="w glass"><div class="head"><div class="brand">BBB <small style="display:inline;margin:0 0 0 10px">Big Ball Baller</small></div><div class="clock" id="clock" data-field="clock" data-align="right"></div></div>
 <div class="grid"><div class="team" id="t0"></div><div class="team" id="t1"></div></div></div>
 
 <script id="bbb-state" type="application/json">{"brand": "Big Ball Baller", "example": true, "title": "Landesliga Berlin", "clip_or_source": "game10.mp4", "t": 312.4, "period": 1, "clock": "05:12", "teams": [{"id": 0, "name": "Team A", "color": "#2f6fdb", "score": 10, "fga": 12, "fgm": 5, "fg_pct": 0.42, "possessions": 21}, {"id": 1, "name": "Team B", "color": "#c8102e", "score": 10, "fga": 11, "fgm": 5, "fg_pct": 0.45, "possessions": 19}], "players": [{"key": "A5", "number": 5, "team": 0, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 22.9, "distance_m": 410}, {"key": "A44", "number": 44, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 11.4, "distance_m": 388}, {"key": "A24", "number": 24, "team": 0, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 10.1, "distance_m": 402}, {"key": "A55", "number": 55, "team": 0, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 20.2, "distance_m": 365}, {"key": "A23", "number": 23, "team": 0, "pts": 0, "fga": 2, "fgm": 0, "fg_pct": 0.0, "possession_s": 6.4, "distance_m": 290}, {"key": "B9", "number": 9, "team": 1, "pts": 4, "fga": 3, "fgm": 2, "fg_pct": 0.67, "possession_s": 7.7, "distance_m": 351}, {"key": "B12", "number": 12, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 12.3, "distance_m": 377}, {"key": "B13", "number": 13, "team": 1, "pts": 2, "fga": 2, "fgm": 1, "fg_pct": 0.5, "possession_s": 9.0, "distance_m": 340}, {"key": "B55", "number": 55, "team": 1, "pts": 2, "fga": 3, "fgm": 1, "fg_pct": 0.33, "possession_s": 5.2, "distance_m": 298}, {"key": "B1", "number": 1, "team": 1, "pts": 0, "fga": 1, "fgm": 0, "fg_pct": 0.0, "possession_s": 4.4, "distance_m": 255}], "last_event": {"t": 310.2, "type": "made", "team": 0, "player_key": "A5", "points": 2}, "shots": [{"team": 0, "made": true, "court_m": [3.1, 7.4]}, {"team": 0, "made": false, "court_m": [6.8, 3.2]}, {"team": 0, "made": true, "court_m": [2.2, 9.1]}, {"team": 0, "made": false, "court_m": [7.6, 11.0]}, {"team": 0, "made": true, "court_m": [4.9, 5.0]}, {"team": 1, "made": true, "court_m": [25.0, 7.9]}, {"team": 1, "made": false, "court_m": [21.4, 4.1]}, {"team": 1, "made": true, "court_m": [26.1, 6.2]}, {"team": 1, "made": false, "court_m": [20.6, 10.7]}, {"team": 1, "made": true, "court_m": [23.3, 8.8]}], "heat_image": null, "pan_deg": 97, "camera": "ok"}</script>
@@ -59,11 +60,26 @@ function teamOf(s,i){return s.teams[i]||s.teams[0]}
 function topScorer(s,team){var ps=s.players.filter(function(p){return p.team===team});ps.sort(function(a,b){return (b.pts||0)-(a.pts||0)||(b.fgm||0)-(a.fgm||0)||(b.possession_s||0)-(a.possession_s||0)});return ps[0]}
 function findPlayer(s,key){for(var i=0;i<s.players.length;i++)if(s.players[i].key===key)return s.players[i];return null}
 
+
+function bbbLayout(s){
+  if(!s.template&&!s.layout)return;
+  document.body.classList.add(s.template?'tpl':'x');
+  var out={};
+  document.querySelectorAll('[data-field]').forEach(function(el){
+    var r=el.getBoundingClientRect();var cs=getComputedStyle(el);var size=parseFloat(cs.fontSize);
+    var align=el.getAttribute('data-align')||'left';
+    var x=align==='right'?r.right:(align==='center'?(r.left+r.right)/2:r.left);
+    out[el.getAttribute('data-field')]={x:Math.round(x),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+      baseline:Math.round(r.top+(r.height+size*0.7)/2),size:Math.round(size),weight:parseInt(cs.fontWeight,10)||400,
+      align:align,color:cs.color,box:[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)],example:el.textContent.trim()};
+  });
+  var pre=document.createElement('pre');pre.id='bbb-layout';pre.style.display='none';pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
+}
 (function(){var s=bbbState();
 document.getElementById('clock').textContent=(s.period?('Period '+s.period+', '):'')+(s.clock||'');
 [0,1].forEach(function(i){var T=teamOf(s,i);var p=topScorer(s,i);var el=document.getElementById('t'+i);el.style.setProperty('--t',T.color);
- el.innerHTML='<div class="top"><div class="name">'+esc(T.name)+'</div><div class="score">'+(T.score||0)+'</div></div>'
- +'<div class="stats"><div class="stat"><div class="v">'+(pct(T.fg_pct!=null?T.fg_pct:(T.fga?T.fgm/T.fga:null))||'0%')+'</div><div class="l">FG, '+(T.fgm||0)+' of '+(T.fga||0)+'</div></div><div class="stat"><div class="v">'+(T.possessions||0)+'</div><div class="l">possessions</div></div></div>'
- +'<div class="scorer">Top scorer <b>'+(p?esc(label(p))+', '+(p.pts!=null?p.pts:2*(p.fgm||0))+' pts':'none yet')+'</b></div>';});
-})();
+ el.innerHTML='<div class="top"><div class="name" data-field="name_'+i+'" data-align="left">'+esc(T.name)+'</div><div class="score" data-field="score_'+i+'" data-align="right">'+(T.score||0)+'</div></div>'
+ +'<div class="stats"><div class="stat"><div class="v" data-field="fg_'+i+'" data-align="left">'+(pct(T.fg_pct!=null?T.fg_pct:(T.fga?T.fgm/T.fga:null))||'0%')+'</div><div class="l" data-field="fg_sub_'+i+'" data-align="left">FG, '+(T.fgm||0)+' of '+(T.fga||0)+'</div></div><div class="stat"><div class="v" data-field="possessions_'+i+'" data-align="left">'+(T.possessions||0)+'</div><div class="l">possessions</div></div></div>'
+ +'<div class="scorer">Top scorer <b data-field="top_scorer_'+i+'" data-align="left">'+(p?esc(label(p))+', '+(p.pts!=null?p.pts:2*(p.fgm||0))+' pts':'none yet')+'</b></div>';});
+bbbLayout(s);})();
 </script></body></html>
