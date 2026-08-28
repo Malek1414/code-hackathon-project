@@ -36,14 +36,26 @@ DIM = (170, 170, 170)
 
 
 class Assets:
-    def __init__(self, folder: str | Path = "broadcast/assets") -> None:
+    def __init__(self, folder: str | Path = "broadcast/assets", refresh_s: float = 30.0) -> None:
         self.folder = Path(folder)
         self._cache: dict[str, np.ndarray | None] = {}
+        self._mtime: dict[str, float] = {}
+        self._checked: dict[str, float] = {}
+        self.refresh_s = refresh_s  # FRONTEND drops PNGs while the show runs: re-check the folder now and then
 
     def get(self, wid: str) -> np.ndarray | None:
         """BGRA image for the widget, resized to its geometry, or None (placeholder)."""
-        if wid in self._cache:
+        import time as _time
+
+        now = _time.monotonic()
+        if wid in self._cache and now - self._checked.get(wid, 0.0) < self.refresh_s:
             return self._cache[wid]
+        self._checked[wid] = now
+        path = self.folder / f"{wid}.png"
+        mtime = path.stat().st_mtime if path.exists() else -1.0
+        if wid in self._cache and self._mtime.get(wid) == mtime:
+            return self._cache[wid]
+        self._mtime[wid] = mtime
         img = None
         for name in (f"{wid}.png",):
             p = self.folder / name
