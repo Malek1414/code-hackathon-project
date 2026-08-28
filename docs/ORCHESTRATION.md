@@ -111,7 +111,7 @@ TRACK uses `yolo11m.pt` (COCO: person=0 → player, sports ball=32 → ball) plu
 a one-time Grounding DINO hoop box.
 
 ### LIVE mode (added 11:50)
-`vision/live/live.py --source <cam index | video path> [--realtime]`:
+`.venv/bin/python -m vision.live.live --source <cam index | video path> [--realtime]` (module form; STATS adds the path shim so the file form works too):
 - reuses TRACK's per-frame API (`vision.track.run.Tracker().step(frame) -> tracks line`)
   and STATS's incremental possession/shot logic; processes at ~10 fps, renders the
   output at source fps from the last known boxes (5 s ring buffer is the allowed delay).
@@ -122,7 +122,8 @@ a one-time Grounding DINO hoop box.
   a phone), and if env `FOLLOWCAM_RTMP_URL` is set (from `.env`, never in code or git)
   an ffmpeg subprocess (`imageio_ffmpeg`) pushes the rendered frames as H.264/FLV to
   that RTMP URL. `--source data/clips/dev60.mp4 --realtime` simulates a live camera
-  for the stage demo.
+  for the stage demo; `--replay out/dev60/tracks.jsonl` (same clip!) needs no models.
+  Stage risks and fallbacks: `docs/RISKS.md`.
 
 ## GPU schedule (one M3, 16 GB, shared MPS; added 12:02)
 
