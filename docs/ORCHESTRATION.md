@@ -16,6 +16,7 @@ done or it is blocked. Sami can talk to any session directly in its terminal.
 | **TRACK** | `vision/track/`, `out/tracks.jsonl`, `out/overlay.mp4` | detection + ByteTrack + team colors + annotated video |
 | **STATS** | `vision/stats/`, `out/events.json`, `out/stats.json` | ball possession, shot events (made/miss), per-player FG stats from `tracks.jsonl` |
 | **COURT** | `vision/court/`, `vision/dashboard/`, `out/court_calib.json`, `out/minimap.mp4`, `out/dashboard.html` | homography → 2D minimap + coach dashboard |
+| **LIVE** (added 11:50, owned by the STATS session) | `vision/live/` | live pipeline: camera/phone → detect+track → running score + stats overlay → local preview + optional RTMP push (Twitch/YouTube) with ~5 s delay |
 
 Hard rules:
 1. Python env: `.venv/bin/python` in this repo (torch 2.13 + MPS, ultralytics
@@ -84,6 +85,20 @@ class list above. `models/best.pt` = fine-tuned detector. Until it exists,
 TRACK uses `yolo11m.pt` (COCO: person=0 → player, sports ball=32 → ball) plus
 a one-time Grounding DINO hoop box.
 
+### LIVE mode (added 11:50)
+`vision/live/live.py --source <cam index | video path> [--realtime]`:
+- reuses TRACK's per-frame API (`vision.track.run.Tracker().step(frame) -> tracks line`)
+  and STATS's incremental possession/shot logic; processes at ~10 fps, renders the
+  output at source fps from the last known boxes (5 s ring buffer is the allowed delay).
+- overlay: score bar (team A : team B, running clock), shot flash on a made basket,
+  per-team FGA/FGM after a configurable interval; hotkeys `1`/`2` = +2 for team A/B,
+  `3`/`4` = +3, `z` = undo (auto-with-veto: the system calls baskets, the human corrects).
+- outputs: OpenCV preview window + MJPEG at `http://127.0.0.1:8501/stream` (for OBS or
+  a phone), and if env `FOLLOWCAM_RTMP_URL` is set (from `.env`, never in code or git)
+  an ffmpeg subprocess (`imageio_ffmpeg`) pushes the rendered frames as H.264/FLV to
+  that RTMP URL. `--source data/clips/dev60.mp4 --realtime` simulates a live camera
+  for the stage demo.
+
 ## Milestones and deadlines
 
 | Time | LABEL | TRACK | STATS | COURT |
@@ -93,6 +108,11 @@ a one-time Grounding DINO hoop box.
 | 13:30 | YOLO11n/s fine-tune on MPS (imgsz 960, ≤15 epochs, timebox 30 min) → `models/best.pt`; mAP on val printed | `overlay.mp4` with ids, teams, ball trail; shot flashes read from `events.json` if present | `stats.json` per player + team; sanity-checked against a hand count on 2 minutes of video | dashboard: shot chart on court, per-player table from `stats.json`, minimap embedded |
 | 14:15 | swap `best.pt` into TRACK, compare ball recall vs COCO | full `game10.mp4` processed | events + stats on full `game10.mp4` | dashboard reads final `events.json`/`stats.json` |
 | 14:30 | **FREEZE.** ORCH assembles: overlay + minimap side by side for the pitch video | | |
+
+LIVE milestones (STATS session, after its 12:45 events milestone): 13:15 preview
+window with live boxes + score bar from a file in `--realtime`; 13:45 hotkeys, MJPEG,
+RTMP push tested against a local ffmpeg listener (no real key needed); 14:15 run from
+the phone camera (Continuity Camera index) on the tripod rig.
 
 Fallbacks: no `best.pt` by 13:30 → COCO weights stay. Ball too unreliable for
 shots → shots from hoop-zone + player proximity only, flagged "unconfirmed".

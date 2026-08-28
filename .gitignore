@@ -25,3 +25,8 @@ runs/
 
 # third-party reference code without license, local only
 reference/thirdparty/
+
+# secrets (stream keys etc.) live in .env only
+.env
+.env.*
+!.env.example
