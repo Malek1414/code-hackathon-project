@@ -91,11 +91,11 @@ h1 .a{color:var(--accent)}
     <div>
       <h1 style="font-size:clamp(28px,3.4vw,56px)">The camera that follows the ball is the camera that keeps the stats.</h1>
       <ul class="lines" style="font-size:clamp(14px,1.25vw,21px)">
-        <li><span class="n">01</span><span><span class="ph">{N_FRAMES}</span> frames of a real Landesliga game auto-labeled with Grounding DINO, 3395 boxes, <span class="m">no human drew a box.</span></span></li>
-        <li><span class="n">02</span><span>YOLO11n fine-tuned in 25 minutes on a laptop: players 0.96, hoop 0.97 mAP50. Ball <span class="ph">{MAP_BALL}</span>, <span class="m">85 examples are too few, the rig is the data machine.</span></span></li>
+        <li><span class="n">01</span><span><span class="ph">300 frames</span> of a real Landesliga game auto-labeled with Grounding DINO, 3395 boxes, no human drew a box. <span class="m">Plus 120 ball frames the coach labeled on the laptop.</span></span></li>
+        <li><span class="n">02</span><span>YOLO11n fine-tuned in 25 minutes on a laptop: players 0.96, hoop 0.97 mAP50. Ball fine-tune on the coach's labels: <span class="ph">false balls 36 to 8</span> in 40 held-out frames, recall 43 to 53 percent. <span class="m">Every filmed game adds data.</span></span></li>
         <li><span class="n">03</span><span>ByteTrack keeps ids, teams by jersey colour, <span class="m">jersey numbers merged into player identities.</span></span></li>
         <li><span class="n">04</span><span>Feet projected onto a 2D court, <span class="m">minimap next to the video.</span></span></li>
-        <li><span class="n">05</span><span>Shot events from ball and hoop geometry, FGA, FGM, FG% per player. <span class="ph">{SHOTS_FOUND}</span> <span class="m">in the clip.</span></span></li>
+        <li><span class="n">05</span><span>Shot events from ball and hoop geometry, FGA, FGM, FG% per player. <span class="ph">24 attempts, 10 made</span> <span class="m">in 10 minutes of game.</span></span></li>
         <li><span class="n">06</span><span>Live mode at about 10 fps from the phone: running score, <span class="m">auto plus two with human veto, RTMP out.</span></span></li>
       </ul>
     </div>
