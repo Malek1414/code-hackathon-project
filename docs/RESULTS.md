@@ -181,6 +181,23 @@ metre-precise distances. Stride > 1 in the camera chain is unusable (stride 2
 diverges by thousands of px on a real pan), measured, so chains run at stride
 1 and half resolution (~25 fps CPU, cached per clip).
 
+## Human check, 24 shots, Sami (STATS on game10)
+
+Sami reviewed every shot the pipeline called on the 10 minute game10 clip
+(verdict sheet `out/qa/verdicts_game10.json`, evaluation
+`out/qa/stats_eval_game10.json`, STATS role, 14:35):
+
+| What | Result |
+|---|---|
+| Shot attempt detection | 22 real of 23 called, precision 96 %; 0 uncalled attempts found by QA |
+| Made / miss verdict | 16 of 22 correct, 73 %; 4 of the 6 errors are rim-outs the system called makes, 1 lost ball at the rim flagged "unconfirmed", 1 make called a miss |
+| Shooter's team | 17 of 22 correct, 77 % |
+| Shooter identity | 6 of 15 correct on the tracks the reviewer saw, 40 %; 7 attributions changed after a fix and are not re-judged yet |
+| Pipeline totals | 24 attempts, 10 made called, 235 possessions, 616 players with distance from the court calibration, 48 camera cuts handled |
+| Live mode | phone camera 1080p30, overlay 14 fps with detection on the Mac under full load, score auto-call with human veto, 2D court panel |
+
+Re-evaluation on TRACK's game10 v2 (ball fine-tune) was pending at 14:45.
+
 ## Rig tracker (`software/ball_tracker_yolo.py`, RIG)
 
 YOLO ball detector for the physical rig, same CLI and serial protocol as
