@@ -19,6 +19,7 @@ def test_build_matches_contract():
         assert CONTRACT_PLAYER_KEYS <= set(p) and p["distance_m"] is None
     shooter = next(p for p in stats["players"] if p["id"] == 2)
     assert (shooter["fga"], shooter["fgm"], shooter["fg_pct"]) == (1, 1, 1.0)
+    assert all(p["fg_pct"] is None for p in stats["players"] if p["fga"] == 0)
     assert shooter["possession_s"] > 1.0
     assert {(t["team"], t["fga"], t["fgm"]) for t in stats["teams"]} == {(0, 1, 1), (1, 0, 0)}
 

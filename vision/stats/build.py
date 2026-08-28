@@ -3,7 +3,7 @@
     .venv/bin/python -m vision.stats.build --tracks out/tracks.jsonl --clip data/clips/game10.mp4
     .venv/bin/python -m vision.stats.build --fixture made      # synthetic smoke run
 
-Output follows the contract in docs/ORCHESTRATION.md. Extras that readers may
+Output follows the contract in docs/ORCHESTRATION.md (fg_pct is null when fga is 0). Extras that readers may
 ignore: `possessions` in events.json (for overlays), `shooter_confirmed` and
 `release_frame` per shot. `distance_m` is filled when a court calibration
 (`out/court_calib.json`, key `H_px_to_m`, optional per-keyframe `frames`) is
@@ -189,7 +189,7 @@ def player_stats(
         row = rows.setdefault(
             key,
             {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "fga": 0, "fgm": 0,
-             "fg_pct": 0.0, "possession_s": 0.0, "distance_m": None, "_seen": 0},
+             "fg_pct": None, "possession_s": 0.0, "distance_m": None, "_seen": 0},
         )
         row["id"] = min(row["id"], pid)
         row["track_ids"].append(pid)
@@ -206,7 +206,7 @@ def player_stats(
             continue
         row.pop("_seen")
         row["track_ids"].sort()
-        row["fg_pct"] = round(row["fgm"] / row["fga"], 3) if row["fga"] else 0.0
+        row["fg_pct"] = round(row["fgm"] / row["fga"], 3) if row["fga"] else None
         row["possession_s"] = round(row["possession_s"], 1)
         if row["distance_m"] is not None:
             row["distance_m"] = round(row["distance_m"], 1)
@@ -279,7 +279,8 @@ def summary(events: dict, stats: dict) -> str:
     lines.append("players (key team fga fgm fg% poss_s tracks):")
     for p in stats["players"][:12]:
         lines.append(
-            f"  {p['key']:>6} {p['team']:>2} {p['fga']:>3} {p['fgm']:>3} {p['fg_pct']:.2f} {p['possession_s']:6.1f}"
+            f"  {p['key']:>6} {p['team']:>2} {p['fga']:>3} {p['fgm']:>3} "
+            f"{'  - ' if p['fg_pct'] is None else f'{p['fg_pct']:.2f}'} {p['possession_s']:6.1f}"
             f"  {len(p['track_ids'])}"
         )
     for t in stats["teams"]:
