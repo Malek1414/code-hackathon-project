@@ -20,6 +20,7 @@ import numpy as np
 from .common import (
     BG,
     META,
+    OUT,
     QA_DIR,
     ROOT,
     TEAM_COLORS,
@@ -40,6 +41,32 @@ from .common import (
 CROP_H, CROP_W, COLS, MIN_CONF, MARGIN = 240, 120, 15, 0.5, 0.08
 TEAM_ORDER = (0, 1, -1)
 JERSEY_HINT = {0: "blue jerseys", 1: "black or red jerseys", -1: "grey/white or unsure"}
+OFF = "off"  # pseudo band: off court per COURT's calibration (bench, spectators, referees at the table)
+OFF_COLOR = (60, 60, 255)
+
+
+def load_court(clip: Path):
+    """COURT's calibration for this clip if present (vision.court.project), else None."""
+    for cand in (OUT / f"court_calib_{clip.stem}.json", OUT / "court_calib.json"):
+        if cand.exists():
+            try:
+                from vision.court.project import load_calibration  # COURT owns this module
+
+                return load_calibration(cand), cand
+            except Exception as exc:  # calibration format moved on, the sheet must still render
+                print(f"calibration {cand.name} unusable: {exc}")
+                return None, None
+    return None, None
+
+
+def on_court_flags(cal, frame: int, feet: list[list[float]]) -> list[bool | None]:
+    """True on court, False off court, None when the frame is uncalibrated."""
+    if cal is None or not feet:
+        return [None] * len(feet)
+    pts = cal.project(frame, feet)
+    if not np.isfinite(pts).all():
+        return [None] * len(feet)
+    return [bool(v) for v in cal.on_court(pts)]
 
 
 def crop_player(img: np.ndarray, p: dict, frame: int) -> np.ndarray:
@@ -96,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
                 break
         rounds += 1
     picks.sort(key=lambda fp: fp[0])
+    cal, calib_path = load_court(clip)
     grab = FrameGrabber(clip)
-    crops: dict[int, list[np.ndarray]] = {t: [] for t in TEAM_ORDER}
+    crops: dict = {t: [] for t in TEAM_ORDER}
+    crops[OFF] = []
     listed = []
     last_frame, img = None, None
     for frame, p in picks:
@@ -106,20 +135,42 @@ def main(argv: list[str] | None = None) -> int:
             last_frame = frame
         if img is None:
             continue
-        team = p.get("team", -1) if p.get("team", -1) in crops else -1
-        crops[team].append(crop_player(img, p, frame))
-        listed.append({"frame": frame, "id": p["id"], "team": p.get("team", -1), "conf": p.get("conf")})
+        team = p.get("team", -1) if p.get("team", -1) in TEAM_COLORS else -1
+        on = on_court_flags(cal, frame, [p.get("foot") or [(p["bbox"][0] + p["bbox"][2]) / 2, p["bbox"][3]]])[0]
+        tile_img = crop_player(img, p, frame)
+        if on is False:
+            put_text(tile_img, "AUS", (CROP_W - 46, 22), 0.6, OFF_COLOR, 2)
+            crops[OFF].append(tile_img)
+        else:
+            crops[team].append(tile_img)
+        listed.append({"frame": frame, "id": p["id"], "team": p.get("team", -1), "conf": p.get("conf"), "on_court": on})
     grab.close()
 
     counts_all = {t: 0 for t in TEAM_ORDER}
+    off_all = uncal_all = 0
     for f in frames:
-        for p in f.get("players", []):
+        pl = f.get("players", [])
+        for p in pl:
             counts_all[p.get("team", -1) if p.get("team", -1) in counts_all else -1] += 1
+        if cal is not None and pl:
+            flags = on_court_flags(cal, f["frame"], [p.get("foot") or [(p["bbox"][0] + p["bbox"][2]) / 2, p["bbox"][3]] for p in pl])
+            off_all += sum(1 for v in flags if v is False)
+            uncal_all += sum(1 for v in flags if v is None)
+    total_all = sum(counts_all.values())
     bands = []
     width = COLS * (CROP_W + 6) + 6
-    for t in TEAM_ORDER:
-        color = TEAM_COLORS[t]
-        bands.append(band_label(width, f"{TEAM_NAMES[t]}   {JERSEY_HINT[t]}   {len(crops[t])} crops here, {counts_all[t]} detections in tracks", color))
+    for t in TEAM_ORDER + (OFF,):
+        color = OFF_COLOR if t == OFF else TEAM_COLORS[t]
+        if t == OFF:
+            if cal is None:
+                continue
+            head_txt = (
+                f"off court per {calib_path.name}   {len(crops[OFF])} crops here, {off_all} of {total_all - uncal_all} calibrated detections "
+                f"({100 * off_all / max(1, total_all - uncal_all):.0f}%) stand off the court: bench, spectators, table"
+            )
+        else:
+            head_txt = f"{TEAM_NAMES[t]}   {JERSEY_HINT[t]}   {len(crops[t])} crops here, {counts_all[t]} detections in tracks"
+        bands.append(band_label(width, head_txt, color))
         grid = tile(crops[t], COLS) if crops[t] else band_label(width, "none", (120, 120, 120))
         if grid.shape[1] < width:
             pad = np.full((grid.shape[0], width - grid.shape[1], 3), BG, np.uint8)
@@ -129,14 +180,29 @@ def main(argv: list[str] | None = None) -> int:
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     head = [
         f"team check   {clip_label}   {len(listed)} random player crops from {len({f for f, _ in picks})} frames (seed {args.seed})",
-        "every crop sits in the band of its assigned team. a jersey that does not match its band = team error. frame border = overlay color of that team",
+        "every crop sits in the band of its assigned team. a jersey that does not match its band = team error. frame border = overlay color of that team"
+        + ("; last band = off court per calibration (AUS), these should not count as players" if cal is not None else ""),
         time.strftime("generated %Y-%m-%d %H:%M:%S"),
     ]
     sheet = with_header(body, head, 0.9)
     args.out.mkdir(parents=True, exist_ok=True)
     save_jpg(args.out / "teams.jpg", sheet, 88)
-    (args.out / "teams.json").write_text(json.dumps({"clip": clip_label, "seed": args.seed, "counts_all": counts_all, "sampled": listed}, indent=1))
-    print(f"{len(listed)} crops: " + ", ".join(f"{TEAM_NAMES[t]} {len(crops[t])}" for t in TEAM_ORDER) + f" -> {args.out / 'teams.jpg'}")
+    (args.out / "teams.json").write_text(
+        json.dumps(
+            {
+                "clip": clip_label, "seed": args.seed, "counts_all": counts_all,
+                "calibration": str(calib_path.relative_to(ROOT)) if calib_path else None,
+                "off_court_all": off_all if cal is not None else None, "uncalibrated_all": uncal_all if cal is not None else None,
+                "sampled": listed,
+            },
+            indent=1,
+        )
+    )
+    print(
+        f"{len(listed)} crops: " + ", ".join(f"{TEAM_NAMES[t]} {len(crops[t])}" for t in TEAM_ORDER)
+        + (f", off court {len(crops[OFF])} ({off_all}/{total_all - uncal_all} overall)" if cal is not None else ", no calibration")
+        + f" -> {args.out / 'teams.jpg'}"
+    )
     return 0
 
 
