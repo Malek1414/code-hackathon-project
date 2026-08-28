@@ -52,7 +52,7 @@ TORSO_TOP, TORSO_BOTTOM = 0.15, 0.60
 TORSO_X0, TORSO_X1 = 0.05, 0.95  # middle 90 % of the width: neighbours out, a 55 still whole (80 % cut it to 5)
 SWITCH_MIN_CROPS = 2  # crops of the final color after >= 1 crop of the other color = id switch
 MAX_SIDE = 256  # px, longest side of the crop fed to the OCR
-CPU_THREADS = 4
+CPU_THREADS = int(__import__("os").environ.get("NUMBERS_THREADS", "2"))  # ORCH: keep the OCR at ~2 cores while LABEL trains
 MIN_CONF = 0.4
 MIN_READS = 2
 STRONG_READ = 0.9  # a single read this sure with no competing read is enough (measured: 1.00 reads were all right)
@@ -145,6 +145,7 @@ def get_reader():
     import torch
 
     torch.set_num_threads(CPU_THREADS)
+    cv2.setNumThreads(1)
     return easyocr.Reader(["en"], gpu=False, verbose=False)
 
 
