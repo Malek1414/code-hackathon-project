@@ -3,8 +3,9 @@
     .venv/bin/python -m vision.numbers.eval [--verdicts out/qa/verdicts_dev60.json]
 
 QA schema (vision/qa): "numbers" cards carry key, track_ids, detected, true_number
-(null = detected is right when detected is set) and unreadable; "shots" carry
-player_id, number, number_team. Cards are matched to the current identities by
+(null = detected is right when detected is set) and unreadable (= the card's crops
+were too small to judge, counts as unverified); "shots" carry player_id, number,
+number_team. Cards are matched to the current identities by
 key first, then by track_ids overlap, so a re-merge that changed keys still
 scores. Prints per-card verdicts and totals; exit code 1 when something is wrong.
 """
@@ -41,7 +42,8 @@ def score(identities: dict, verdicts: dict) -> tuple[list[str], int, int, int]:
         if truth is None and card.get("detected") is not None and not card.get("unreadable"):
             truth = card["detected"]
         if card.get("unreadable"):
-            status = "ok (unreadable, open)" if p["number"] is None else f"WRONG: read {p['number']} on an unreadable shirt"
+            # "nicht lesbar" on the QA page = the crops were too small for Sami, not a verdict
+            status = "unverified (unreadable card)"
         elif truth is None:
             status = "no label"
         elif p["number"] is None:

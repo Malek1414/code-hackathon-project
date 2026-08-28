@@ -113,6 +113,8 @@ def test_eval_scores_cards_by_key_then_track_ids():
                 "shots": [{"n": 1, "t": 56.96, "player_id": 805, "number": 9, "number_team": 1}]}
     lines, right, wrong, open_ = score(identities, verdicts)
     assert (right, wrong, open_) == (3, 0, 0) and len(lines) == 4
+    verdicts["numbers"][0]["unreadable"] = True  # card too small to judge: neither right nor wrong
+    assert score(identities, verdicts)[1:] == (2, 0, 0)
 
 
 def test_group_players_uses_switch_t_as_start_after_an_id_jump():

@@ -1,0 +1,10 @@
+{
+ "clip": "data/clips/dev60.mp4",
+ "source": "Sami's QA verdicts out/qa/verdicts_dev60.json (reviewed 2026-08-28 11:02 UTC) + ORCH's screenshots; anchored by frame + box, not by track id, because TRACK re-runs renumber the ids",
+ "players": [
+  {"label": "free-throw shooter, black/red #9, back to the camera", "frame": 2900, "box": [1360, 504, 1484, 887], "team": 1, "number": 9},
+  {"label": "blue #55 alone left of the key", "frame": 2530, "box": [704, 291, 871, 754], "team": 0, "number": 55},
+  {"label": "blue player next to #55, Sami read #4 on him; the old A55 group wrongly swallowed him via the neighbour's 55 (full-width crops)", "frame": 2530, "box": [1035, 351, 1173, 722], "team": 0, "number": 4, "not_number": 55, "may_be_open": true},
+  {"label": "blue #5 (confirmed correct by Sami)", "key": "A5", "team": 0, "number": 5}
+ ]
+}
