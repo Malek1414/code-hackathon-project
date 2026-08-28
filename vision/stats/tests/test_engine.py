@@ -86,3 +86,19 @@ def test_static_false_ball_is_dropped_while_real_ball_flies():
     engine.finish()
     assert engine.dropped_static >= 10
     assert [(s.player_id, s.made) for s in engine.shots] == [(2, True)]
+
+
+def test_hoop_relative_blacklist_drops_wall_fixture_even_without_hoop():
+    frames = synthetic_scenario("pass")
+    hx, hy = (FIXTURE_HOOP[0] + FIXTURE_HOOP[2]) / 2, (FIXTURE_HOOP[1] + FIXTURE_HOOP[3]) / 2
+    rel = (-206.0, 62.0)
+    for n, fr in enumerate(frames):
+        if 1.0 <= fr.t < 1.4:
+            fr.ball = Ball(center=(hx + rel[0] + 3, hy + rel[1] - 2), conf=0.5)
+            if n % 2:
+                fr.hoops = []  # hoop missing in every other frame: the absolute position is remembered
+    engine = StatsEngine(dt=0.02, ball_blacklist_rel=[rel])
+    for fr in frames:
+        engine.push(fr)
+    engine.finish()
+    assert engine.dropped_blacklist == 20

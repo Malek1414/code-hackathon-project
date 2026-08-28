@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import time
 from collections import defaultdict, deque
@@ -157,8 +158,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ffmpeg failed ({rc})")
         return 1
     tmp.replace(dst)
+    stamp = time.strftime("%H%M%S")
+    stamped = args.out / f"ball_check_{stamp}.mp4"
+    shutil.copyfile(dst, stamped)
+    for old in sorted(args.out.glob("ball_check_[0-9]*.mp4"))[:-3]:
+        old.unlink()
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     info = {
+        "video": stamped.name,
         "clip": clip_label,
         "frames": n,
         "ball_frames": n_ball,

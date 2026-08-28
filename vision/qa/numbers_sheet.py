@@ -16,7 +16,7 @@ import numpy as np
 from .common import BG, OUT, TEAM_COLORS, FrameGrabber, fmt_t, put_text, read_json, save_jpg
 
 IDENTITIES = OUT / "identities.json"
-CROP_H, N_CROPS, MIN_GAP_FRAMES = 200, 3, 50
+CROP_H, N_CROPS, MIN_GAP_FRAMES = 320, 3, 50  # 320 px = about 3x the native torso height on these clips
 TOP, BOTTOM, SIDE = 0.02, 0.68, 0.12  # crop rows 2..68 % of the box (head to waist), 12 % extra width
 TEAM_LETTER = {0: "A", 1: "B", -1: "X"}
 
@@ -43,8 +43,13 @@ def pick_boxes(
                 x1, y1, x2, y2 = p["bbox"]
                 cands.append(((x2 - x1) * (y2 - y1), f["frame"], t, p["id"], p["bbox"]))
     cands.sort(reverse=True)
+    # back views read best: among the larger half of the boxes prefer the
+    # widest relative to its height (shoulders square to the camera)
+    keep = max(6, len(cands) // 2)
+    pool = cands[:keep]
+    pool.sort(key=lambda c: (c[4][2] - c[4][0]) / max(1.0, c[4][3] - c[4][1]), reverse=True)
     picked: list[tuple[int, float, int, list[float]]] = []
-    for _, frame, t, pid, bbox in cands:
+    for _, frame, t, pid, bbox in pool:
         if all(abs(frame - q[0]) >= MIN_GAP_FRAMES for q in picked):
             picked.append((frame, t, pid, bbox))
         if len(picked) >= N_CROPS:
@@ -61,7 +66,7 @@ def crop_torso(img: np.ndarray, bbox: list[float]) -> np.ndarray:
     if crop.size == 0:
         return np.full((CROP_H, CROP_H // 2, 3), BG, np.uint8)
     s = CROP_H / crop.shape[0]
-    return cv2.resize(crop, (max(1, int(crop.shape[1] * s)), CROP_H), interpolation=cv2.INTER_CUBIC)
+    return cv2.resize(crop, (max(1, int(crop.shape[1] * s)), CROP_H), interpolation=cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA)
 
 
 def safe_name(key: str) -> str:

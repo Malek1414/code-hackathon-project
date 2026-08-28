@@ -78,6 +78,7 @@ class ShotParams:
     release_max_skips: int = 4  # stray samples tolerated inside the flight chain
     release_max_speed_diam_s: float = 90.0  # a real shot stays under ~70 ball diameters per second; static-junk jumps are >100
     release_min_rise_diam_s: float = 5.0  # slower vertical motion than this is the ball in the hands, not in flight
+    release_two_sample_max_gap_s: float = 0.3  # a 2-sample chain with a bigger hole cannot be trusted
     hoop_match_widths: float = 1.5  # same hoop in two frames if centers are this close
 
 
@@ -448,6 +449,8 @@ class ShotDetector:
         dt = b.t - a.t
         if dt <= 0:
             return None
+        if len(chain) == 2 and dt > p.release_two_sample_max_gap_s:
+            return None  # one stray sample would decide the shooter: leave it to the fallback (unconfirmed)
         vx = (b.ball.center[0] - a.ball.center[0]) / dt
         vy = (b.ball.center[1] - a.ball.center[1]) / dt
         back = min(p.release_back_samples * dt, p.release_back_max_s)

@@ -233,16 +233,17 @@ def _ball_section(out: Path) -> str:
         )
     if rec.get("frames_total"):
         parts.append(f"Stichprobe ball_recall.jpg: {rec['ball_frames_total']} von {rec['frames_total']} Frames mit Ball-Box.")
+    name = chk.get("video") if chk.get("video") and (out / chk["video"]).exists() else "ball_check.mp4"
     video = (
-        '<video controls muted playsinline preload="metadata" src="ball_check.mp4"></video>'
-        if (out / "ball_check.mp4").exists()
+        f'<video controls muted playsinline preload="metadata" src="{name}"></video>'
+        if (out / name).exists()
         else '<div class="empty">ball_check.mp4 wird noch gebaut.</div>'
     )
     return f"""
 <div class="ball">
   <div class="cap">Worauf achten: jede gelbe Box, die auf einem Wandobjekt (Leuchten, Schilder, Zuschauer) sitzt, ist ein Fehler. Zaehle sie. Rote x sind Kandidaten, die das System selbst verworfen hat (S statisch, R Radius, H Kopf, G Gate).</div>
   {video}
-  <div class="links"><a href="ball_check.mp4" target="_blank">ball_check.mp4</a><a href="ball_recall.jpg" target="_blank">ball_recall.jpg (40 Zufallsframes)</a></div>
+  <div class="links"><a href="{name}" target="_blank">{name}</a><a href="ball_recall.jpg" target="_blank">ball_recall.jpg (40 Zufallsframes)</a></div>
   <div class="cap">{html.escape(' '.join(parts) if parts else 'Noch keine Ball-Auswertung.')}</div>
   <div class="row">
     <label>gelbe Boxen an der Wand gezaehlt: <input type="number" class="num" name="wall_hits" min="0" step="1" placeholder="Anzahl"></label>
@@ -262,7 +263,9 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
     )
     shots_html = "".join(_shot_block(s) for s in sheets) if sheets else '<div class="empty">Noch keine Wuerfe in events.json.</div>'
     cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers)) if numbers else '<div class="empty">Noch keine identities.json.</div>'
-    manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers})
+    chk = read_json(out / "ball_check.json") or {}
+    ball_video = {k: chk.get(k) for k in ("video", "generated", "ball_frames", "frames", "rejects", "rejects_file")}
+    manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers, "ball_video": ball_video})
     stored_js = json.dumps({"reviewed": stored.get("reviewed"), "uncalled": stored.get("uncalled_shots", 0), "shots": stored.get("shots", []), "numbers": stored.get("numbers", [])})
     page = PAGE.replace("{{BALL}}", _ball_section(out)).replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
         "{{META}}",
@@ -362,7 +365,7 @@ function state() {
       number: numVal("num" + s.n), number_team: t === null ? null : Number(t),
       note: ($('input[name="n' + s.n + '"]') || {}).value || "" };
   });
-  const ball = { wall_hits: numVal("wall_hits"), note: ($('input[name="ball_note"]') || {}).value || "" };
+  const ball = { wall_hits: numVal("wall_hits"), note: ($('input[name="ball_note"]') || {}).value || "", video: MANIFEST.ball_video || null };
   const numbers = MANIFEST.numbers.map((c, i) => ({ key: c.key, track_ids: c.track_ids, team: c.team, detected: c.detected,
     true_number: numVal("nn" + i), unreadable: !!($('input[name="un' + i + '"]') || {}).checked }));
   return { shots, numbers, ball, uncalled: Number($("#uncalled").value || 0), saved: new Date().toISOString() };

@@ -40,6 +40,7 @@ def build(
     image_height: float = 1080.0,
     on_court_filter: bool = True,
     bench_line_frac: float = 0.0,
+    ball_blacklist_rel: list[tuple[float, float]] | None = None,
     possession_params: PossessionParams = PossessionParams(),
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
@@ -50,6 +51,7 @@ def build(
     engine = StatsEngine(
         dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params, cuts=cuts,
         calib=calib, image_height=image_height, on_court_filter=on_court_filter, bench_line_frac=bench_line_frac,
+        ball_blacklist_rel=ball_blacklist_rel,
     )
     for fr in frames:
         engine.push(fr)
@@ -272,6 +274,18 @@ def court_distances(calib_path: Path, tracks_path: Path) -> dict[int, float] | N
         return None
 
 
+def track_blacklist(tracks_path: Path) -> list[tuple[float, float]]:
+    """TRACK's hoop-relative wall-fixture positions from out/track_summary.json."""
+    summary = tracks_path.parent / "track_summary.json"
+    if not summary.exists():
+        return []
+    try:
+        d = json.loads(summary.read_text())
+    except json.JSONDecodeError:
+        return []
+    return [(float(v[0]), float(v[1])) for v in d.get("ball_blacklist_rel") or [] if len(v) >= 2]
+
+
 def meta_value(tracks_path: Path, key: str) -> float | None:
     meta = tracks_path.parent / "tracks_meta.json"
     if not meta.exists():
@@ -397,6 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         image_height=image_height,
         on_court_filter=not args.no_court_filter,
         bench_line_frac=args.bench_line_frac,
+        ball_blacklist_rel=track_blacklist(Path(args.tracks)) if not args.fixture else None,
         possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
     out.mkdir(parents=True, exist_ok=True)

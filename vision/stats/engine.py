@@ -131,6 +131,7 @@ class StatsEngine:
         image_height: float = 1080.0,
         on_court_filter: bool = True,
         bench_line_frac: float = 0.0,
+        ball_blacklist_rel: list[tuple[float, float]] | None = None,
     ) -> None:
         self.fps = fps
         self.max_gap_s = max_gap_s
@@ -147,6 +148,11 @@ class StatsEngine:
         self._raw: deque[tuple[float, float, float, float]] = deque()  # t, x, y, diam of every raw ball sample
         self.dropped_balls = 0
         self.dropped_static = 0
+        self.dropped_blacklist = 0
+        # TRACK's wall fixtures as offsets from the hoop center (out/track_summary.json ball_blacklist_rel);
+        # remembered as absolute positions for frames without a hoop box
+        self.blacklist_rel = [(float(x), float(y)) for x, y in (ball_blacklist_rel or [])]
+        self._blacklist_abs: list[tuple[float, float, float]] = []  # t, x, y
 
     # --- public ---------------------------------------------------------------
 
@@ -174,12 +180,31 @@ class StatsEngine:
             self.dropped_balls += 1
         if self.court_filter is not None:
             self.court_filter.apply(fr)
+        if self.blacklist_rel:
+            self._apply_blacklist(fr)
         if fr.ball is not None:
             self._raw.append((fr.t, fr.ball.center[0], fr.ball.center[1], _diam(fr)))
             while self._raw and fr.t - self._raw[0][0] > 2 * self.static_window_s + 1.0:
                 self._raw.popleft()
         self._queue.append(fr)
         return done + self._drain(final=False)
+
+    def _apply_blacklist(self, fr: Frame, tol_px: float = 14.0, hold_s: float = 3.0) -> None:
+        if fr.hoops:
+            h = fr.hoops[0]
+            cx, cy = (h[0] + h[2]) / 2, (h[1] + h[3]) / 2
+            self._blacklist_abs = [(fr.t, cx + dx, cy + dy) for dx, dy in self.blacklist_rel]
+        else:
+            self._blacklist_abs = [b for b in self._blacklist_abs if fr.t - b[0] <= hold_s]
+        if fr.ball is None:
+            return
+        x, y = fr.ball.center
+        for _t, bx, by in self._blacklist_abs:
+            if abs(x - bx) <= tol_px and abs(y - by) <= tol_px:
+                fr.ball = None
+                self.dropped_balls += 1
+                self.dropped_blacklist += 1
+                return
 
     def _is_static_junk(self, fr: Frame) -> bool:
         """A 'ball' that sits at the same pixel position for several samples
