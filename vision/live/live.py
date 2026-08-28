@@ -42,7 +42,8 @@ FLASH_S = 1.5
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--source", required=True, help="camera index (0, 1, ...) or video path")
+    ap.add_argument("--source", default=None, help="camera index (0, 1, ...) or video path")
+    ap.add_argument("--list-sources", action="store_true", help="probe camera indices 0-4 and exit")
     ap.add_argument("--realtime", action="store_true", help="pace a video file like a live camera")
     ap.add_argument("--device", default="mps")
     ap.add_argument("--process-fps", type=float, default=10.0, help="target detection rate")
@@ -57,6 +58,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights", default=None, help="single contract model (LABEL's best.pt)")
     ap.add_argument("--replay", default=None, help="tracks.jsonl to replay instead of running the models")
     return ap.parse_args(argv)
+
+
+def list_sources(max_index: int = 4) -> list[tuple[int, int, int, float]]:
+    """(index, width, height, fps) for every camera that opens. On macOS the
+    iPhone shows up as an extra index when Continuity Camera is active."""
+    found = []
+    for i in range(max_index + 1):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                h, w = frame.shape[:2]
+                found.append((i, w, h, cap.get(cv2.CAP_PROP_FPS) or 0.0))
+        cap.release()
+    return found
 
 
 def open_source(src: str) -> tuple[cv2.VideoCapture, bool, float]:
@@ -131,6 +147,13 @@ class Worker(threading.Thread):
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     args = parse_args(argv)
+    if args.list_sources:
+        for i, w, h, fps in list_sources():
+            print(f"--source {i}: {w}x{h} @ {fps:g} fps")
+        return 0
+    if args.source is None:
+        print("--source is required (camera index or video path); --list-sources probes cameras", file=sys.stderr)
+        return 2
     load_dotenv(".env")
 
     cap, is_cam, src_fps = open_source(args.source)
