@@ -36,6 +36,12 @@ struct ContentView: View {
     @State private var summary: SessionSummary?
     @AppStorage("didOnboard") private var didOnboard = false
     @State private var showGuide = false
+    // WHOOP app credentials (reuse the HUSTLR registration: add the redirect
+    // URI followcam://whoop-callback to it at developer.whoop.com)
+    @State private var whoopClientID = Keychain.get(KeychainKey.whoopClientID)
+        ?? "fcdd77dd-47c5-4530-857a-014a480437b0"
+    @State private var whoopSecret = ""
+    @State private var whoopStatus: String?
 
     var body: some View {
         ZStack {
@@ -244,11 +250,35 @@ struct ContentView: View {
                     }
                 }
                 Section("WHOOP") {
+                    TextField("Client ID", text: $whoopClientID)
+                        .font(.system(.footnote, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    SecureField("Client secret", text: $whoopSecret)
+                        .font(.system(.footnote, design: .monospaced))
+                    Button("Save keys") {
+                        WhoopClient.configure(clientID: whoopClientID, secret: whoopSecret)
+                        whoopSecret = ""
+                        whoopStatus = "Keys saved"
+                    }
+                    .disabled(whoopClientID.isEmpty || whoopSecret.isEmpty)
                     Button(whoop.connected ? "Connected — sync latest workout" : "Connect WHOOP") {
                         Task {
-                            try? await whoop.connect()
-                            _ = try? await WhoopClient.shared.exportLatestWorkout()
+                            do {
+                                if !whoop.connected { try await whoop.connect() }
+                                let w = try await WhoopClient.shared.exportLatestWorkout()
+                                whoopStatus = w.map {
+                                    "Synced workout: strain \($0.score?.strain.map { String(format: "%.1f", $0) } ?? "–"), max HR \($0.score?.maxHeartRate.map { String(Int($0)) } ?? "–")"
+                                } ?? "Connected — no workout in the last 24h"
+                            } catch {
+                                whoopStatus = error.localizedDescription
+                            }
                         }
+                    }
+                    if let status = whoopStatus {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 }
                 Section {

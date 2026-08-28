@@ -10,9 +10,11 @@ final class PanController: ObservableObject {
     @Published var invert = false
 
     static let minAngle = 40.0, maxAngle = 140.0
-    private let gainDegPerFrame = 6.0     // deg per full half-frame of error
+    private let deadband = 0.035          // |error| below this: subject is centered, hold
+    private let rateDegPerSec = 180.0     // full-frame error (0.5) pans at 90 deg/s
     private let sendInterval = 1.0 / 15.0 // firmware slews at ~133 deg/s; 15 Hz is plenty
     private var lastSend = Date.distantPast
+    private var lastUpdate: Date?
     private var task: URLSessionWebSocketTask?
 
     func connect(host: String) {
@@ -32,10 +34,17 @@ final class PanController: ObservableObject {
     }
 
     /// `centerX` is the tracked subject's Vision-normalized center (0…1).
+    /// Proportional rate control, frame-rate independent: a centered subject
+    /// holds the angle (deadband), an off-center one pans toward it at a rate
+    /// proportional to the offset — no per-frame integrator windup.
     func update(centerX: Double) {
-        let error = centerX - 0.5
-        let delta = gainDegPerFrame * 2 * error * (invert ? -1 : 1)
-        angle = min(Self.maxAngle, max(Self.minAngle, angle + delta))
+        let now = Date()
+        let dt = min(0.1, now.timeIntervalSince(lastUpdate ?? now))
+        lastUpdate = now
+        let error = (centerX - 0.5) * (invert ? -1 : 1)
+        if abs(error) > deadband {
+            angle = min(Self.maxAngle, max(Self.minAngle, angle + error * rateDegPerSec * dt))
+        }
         sendIfDue()
     }
 

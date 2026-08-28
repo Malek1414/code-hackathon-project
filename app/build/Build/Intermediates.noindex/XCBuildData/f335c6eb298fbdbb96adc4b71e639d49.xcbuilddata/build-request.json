@@ -16,17 +16,25 @@
   "hideShellScriptEnvironment" : false,
   "parameters" : {
     "action" : "build",
-    "activeArchitecture" : "arm64",
+    "activeArchitecture" : "undefined_arch",
     "activeRunDestination" : {
-      "disableOnlyActiveArch" : false,
+      "disableOnlyActiveArch" : true,
       "hostTargetedPlatform" : null,
-      "platform" : "iphonesimulator",
-      "sdk" : "iphonesimulator26.5",
-      "sdkVariant" : "iphonesimulator",
+      "platform" : "iphoneos",
+      "sdk" : "iphoneos26.5",
+      "sdkVariant" : "iphoneos",
       "supportedArchitectures" : [
-        "arm64"
+        "armv4t",
+        "armv5",
+        "armv6",
+        "armv7",
+        "armv7f",
+        "armv7s",
+        "armv7k",
+        "arm64",
+        "arm64e"
       ],
-      "targetArchitecture" : "arm64"
+      "targetArchitecture" : "undefined_arch"
     },
     "arenaInfo" : {
       "buildIntermediatesPath" : "/Users/malekhassan/Desktop/code hackathon project/app/build/Build/Intermediates.noindex",
@@ -41,23 +49,15 @@
     "overrides" : {
       "commandLine" : {
         "table" : {
-
+          "DEVELOPMENT_TEAM" : "AHU398M2XY"
         }
       },
       "synthesized" : {
         "table" : {
           "ACTION" : "build",
-          "ASSETCATALOG_FILTER_FOR_DEVICE_MODEL" : "iPhone18,1",
-          "ASSETCATALOG_FILTER_FOR_DEVICE_OS_VERSION" : "26.5",
-          "ASSETCATALOG_FILTER_FOR_THINNING_DEVICE_CONFIGURATION" : "iPhone18,1",
-          "BUILD_ACTIVE_RESOURCES_ONLY" : "YES",
           "ENABLE_PREVIEWS" : "NO",
           "ENABLE_XOJIT_PREVIEWS" : "YES",
-          "ONLY_ACTIVE_ARCH" : "YES",
-          "TARGET_DEVICE_IDENTIFIER" : "2E26D43E-F712-478C-B6B3-430D7036C7A4",
-          "TARGET_DEVICE_MODEL" : "iPhone18,1",
-          "TARGET_DEVICE_OS_VERSION" : "26.5",
-          "TARGET_DEVICE_PLATFORM_NAME" : "iphonesimulator"
+          "ONLY_ACTIVE_ARCH" : "YES"
         }
       }
     }
