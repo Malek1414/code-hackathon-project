@@ -82,8 +82,12 @@ class Identities:
     """Track id -> jersey number, from out/identities.json (NUMBERS). Rows that
     already carry `key`/`number` (STATS) win; this only fills the gaps."""
 
-    def __init__(self, data: dict | None):
+    def __init__(self, data: dict | None, clip: str | None = None):
         self.by_track: dict[int, tuple[str, int | None]] = {}
+        self.clip = Path(str((data or {}).get("clip") or "")).stem
+        if clip and self.clip and self.clip != Path(str(clip)).stem:
+            print(f"identities.json is for {self.clip}, events are {Path(str(clip)).stem}, jersey numbers ignored", file=sys.stderr)
+            data = None
         for pl in (data or {}).get("players") or []:
             for tid in pl.get("track_ids") or []:
                 self.by_track[int(tid)] = (str(pl.get("key") or ""), pl.get("number"))
@@ -680,9 +684,9 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "dashboard.html")
     args = ap.parse_args(argv)
     set_team_names(args.team_a, args.team_b)
-    ids = Identities(load_json(args.identities))
 
     events, stats, meta = load_json(args.events), load_json(args.stats), load_json(args.tracks_meta)
+    ids = Identities(load_json(args.identities), (events or {}).get("clip"))
     cal, calib_path = pick_calibration(args.calib, events)
     calib_note = ""
     if cal is None and args.calib.exists():
