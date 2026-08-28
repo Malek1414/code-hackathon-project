@@ -239,8 +239,13 @@ def uncertain_ranges(cal: Calibration | None) -> list[tuple[int, int]]:
     return out
 
 
-def score(shots: list[dict]) -> dict[int, int]:
+def score(shots: list[dict], stats: dict | None = None) -> dict[int, int]:
+    """Team score: stats.json teams[].score when STATS writes it, else the per-shot
+    points from events.json (2 per made basket when a shot carries no points)."""
     out = {0: 0, 1: 0}
+    from_stats = {int(t["team"]): int(t["score"]) for t in (stats or {}).get("teams") or [] if t.get("score") is not None and int(t.get("team", -1)) in out}
+    if len(from_stats) == 2:
+        return from_stats
     for s in shots:
         if s["team"] in out:
             out[s["team"]] += s["points"]
@@ -525,7 +530,7 @@ JS = r"""
 
 def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, minimap, overlay, clip, calib_note,
           video_offset_s, source_meta) -> str:
-    sc = score(shots)
+    sc = score(shots, stats)
     has_events = bool(events)
     placed = sum(1 for s in shots if s.get("court_m"))
     has_distance = any(p["distance_m"] is not None for p in players)
