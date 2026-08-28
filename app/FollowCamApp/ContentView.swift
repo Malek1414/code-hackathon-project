@@ -34,21 +34,26 @@ struct ContentView: View {
             }
 
             VStack {
-                HStack {
+                HStack(spacing: 10) {
                     TextField("laptop IP", text: $bridgeHost)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
-                    Button(pan.connected ? "linked" : "link rig") {
+                        .frame(width: 130)
+                    Button(pan.connected ? "linked" : "rig") {
                         pan.connect(host: bridgeHost)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(pan.connected ? .green : .orange)
-                    Toggle("inv", isOn: $pan.invert).frame(width: 80)
-                    Button(heart.bpm != nil ? "♥ \(heart.bpm!)" : "link HR") {
+                    .fixedSize()
+                    Toggle("inv", isOn: $pan.invert)
+                        .toggleStyle(.button)
+                        .tint(.orange)
+                        .fixedSize()
+                    Button(heart.bpm != nil ? "♥ \(heart.bpm!)" : "HR") {
                         heart.startScan()
                     }
                     .buttonStyle(.bordered)
                     .tint(heart.bpm != nil ? .red : .white)
+                    .fixedSize()
                     Spacer()
                     Text("\(Int(pan.angle))°")
                         .font(.system(.title2, design: .monospaced).bold())
