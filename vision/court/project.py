@@ -77,6 +77,8 @@ class Calibration:
             i = min(max(i, 0), len(self.per_frame_index) - 1)
             if i > 0 and abs(self.per_frame_index[i - 1] - frame) < abs(self.per_frame_index[i] - frame):
                 i -= 1
+            if abs(int(self.per_frame_index[i]) - frame) > 2:  # beyond the tracked range, not "nearby"
+                return np.full((3, 3), np.nan)
             return self.per_frame_m_to_px[i]
         if self.keyframes:
             keys = sorted(self.keyframes)

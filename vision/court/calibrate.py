@@ -148,17 +148,26 @@ class Clip:
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self._cache: dict[int, np.ndarray] = {}
+        self.last_read = 0
 
     def frame(self, index: int) -> np.ndarray:
+        """Frame by index. CAP_PROP_FRAME_COUNT overstates the length (dev60 reports
+        3121, 3001 are readable), so an unreadable index shrinks `count` and the
+        last readable frame is returned instead of crashing the click session."""
         index = max(0, min(index, max(self.count - 1, 0)))
-        if index not in self._cache:
+        while index not in self._cache:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
             ok, img = self.cap.read()
-            if not ok:
-                raise SystemExit(f"Frame {index} aus {self.path} nicht lesbar.")
-            if len(self._cache) > 12:
-                self._cache.pop(next(iter(self._cache)))
-            self._cache[index] = img
+            if ok:
+                if len(self._cache) > 12:
+                    self._cache.pop(next(iter(self._cache)))
+                self._cache[index] = img
+                break
+            if index == 0:
+                raise SystemExit(f"Frame 0 aus {self.path} nicht lesbar.")
+            self.count = index
+            index = max(0, index - 25)
+        self.last_read = index
         return self._cache[index]
 
 
@@ -215,7 +224,9 @@ class Calibrator:
         if not self.keyframes.get(self.frame_index):
             self.keyframes.pop(self.frame_index, None)
         self.frame_index = max(0, min(self.frame_index + delta_frames, self.clip.count - 1))
-        self.fits.pop(self.frame_index, None) if self.frame_index not in self.keyframes else None
+        self.clip.frame(self.frame_index)
+        if self.clip.last_read != self.frame_index:  # ran into the real end of the clip
+            self.frame_index = self.clip.last_read
         t = self.frame_index / self.clip.fps
         state = "Keyframe" if self.keyframes.get(self.frame_index) else "neuer Keyframe, sobald geklickt wird"
         self.message = f"Frame {self.frame_index} ({t:.1f} s): {state}."

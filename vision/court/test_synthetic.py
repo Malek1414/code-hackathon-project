@@ -40,7 +40,7 @@ def main() -> int:
         clicks[lm.id] = (float(px[0]), float(px[1]))
     clicks.pop("paint_1_front_top")  # a skipped one
     fit = solve(FIBA, clicks)
-    data = calib_dict(FIBA, clicks, fit, "synthetic", 0, (W, H))
+    data = calib_dict(FIBA, {0: clicks}, {0: fit}, "synthetic", 50.0, (W, H))
 
     # a player standing at centre court must project to (14, 7.5)
     centre_px = apply_h(H_m_to_px, [[14, 7.5]])

@@ -128,6 +128,7 @@ def chain_camera(clip: Path, *, scale: float, boxes: dict[int, np.ndarray], keyf
             step, _ = frame_to_frame(prev_grey, grey, mask=mask)
             if step is None:
                 failed += 1
+                anchor_grey = None  # the chain broke here, an older anchor could re-attach to the wrong shot
             else:
                 C = _normalise((S_inv @ step @ S) @ C)
             if anchor_grey is not None and reanchor_every and len(frames) % reanchor_every == 0:
@@ -147,7 +148,8 @@ def chain_camera(clip: Path, *, scale: float, boxes: dict[int, np.ndarray], keyf
             log(f"  {index}/{end} frames, {el:.0f} s, {len(frames) / el:.1f} fps, {failed} failed, {reanchors} re-anchors")
     cap.release()
     frames_arr, mats_arr = np.array(frames, np.int64), np.array(mats, np.float64)
-    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if cap.isOpened() else None
+    if prev_grey is None:
+        raise SystemExit(f"kein Frame aus {clip} lesbar.")
     cuts, aligned = detect_cuts(frames_arr, mats_arr, thumbs, full_size=(prev_grey.shape[1] / scale, prev_grey.shape[0] / scale))
     return frames_arr, mats_arr, {"failed": failed, "reanchors": reanchors, "cuts": cuts, "aligned_diff": aligned,
                                   "fps_processed": len(frames) / max(time.time() - t0, 1e-6)}
@@ -187,8 +189,7 @@ def detect_cuts(frames: np.ndarray, C: np.ndarray, thumbs: dict[int, np.ndarray]
         warped = cv2.warpPerspective(thumbs[t0], Ts.astype(np.float64), (tw, th), flags=cv2.INTER_LINEAR, borderValue=0)
         valid = cv2.warpPerspective(np.full_like(thumbs[t0], 255), Ts.astype(np.float64), (tw, th), flags=cv2.INTER_NEAREST, borderValue=0) > 0
         if valid.sum() < 0.3 * valid.size:
-            aligned[t] = 255.0
-            continue
+            continue  # a fast pan the chain followed: nothing to compare, not a cut
         aligned[t] = float(np.abs(warped.astype(np.float32) - thumb.astype(np.float32))[valid].mean())
     return cuts_from_signal(aligned, first_frame=int(frames[0])), aligned
 
@@ -225,9 +226,15 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
 
     keys = sorted(keyframes)
     pos = {int(f): i for i, f in enumerate(frames)}
+    snapped = {}
     for k in keys:
         if k not in pos:
-            raise SystemExit(f"Keyframe {k} wurde nicht verarbeitet (stride/end prüfen).")
+            i = int(np.clip(np.searchsorted(frames, k), 0, len(frames) - 1))
+            print(f"  Hinweis: Keyframe {k} liegt nicht in der Kette, auf Frame {int(frames[i])} gesetzt.")
+            snapped[int(frames[i])] = keyframes[k]
+        else:
+            snapped[k] = keyframes[k]
+    keyframes, keys = snapped, sorted(snapped)
     inv = np.linalg.inv
     bounds = sorted(set([int(frames[0])] + [c for c in (cuts or []) if frames[0] < c <= frames[-1]] + [int(frames[-1]) + 1]))
     segments = list(zip(bounds[:-1], bounds[1:]))
@@ -262,7 +269,8 @@ def per_frame_homographies(frames: np.ndarray, C: np.ndarray, keyframes: dict[in
         for a, b in zip(seg_keys[:-1], seg_keys[1:]):
             est = carried(a, pos[b])
             d = np.linalg.norm(apply_h(est, corners) - apply_h(keyframes[b], corners), axis=1)
-            drift_px[f"{a}->{b}"] = round(float(np.nanmean(d)), 1)
+            mean = float(np.nanmean(d)) if np.isfinite(d).any() else None
+        drift_px[f"{a}->{b}"] = round(mean, 1) if mean is not None else None
     return out, drift_px, report
 
 
@@ -316,7 +324,8 @@ def main(argv=None) -> int:
     ap.add_argument("--scale", type=float, default=0.5, help="Tracking-Auflösung relativ zum Frame")
     ap.add_argument("--stride", type=int, default=1)
     ap.add_argument("--end", type=int, default=None, help="nur bis zu diesem Frame")
-    ap.add_argument("--reanchor-every", type=int, default=60)
+    ap.add_argument("--reanchor-every", type=int, default=0,
+                    help="direkte Neuverankerung alle N Frames (0 = aus; bei geschnittenem Material aus lassen)")
     ap.add_argument("--no-cache", action="store_true", help="Kamerakette neu rechnen")
     ap.add_argument("--cut-threshold", type=float, default=CUT_THRESHOLD, help="Schnitt-Schwelle auf der ausgerichteten Differenz")
     ap.add_argument("--chain-only", action="store_true", help="nur die Kamerakette cachen, keine Keyframes nötig")
@@ -370,10 +379,13 @@ def main(argv=None) -> int:
     H_m_to_px, drift, segments = per_frame_homographies(frames, C, keyframes, cuts)
     H_px_to_m = np.full_like(H_m_to_px, np.nan)
     ok = np.isfinite(H_m_to_px).all(axis=(1, 2))
+    ok[ok] = np.abs(np.linalg.det(H_m_to_px[ok])) > 1e-12
     H_px_to_m[ok] = np.linalg.inv(H_m_to_px[ok])
+    H_m_to_px[~ok] = np.nan
     for seg in segments:
         state = f"Keyframes {seg['keyframes']}" if seg["keyframes"] else "OHNE Keyframe, bleibt unkalibriert"
-        print(f"  Segment {seg['start']}..{seg['end']} ({seg['start'] / 50:.0f}s bis {seg['end'] / 50:.0f}s): {state}")
+        fps = float(data.get("fps") or 50.0)
+        print(f"  Segment {seg['start']}..{seg['end']} ({seg['start'] / fps:.0f}s bis {seg['end'] / fps:.0f}s): {state}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.out, frames=frames, H_m_to_px=H_m_to_px, H_px_to_m=H_px_to_m)
 
@@ -382,7 +394,7 @@ def main(argv=None) -> int:
                            "failed_transitions": stats["failed"], "reanchors": stats["reanchors"],
                            "cuts": cuts, "segments": segments, "calibrated_frames": int(ok.sum()),
                            "chain_drift_px_at_next_keyframe": drift}
-    args.calib.write_text(json.dumps(data, indent=1))
+    args.calib.write_text(json.dumps(data, indent=1, allow_nan=False))
     contract = args.calib.with_name("court_calib.json")
     if args.calib != contract:
         contract.write_text(json.dumps(data, indent=1))
