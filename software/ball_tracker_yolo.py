@@ -169,6 +169,7 @@ def main():
             if lost >= 3:
                 prev = None  # widen the search to the full frame
                 ctl.reset()
+            ctl.no_ball()  # hold, after 3 s glide back to the centre
             if args.hsv_fallback and lost >= LOST_FRAMES:
                 target = hsv_ball(frame)
                 source = "hsv"
