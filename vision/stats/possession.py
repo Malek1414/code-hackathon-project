@@ -101,15 +101,18 @@ class PossessionTracker:
         self._pending: object = _NO_PENDING
         self._pending_start = 0
         self._pending_len = 0
+        self.cut_indices: list[int] = []  # frame-list indices where a segment must break
 
     @property
     def current(self) -> int | None:
         return self._current
 
     def reset(self) -> None:
-        """Forget the holder and any pending streak (cut in the footage)."""
+        """Forget the holder and any pending streak (cut in the footage); the
+        next frame starts a new segment even if the same player holds on."""
         self._current = None
         self._pending, self._pending_len = _NO_PENDING, 0
+        self.cut_indices.append(len(self.frames))
 
     def push(self, fr: Frame) -> int | None:
         self.frames.append(fr)
@@ -144,10 +147,11 @@ class PossessionTracker:
         """Possession segments so far; the last one may still be open."""
         segments: list[Possession] = []
         frames, holder = self.frames, self.holder
+        cuts = set(self.cut_indices)
         start = None
         for i in range(len(frames) + 1):
             pid = holder[i] if i < len(frames) else None
-            if start is not None and (i == len(frames) or pid != holder[start]):
+            if start is not None and (i == len(frames) or pid != holder[start] or i in cuts):
                 segments.append(_make_segment(frames, holder[start], start, i - 1))
                 start = None
             if pid is not None and start is None:
