@@ -19,6 +19,7 @@ struct ContentView: View {
     @StateObject private var level = MotionLevel()
     @State private var tracker = SubjectTracker()
     @State private var subjectBox: CGRect?
+    @State private var players: [CGRect] = []   // detected people, Vision-normalized
     @State private var bridgeHost = "192.168.1.10"
     @State private var showSettings = false
     @State private var recordingStarted: Date?
@@ -48,10 +49,23 @@ struct ContentView: View {
             CameraPreview(layer: camera.previewLayer)
                 .ignoresSafeArea()
                 .onTapGesture { location in
-                    tracker.select(roi: camera.normalizedRect(aroundLayerPoint: location))
+                    let tapROI = camera.normalizedRect(aroundLayerPoint: location)
+                    let tapCenter = CGPoint(x: tapROI.midX, y: tapROI.midY)
+                    // snap to the detected player nearest the tap; raw ROI fallback
+                    let hit = players.min(by: {
+                        hypot($0.midX - tapCenter.x, $0.midY - tapCenter.y) <
+                        hypot($1.midX - tapCenter.x, $1.midY - tapCenter.y)
+                    })
+                    if let hit, hypot(hit.midX - tapCenter.x, hit.midY - tapCenter.y) < 0.25 {
+                        tracker.select(roi: hit)
+                    } else {
+                        tracker.select(roi: tapROI)
+                    }
                     lostFlashUntil = nil
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
+
+            PlayerRings(players: players, locked: subjectBox).allowsHitTesting(false)
 
             if let box = subjectBox {
                 TargetBrackets(box: box).allowsHitTesting(false)
@@ -99,7 +113,11 @@ struct ContentView: View {
         .onAppear {
             camera.onFrame = { pixelBuffer in
                 let box = tracker.track(in: pixelBuffer)   // Vision work stays off-main
-                DispatchQueue.main.async { handleFrame(box: box) }
+                let detected = tracker.frameIndex % 5 == 0 ? tracker.humans(in: pixelBuffer) : nil
+                DispatchQueue.main.async {
+                    if let detected { players = detected }
+                    handleFrame(box: box)
+                }
             }
             camera.start()
             level.start()
@@ -127,9 +145,18 @@ struct ContentView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
             subjectBox = nil
-            // auto-reacquire: reseed the tracker on the last known spot, widened
+            // auto-reacquire: prefer the detected player nearest the last known
+            // spot; fall back to a widened blind reseed
             if let lost = reacquireBox, Date() < reacquireUntil, frameCount % 10 == 0 {
-                tracker.select(roi: lost.insetBy(dx: -lost.width * 0.35, dy: -lost.height * 0.35))
+                let near = players.min(by: {
+                    hypot($0.midX - lost.midX, $0.midY - lost.midY) <
+                    hypot($1.midX - lost.midX, $1.midY - lost.midY)
+                })
+                if let near, hypot(near.midX - lost.midX, near.midY - lost.midY) < 0.3 {
+                    tracker.select(roi: near)
+                } else {
+                    tracker.select(roi: lost.insetBy(dx: -lost.width * 0.35, dy: -lost.height * 0.35))
+                }
             }
             return
         }
@@ -303,7 +330,9 @@ struct PanScale: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let x: (Double) -> CGFloat = { w * ($0 - 40) / 100 }
+            let pad: CGFloat = 22   // inset so the 40/140 ticks, labels and the
+                                    // needle stay fully visible at the extremes
+            let x: (Double) -> CGFloat = { pad + (w - 2 * pad) * ($0 - 40) / 100 }
             ZStack(alignment: .topLeading) {
                 // ticks every 5 deg, tall every 25
                 ForEach(Array(stride(from: 40, through: 140, by: 5)), id: \.self) { deg in
@@ -318,7 +347,7 @@ struct PanScale: View {
                         .foregroundColor(.chrome)
                         .position(x: x(Double(deg)), y: 26)
                 }
-                // needle + readout ride together
+                // needle + readout share the same x — no parallax at any angle
                 Rectangle()
                     .fill(Color.pla)
                     .frame(width: 2, height: 16)
@@ -326,7 +355,7 @@ struct PanScale: View {
                 Text("\(Int(angle))°")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.pla)
-                    .position(x: min(max(x(angle), 16), w - 16), y: 38)
+                    .position(x: x(angle), y: 38)
             }
             .animation(.linear(duration: 0.08), value: angle)
         }
@@ -484,6 +513,30 @@ struct CoverageWedge: View {
                      with: .color(.pla))
         }
         .background(.black.opacity(0.45))
+    }
+}
+
+// MARK: - detection rings around every player (tap one to lock it)
+
+struct PlayerRings: View {
+    let players: [CGRect]   // Vision-normalized, origin bottom-left
+    let locked: CGRect?
+
+    var body: some View {
+        GeometryReader { geo in
+            ForEach(Array(players.enumerated()), id: \.offset) { _, box in
+                // skip the ring that overlaps the locked target's brackets
+                if locked.map({ hypot($0.midX - box.midX, $0.midY - box.midY) > 0.06 }) ?? true {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.white.opacity(0.55), lineWidth: 1.2)
+                        .frame(width: box.width * geo.size.width,
+                               height: box.height * geo.size.height)
+                        .position(x: box.midX * geo.size.width,
+                                  y: (1 - box.midY) * geo.size.height)
+                }
+            }
+        }
+        .animation(.linear(duration: 0.12), value: players)
     }
 }
 

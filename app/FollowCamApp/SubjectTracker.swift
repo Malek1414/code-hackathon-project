@@ -8,8 +8,25 @@ import Vision
 final class SubjectTracker {
     private var request: VNTrackObjectRequest?
     private var handler = VNSequenceRequestHandler()
+    private let humanRequest: VNDetectHumanRectanglesRequest = {
+        let r = VNDetectHumanRectanglesRequest()
+        r.upperBodyOnly = false
+        return r
+    }()
 
     var isTracking: Bool { request != nil }
+    private(set) var frameIndex = 0   // incremented per track() call (camera queue)
+
+    /// Detect every person in the frame (full-body boxes, Vision-normalized).
+    /// Cheap enough to run every few frames; feeds the on-screen player rings
+    /// and gives auto-reacquire real candidates instead of a blind reseed.
+    func humans(in pixelBuffer: CVPixelBuffer) -> [CGRect] {
+        let h = VNImageRequestHandler(cvPixelBuffer: pixelBuffer)
+        try? h.perform([humanRequest])
+        return (humanRequest.results ?? [])
+            .filter { $0.confidence > 0.5 }
+            .map { $0.boundingBox }
+    }
 
     func select(roi: CGRect) {
         let observation = VNDetectedObjectObservation(boundingBox: roi)
@@ -25,6 +42,7 @@ final class SubjectTracker {
 
     /// Returns the subject's bounding box for this frame, or nil if lost.
     func track(in pixelBuffer: CVPixelBuffer) -> CGRect? {
+        frameIndex += 1
         guard let request = request else { return nil }
         do {
             try handler.perform([request], on: pixelBuffer)
