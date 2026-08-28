@@ -340,7 +340,12 @@ def main(argv: list[str] | None = None) -> int:
     identities = None
     ident_path = Path(args.identities)
     if ident_path.exists() and not args.fixture:
-        identities = load_identities(ident_path)
+        meta_path = Path(args.tracks).parent / "tracks_meta.json"
+        if meta_path.exists() and ident_path.stat().st_mtime < meta_path.stat().st_mtime:
+            print(f"{ident_path} is older than {meta_path}: track ids belong to a previous run, ignoring it",
+                  file=sys.stderr)
+        else:
+            identities = load_identities(ident_path)
 
     events, stats = build(
         frames,
