@@ -154,6 +154,19 @@ def shot_signature(n: int, shot: dict, tracks: Path) -> str:
     return json.dumps([n, fields, versions], sort_keys=True)
 
 
+KNOWN = QA_DIR / "known_shots.json"  # snapshot of an earlier events version (its "shots" with "t"); shots not in it are "neu, bitte pruefen"
+KNOWN_MATCH_S = 1.5
+
+
+def mark_new(sheets: list[dict], known_path: Path = KNOWN) -> int:
+    known = [float(m["t"]) for m in ((read_json(known_path) or {}).get("shots") or []) if m.get("t") is not None]
+    n_new = 0
+    for m in sheets:
+        m["is_new"] = bool(known) and not any(abs(m["t"] - t) <= KNOWN_MATCH_S for t in known)
+        n_new += m["is_new"]
+    return n_new
+
+
 def _shot_block(s: dict) -> str:
     n = s["n"]
     letter = TEAM_LETTER.get(s["team"])
@@ -178,9 +191,10 @@ def _shot_block(s: dict) -> str:
     else:
         video = f"""
   <div class="cap">{html.escape(s.get('video_caption_de', 'kein Video'))}</div>"""
+    badge = '<span class="badge">neu, bitte pruefen</span>' if s.get("is_new") else ""
     return f"""
-<section class="shot" id="shot-{n}" data-n="{n}">
-  <h2>{html.escape(title)}</h2>{video}
+<section class="shot{' new' if s.get('is_new') else ''}" id="shot-{n}" data-n="{n}">
+  <h2>{html.escape(title)} {badge}</h2>{video}
   <div class="cap">Bildstreifen, 1,5 s vor bis 1,0 s nach dem Ereignis. Gelb = Ball, gruen = Korb, farbige Box = markierter Werfer, weisser Kreis = Standpunkt des Werfers.</div>
   <a href="{s['file']}" target="_blank"><img src="{s['file']}" alt="{html.escape(title)}" loading="lazy"></a>
   <div class="q">
@@ -269,7 +283,19 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
         if stored.get("shots") or stored.get("numbers")
         else "Noch keine gespeicherten Antworten."
     )
-    shots_html = "".join(_shot_block(s) for s in sheets) if sheets else '<div class="empty">Noch keine Wuerfe in events.json.</div>'
+    n_new = mark_new(sheets)
+    ordered = sorted(sheets, key=lambda m: (not m.get("is_new"), m["t"]))
+    if not sheets:
+        shots_html = '<div class="empty">Noch keine Wuerfe in events.json.</div>'
+    elif n_new:
+        new_part = "".join(_shot_block(m) for m in ordered if m.get("is_new"))
+        old_part = "".join(_shot_block(m) for m in ordered if not m.get("is_new"))
+        shots_html = (
+            f'<h3 class="sub">Neu, bitte pruefen ({n_new})</h3>{new_part}'
+            f'<h3 class="sub">Bereits bewertet ({len(sheets) - n_new})</h3>{old_part}'
+        )
+    else:
+        shots_html = "".join(_shot_block(m) for m in ordered)
     ident = read_json(IDENTITIES) or {}
     if numbers:
         cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers))
@@ -284,7 +310,8 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
     page = PAGE.replace("{{BALL}}", _ball_section(out)).replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
         "{{META}}",
         f"{len(sheets)} Wuerfe vom System erkannt ({made} Treffer, {len(sheets) - made} Fehlwuerfe), {tracks_n} verfolgte Frames, "
-        f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}",
+        f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}"
+        + (f" {n_new} Wuerfe sind neu gegenueber der letzten Bewertungsrunde und stehen oben." if n_new else ""),
     ).replace("{{SHOTS}}", shots_html).replace("{{CARDS}}", cards_html).replace("{{MANIFEST}}", manifest).replace("{{STORED}}", stored_js)
     path = out / "index.html"
     tmp = path.with_suffix(".tmp.html")
@@ -336,6 +363,9 @@ PAGE = r"""<!doctype html>
   .bar button.primary { background: #ffd23f; color: #111; border-color: #ffd23f; font-weight: 600; }
   #summary { color: #bbb; }
   .empty { padding: 30px 0; color: #999; }
+  h3.sub { font-size: 16px; color: #ffd23f; margin: 24px 0 4px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; color: #111; background: #ffd23f; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
+  .shot.new { border-left: 3px solid #ffd23f; padding-left: 10px; }
   .ball video { display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }
   .ball .links { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
   .ball a { color: #ffd23f; }
@@ -364,7 +394,7 @@ PAGE = r"""<!doctype html>
 const MANIFEST = {{MANIFEST}};
 const STORED = {{STORED}};
 const KEY = "followcam-qa-verdicts:" + MANIFEST.clip;
-const MATCH_S = 0.5;
+const MATCH_S = 1.5;  // event times shift a little between track versions
 const $ = (sel) => document.querySelector(sel);
 function radio(name) { const r = $('input[name="' + name + '"]:checked'); return r ? r.value : null; }
 function setRadio(name, value) { if (value === null || value === undefined) return; const r = $('input[name="' + name + '"][value="' + value + '"]'); if (r) r.checked = true; }
