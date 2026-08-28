@@ -4,7 +4,7 @@ Sami's track at the hackathon: **video → labeled players/ball/hoop → 2D cour
 model → per-player stats (shots, FG%)**. This is the "analytics platform" half
 of the pitch; the servo rig is the capture half (Malek).
 
-Four Claude Code sessions work in parallel on this directory. Each session
+Five Claude Code sessions work in parallel on this directory. Each session
 owns ONE role below, works only inside its owned paths, and reports to the
 orchestrator session (`samimagdouli-61`) via SendMessage when a milestone is
 done or it is blocked. Sami can talk to any session directly in its terminal.
@@ -13,7 +13,8 @@ done or it is blocked. Sami can talk to any session directly in its terminal.
 |---|---|---|
 | **ORCH** (Sami's main terminal) | `docs/`, integration, git, pitch assets | everything merged + demo runs |
 | **LABEL** | `vision/label/`, `data/frames/`, `data/dataset/`, `models/` | auto-labeled YOLO dataset + fine-tuned `models/best.pt` |
-| **TRACK** | `vision/track/`, `out/tracks.jsonl`, `out/events.json`, `out/overlay.mp4` | tracking + team + shot events + annotated video |
+| **TRACK** | `vision/track/`, `out/tracks.jsonl`, `out/overlay.mp4` | detection + ByteTrack + team colors + annotated video |
+| **STATS** | `vision/stats/`, `out/events.json`, `out/stats.json` | ball possession, shot events (made/miss), per-player FG stats from `tracks.jsonl` |
 | **COURT** | `vision/court/`, `vision/dashboard/`, `out/court_calib.json`, `out/minimap.mp4`, `out/dashboard.html` | homography → 2D minimap + coach dashboard |
 
 Hard rules:
@@ -51,12 +52,21 @@ Hard rules:
 `foot` = bottom-center of bbox in pixels (the point COURT projects). `team` is
 0/1 by jersey color, `-1` unknown. `ball` may be `null`.
 
-### `out/events.json` — shot events (TRACK writes, COURT/dashboard reads)
+### `out/events.json` — shot events (STATS writes, COURT/dashboard reads)
 ```json
 {"fps": 50, "clip": "data/clips/game10.mp4",
  "shots": [{"t": 83.4, "frame": 4170, "player_id": 7, "team": 0,
             "made": true, "shooter_foot": [x,y], "hoop_bbox": [x1,y1,x2,y2]}]}
 ```
+
+### `out/stats.json` — per-player table (STATS writes, dashboard reads)
+```json
+{"players": [{"id": 7, "team": 0, "fga": 5, "fgm": 2, "fg_pct": 0.4,
+              "possession_s": 41.2, "distance_m": null}],
+ "teams": [{"team": 0, "fga": 21, "fgm": 9}]}
+```
+`distance_m` is filled by COURT once `court_calib.json` exists (STATS calls
+the same projection helper); `null` until then.
 
 ### `out/court_calib.json` — homography (COURT writes, everyone reads)
 ```json
@@ -76,12 +86,12 @@ a one-time Grounding DINO hoop box.
 
 ## Milestones and deadlines
 
-| Time | LABEL | TRACK | COURT |
-|---|---|---|---|
-| 12:00 | `game10.mp4` + 60 s dev clip exist (ORCH), frames extracted 1 fps → `data/frames/` | dev clip runs through YOLO11m + ByteTrack, boxes drawn, `tracks.jsonl` written | calibration tool: click ≥6 court points on frame 0, writes `court_calib.json`, shows reprojected court overlay |
-| 12:45 | Grounding DINO labels for all frames (player, basketball, hoop, referee) → YOLO dataset, contact sheet `out/label_preview.jpg` | team assignment by jersey color (k‑means on torso crops), ball possession (nearest player), shot candidate = ball enters hoop zone from above | `minimap.mp4`: 2D court with team-colored dots + ball from `tracks.jsonl` |
-| 13:30 | YOLO11n/s fine-tune on MPS (imgsz 960, ≤15 epochs, timebox 30 min) → `models/best.pt`; mAP on val printed | `events.json` with made/miss; `overlay.mp4` with ids, teams, ball trail, shot flashes | dashboard: shot chart on court, per-player table (attempts, made, FG%), minimap embedded |
-| 14:15 | swap `best.pt` into TRACK, compare ball recall vs COCO | full `game10.mp4` processed | dashboard reads final `events.json`/`tracks.jsonl` |
+| Time | LABEL | TRACK | STATS | COURT |
+|---|---|---|---|---|
+| 12:00 | frames extracted 1 fps from `game10.mp4` → `data/frames/` (ORCH delivers the clips) | dev clip runs through YOLO11m + ByteTrack, boxes drawn, `tracks.jsonl` written | reader for `tracks.jsonl` + synthetic fixture; possession = nearest player to ball (foot distance), unit-tested | calibration tool: click ≥6 court points on frame 0, writes `court_calib.json`, shows reprojected court overlay |
+| 12:45 | Grounding DINO labels for all frames (player, basketball, hoop, referee) → YOLO dataset, contact sheet `out/label_preview.jpg` | team assignment by jersey color (k‑means on torso crops) in `tracks.jsonl` | shot candidate = ball enters hoop zone from above; made = ball seen below rim inside hoop x-range within 0.5 s; `events.json` on the dev clip | `minimap.mp4`: 2D court with team-colored dots + ball from `tracks.jsonl` |
+| 13:30 | YOLO11n/s fine-tune on MPS (imgsz 960, ≤15 epochs, timebox 30 min) → `models/best.pt`; mAP on val printed | `overlay.mp4` with ids, teams, ball trail; shot flashes read from `events.json` if present | `stats.json` per player + team; sanity-checked against a hand count on 2 minutes of video | dashboard: shot chart on court, per-player table from `stats.json`, minimap embedded |
+| 14:15 | swap `best.pt` into TRACK, compare ball recall vs COCO | full `game10.mp4` processed | events + stats on full `game10.mp4` | dashboard reads final `events.json`/`stats.json` |
 | 14:30 | **FREEZE.** ORCH assembles: overlay + minimap side by side for the pitch video | | |
 
 Fallbacks: no `best.pt` by 13:30 → COCO weights stay. Ball too unreliable for
