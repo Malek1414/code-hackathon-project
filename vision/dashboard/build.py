@@ -154,7 +154,7 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
         fga, fgm = int(p.get("fga") or 0), int(p.get("fgm") or 0)
         track_id = p.get("id") if isinstance(p.get("id"), int) or str(p.get("id")).isdigit() else None
         label, number = ids.resolve(track_id, p.get("key"), p.get("number"))
-        fg = p.get("fg_pct") if p.get("fg_pct") is not None else (fgm / fga if fga else None)
+        fg = (fgm / fga) if fga else None
         dist = p.get("distance_m") if p.get("distance_m") is not None else (distances.get(int(track_id)) if track_id is not None else None)
         rows.append({
             "id": p.get("id"), "label": label, "number": number, "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
@@ -162,6 +162,8 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
             "possession_s": None if p.get("possession_s") is None else round(float(p["possession_s"]), 1),
             "distance_m": None if dist is None else round(float(dist), 1),
         })
+        r = rows[-1]
+        r["active"] = bool(r["fga"] or (r["possession_s"] or 0) >= 0.5 or (r["distance_m"] or 0) >= 20)
     rows.sort(key=lambda r: (r["team"] if r["team"] >= 0 else 9, -r["fga"], -(r["possession_s"] or 0), r["number"] is None, r["number"] or 0, str(r["id"])))
     return rows
 
@@ -173,6 +175,17 @@ def possessions(events: dict | None) -> list[dict]:
             out.append({"team": int(p.get("team", -1)), "start": float(p["start_t"]), "end": float(p["end_t"]),
                         "player_id": p.get("player_id")})
         except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def cuts_s(events: dict | None) -> list[float]:
+    fps = float((events or {}).get("fps") or 0) or None
+    out = []
+    for c in (events or {}).get("cuts") or []:
+        try:
+            out.append(round(float(c) / fps, 2) if fps else float(c))
+        except (TypeError, ValueError):
             continue
     return out
 
@@ -217,12 +230,11 @@ def fmt_clock(seconds: float) -> str:
 # --- page ---------------------------------------------------------------------
 
 CSS = r"""
-:root{--bg:#0B0D12;--panel:#12151C;--panel2:#171B24;--line:#222836;--text:#E7EAF0;--muted:#8A93A6;--faint:#5C6478;
+:root{--bg:#0B0D12;--panel:#12151C;--panel2:#171B24;--line:#222836;--text:#E7EAF0;--muted:#8A93A6;--faint:#7C8598;
 --floor:#151923;--mark:#8E96A8;--rim:#F0A63A;--lions:#4C8DFF;--wiesel:#E5484D;--none:#8A93A6}
 *{box-sizing:border-box}html{background:var(--bg)}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:1320px;margin:0 auto;padding:28px 28px 64px}
-h1{font-size:13px;margin:0;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
 h2{font-size:12px;margin:0 0 14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
 .muted{color:var(--muted)}.faint{color:var(--faint)}.small{font-size:13px}
 .num{text-align:right;font-variant-numeric:tabular-nums}
@@ -234,6 +246,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:14px;
 header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
 @media(max-width:800px){header{grid-template-columns:1fr;text-align:center}.team.right{text-align:center}}
 .kicker{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-bottom:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .team{display:flex;flex-direction:column;gap:6px}.team.right{text-align:right;align-items:flex-end}
 .team .name{font-size:20px;font-weight:650;letter-spacing:.005em;display:flex;align-items:center;gap:10px}
 .team.right .name{flex-direction:row-reverse}
@@ -256,7 +269,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
 .tl-line{fill:none;stroke-width:2.2;stroke-linejoin:round}
 .tl-dot{stroke:var(--panel);stroke-width:1.5;cursor:pointer}
 .tl-miss{stroke-width:2;opacity:.75}
-.tl-play{stroke:#E7EAF0;stroke-width:1.2;stroke-dasharray:3 3;opacity:0}
+.tl-play{stroke:#E7EAF0;stroke-width:1.2;stroke-dasharray:3 3;opacity:0}.tl-cut{stroke:#2C3344;stroke-width:2;stroke-dasharray:2 4}
 .tl-poss{opacity:.55}
 .dim{opacity:.18}
 svg.court{width:100%;height:auto;display:block}
@@ -272,7 +285,7 @@ svg.court{width:100%;height:auto;display:block}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th:first-child,td:first-child{padding-left:2px}
 th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em}
-tbody tr:hover{background:var(--panel2)}
+tbody tr:hover{background:var(--panel2)}tr.inactive{display:none}table.all tr.inactive{display:table-row}
 td.id{font-weight:650;font-variant-numeric:tabular-nums}
 .bar{width:52px;height:5px;background:var(--line);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:10px}.bar span{display:block;height:100%}
 .tdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:1px}
@@ -327,6 +340,7 @@ JS = r"""
       D.shots.filter(function(s){return String(s.team)===tk&&!s.made}).forEach(function(s){var m=el('line',{x1:x(s.t),x2:x(s.t),y1:base-9,y2:base-1,stroke:tm.color,'class':'tl-miss','data-team':tk},svg);bindTip(m,function(){return shotTip(s)});m.addEventListener('click',function(){seekTo(s.t)})});
       pts=0;made.forEach(function(s){pts+=s.points;var c=el('circle',{cx:x(s.t),cy:y(pts),r:5.5,fill:tm.color,'class':'tl-dot','data-team':tk},svg);bindTip(c,function(){return shotTip(s)});c.addEventListener('click',function(){seekTo(s.t)})});
     });
+    (D.cuts||[]).forEach(function(c){if(c<=0||c>=dur)return;var l=el('line',{x1:x(c),x2:x(c),y1:T,y2:base,'class':'tl-cut'},svg);bindTip(l,function(){return '<b>Camera cut</b><br><span class="sub">at '+clock(c)+'</span>'})});
     var play=el('line',{x1:x(0),x2:x(0),y1:T,y2:base,'class':'tl-play'},svg);
     if(canSeek){overlay.addEventListener('timeupdate',function(){var t=overlay.currentTime+D.video_offset_s;play.setAttribute('x1',x(Math.min(t,dur)));play.setAttribute('x2',x(Math.min(t,dur)));play.style.opacity=overlay.paused&&overlay.currentTime===0?0:1})}
   })();
@@ -345,6 +359,9 @@ JS = r"""
     document.querySelectorAll('.chip').forEach(function(ch){var s=D.shots[+ch.getAttribute('data-i')];if(!s)return;bindTip(ch,function(){return shotTip(s)});ch.addEventListener('click',function(){seekTo(s.t)})});
   })();
 
+  var tog=document.getElementById('toggle-inactive');
+  if(tog){tog.addEventListener('click',function(){var tb=tog.parentNode.querySelector('table');var on=tb.classList.toggle('all');tog.textContent=(on?'Hide ':'Show ')+tog.getAttribute('data-n')+' tracks without a shot or possession'})}
+
   /* team filter, shared by chart, chips, table, timeline */
   var buttons=document.querySelectorAll('[data-filter]');
   function apply(f){document.querySelectorAll('[data-team]').forEach(function(n){var t=n.getAttribute('data-team');var off=f!=='all'&&t!==f;
@@ -358,7 +375,7 @@ JS = r"""
 """
 
 
-def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minimap, overlay, clip, calib_note,
+def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, minimap, overlay, clip, calib_note,
           video_offset_s, source_meta) -> str:
     sc = score(shots)
     has_events = bool(events)
@@ -369,13 +386,14 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
 
     def team_line(t: dict) -> str:
         if not (t["fga"] or t["fgm"]):
-            return "no shots detected yet" if not has_events else "no attempts"
+            return "no shots detected yet" if not has_events else "no shots detected"
         return f'{t["fgm"]} of {t["fga"]} field goals, {100 * t["fgm"] / t["fga"]:.0f}%'
 
     # header -----------------------------------------------------------------
     header = f"""
 <header>
-  <div class="kicker"><span>FollowCam coach report</span><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span></div>
+  <h1 class="sr">{html.escape(T0['name'])} vs {html.escape(T1['name'])}, FollowCam coach report</h1>
+  <div class="kicker"><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span></div>
   <div class="team"><div class="name"><span class="swatch" style="background:{T0['color']}"></span>{T0['name']}</div><div class="line">{team_line(teams[0])}</div></div>
   <div class="scoreboard{'' if has_events else ' empty'}" aria-label="Final score"><span class="pts" style="color:{T0['color'] if has_events else 'inherit'}">{sc[0]}</span><span class="colon">:</span><span class="pts" style="color:{T1['color'] if has_events else 'inherit'}">{sc[1]}</span></div>
   <div class="team right"><div class="name"><span class="swatch" style="background:{T1['color']}"></span>{T1['name']}</div><div class="line">{team_line(teams[1])}</div></div>
@@ -386,7 +404,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
     timeline = f"""
 <section><h2>Score timeline</h2>
 <svg id="timeline" class="chart" role="img" aria-label="Points over time for both teams"></svg>
-<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks under the axis are misses{', the band below shows ball possession' if poss else ''}{', click a shot to watch it' if video_offset_s is not None and overlay else ''}</span></div>
+<div class="legend"><span><i class="swatch" style="background:{T0['color']}"></i>{T0['short']}</span><span><i class="swatch" style="background:{T1['color']}"></i>{T1['short']}</span><span class="faint">dots are made shots, ticks are misses{', dotted lines are camera cuts' if cuts else ''}</span></div>
 {tl_note}</section>"""
 
     # shot chart --------------------------------------------------------------
@@ -402,9 +420,11 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
     notes = []
     if not has_events:
         notes.append("Shot events not available yet.")
+    elif not shots:
+        notes.append("No shots detected in this clip.")
     if cal is None and shots and placed < len(shots):
         notes.append("Court calibration pending, shots are placed once court_calib.json exists.")
-    elif cal is None and not shots:
+    elif cal is None and not shots and not has_events:
         notes.append("Shots appear on the court once events.json and court_calib.json exist.")
     elif calib_note:
         notes.append(calib_note)
@@ -423,7 +443,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
         tm = TEAMS.get(p["team"], TEAMS[-1])
         fg = p["fg_pct"]
         rows.append(
-            f'<tr data-team="{p["team"]}"><td class="id{"" if p["number"] is not None else " muted"}">{html.escape(p["label"])}</td>'
+            f'<tr data-team="{p["team"]}"{"" if p["active"] else " class=\"inactive\""}><td class="id{"" if p["number"] is not None else " muted"}">{html.escape(p["label"])}</td>'
             f'<td><i class="tdot" style="background:{tm["color"]}"></i>{tm["short"]}</td>'
             f'<td class="num">{p["fga"]}</td><td class="num">{p["fgm"]}</td>'
             f'<td class="num">{"" if fg is None else f"{100 * fg:.0f}%"}<span class="bar"><span style="width:{(100 * fg) if fg else 0:.0f}%;background:{tm["color"]}"></span></span></td>'
@@ -431,12 +451,14 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
             + (f'<td class="num">{"" if p["distance_m"] is None else f"{p["distance_m"]:.0f} m"}</td>' if has_distance else "")
             + "</tr>")
     ncol = 7 if has_distance else 6
+    n_inactive = sum(1 for p in players if not p["active"])
     if not rows:
         rows.append(f'<tr><td colspan="{ncol}" class="muted">Player stats not available yet, the table fills in once stats.json exists.</td></tr>')
     table = f"""
 <section><h2>Players</h2>
 <div class="tablewrap"><table><thead><tr><th>Player</th><th>Team</th><th class="num">FGA</th><th class="num">FGM</th><th class="num">FG%</th><th class="num">Possession</th>{'<th class="num">Distance</th>' if has_distance else ''}</tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
+{f'<button class="f" id="toggle-inactive" style="margin-top:12px" data-n="{n_inactive}">Show {n_inactive} more tracks without a shot or possession</button>' if n_inactive else ''}
 <p class="faint small" style="margin:12px 0 0">{"Jersey numbers read from the video, tracker id where no number was read." if any(p["number"] is not None for p in players) else "Players are tracker ids until jersey numbers are read."} Team by jersey colour. Possession is time as the closest player to the ball.{'' if has_distance else ' Distance follows once the court calibration exists.'}</p>
 </section>"""
 
@@ -460,7 +482,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, duration_s, minima
     data = {
         "teams": {str(k): v for k, v in TEAMS.items()},
         "score": {str(k): v for k, v in sc.items()},
-        "shots": shots, "possessions": poss, "players": players,
+        "shots": shots, "possessions": poss, "players": players, "cuts": cuts,
         "duration_s": round(float(duration_s), 2),
         "court": court_geometry(),
         "video_offset_s": video_offset_s,
@@ -534,13 +556,13 @@ def main(argv=None) -> int:
         if same_clip:
             video_offset_s = round(float(meta.get("first_frame") or 0) / float(meta["source_fps"]), 3)
 
-    page = build(events=events, stats=stats, cal=cal, shots=shots, players=players, teams=teams, poss=poss,
+    page = build(events=events, stats=stats, cal=cal, shots=shots, players=players, teams=teams, poss=poss, cuts=cuts_s(events),
                  duration_s=duration_s, minimap=minimap, overlay=overlay, clip=Path(clip).name if clip else "",
                  calib_note=calib_note, video_offset_s=video_offset_s, source_meta=meta)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page)
     print(f"saved: {args.out} ({len(page) // 1024} kB, events={'yes' if events else 'no'} shots={len(shots)} placed={sum(1 for s in shots if s.get('court_m'))}, "
-          f"stats={'yes' if stats else 'no'} players={len(players)} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode if cal else 'no'}, "
+          f"stats={'yes' if stats else 'no'} players={len(players)} active={sum(1 for p in players if p['active'])} numbered={sum(1 for p in players if p['number'] is not None)}, calib={cal.mode if cal else 'no'}, "
           f"minimap={'yes' if minimap else 'no'}, overlay={'yes' if overlay else 'no'}, seek_offset={video_offset_s})")
     return 0
 
