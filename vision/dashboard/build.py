@@ -104,7 +104,7 @@ class Identities:
             number = n if n is not None else pn
         if number is not None:
             return f"#{int(number)}" + (f" (track {variant})" if variant else ""), int(number), (str(key) if key else None)
-        return (f"track {track_id}" if track_id is not None else "unknown"), None, (str(key) if key else None)
+        return (f"track {track_id}" if track_id is not None else "shooter unknown"), None, (str(key) if key else None)
 
 
 def merge_by_identity(rows: list[dict]) -> list[dict]:
@@ -166,6 +166,7 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             if np.isfinite(xy).all() and cal.on_court(xy)[0]:
                 s["court_m"] = [round(float(xy[0]), 2), round(float(xy[1]), 2)]
         s["estimated"] = False
+        s["no_shooter"] = not foot
         if s["court_m"] is None:
             est = estimate_court_m(foot, raw.get("hoop_bbox"), s["team"])
             if est is not None:
@@ -500,7 +501,10 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
                 continue
             tm = TEAMS.get(s["team"], TEAMS[-1])
             items.append(f'<span class="chip" data-i="{i}" data-team="{s["team"]}"><i class="m {"made" if s["made"] else "miss"}" style="background:{tm["color"]};border-color:{tm["color"]}"></i>{fmt_clock(s["t"])}<span class="muted">{html.escape(s["label"])}</span></span>')
-        chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position yet (calibration pending). Time and shooter are known:</p><div class="pending">{"".join(items)}</div>'
+        n_noshooter = sum(1 for s in shots if not s.get("court_m") and s.get("no_shooter"))
+        why = ("the shooter could not be identified" if n_noshooter == len(items)
+               else "calibration pending" if not n_noshooter else f"{n_noshooter} without an identified shooter, the rest waits for calibration")
+        chips = f'<p class="muted small" style="margin:14px 0 0">{len(items)} {"shot" if len(items) == 1 else "shots"} without a court position, {why}:</p><div class="pending">{"".join(items)}</div>'
     estimated = sum(1 for s in shots if s.get("estimated"))
     notes = []
     if estimated:
