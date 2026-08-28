@@ -38,7 +38,7 @@ def draw_tracks(frame: np.ndarray, record: dict | None, holder: int | None) -> N
         cv2.circle(frame, (cx, cy), 14, BALL_COLOR, 3)
 
 
-def draw_score_bar(frame: np.ndarray, board: ScoreBoard, t: float, info: str = "") -> None:
+def draw_score_bar(frame: np.ndarray, board: ScoreBoard, t: float, info: str = "", warning: bool = False) -> None:
     h, w = frame.shape[:2]
     bar_h = 64
     overlay = frame.copy()
@@ -50,7 +50,8 @@ def draw_score_bar(frame: np.ndarray, board: ScoreBoard, t: float, info: str = "
     (tw, _), _ = cv2.getTextSize(fg, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
     cv2.putText(frame, fg, (w - tw - 24, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (230, 230, 230), 2)
     if info:
-        cv2.putText(frame, info, (24, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+        color, scale, thick = ((0, 200, 255), 0.8, 2) if warning else ((200, 200, 200), 0.6, 1)
+        cv2.putText(frame, info, (24, h - 16), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick)
 
 
 def draw_flash(frame: np.ndarray, label: str, made: bool, age_s: float, duration_s: float) -> None:

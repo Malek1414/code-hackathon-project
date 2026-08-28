@@ -75,3 +75,48 @@ def test_hotkeys_drive_the_board():
     label, made = handle_key(ord("z"), b, 3.0)
     assert label.startswith("undo:") and made is False and b.line() == "A 2 : 0 B"
     assert handle_key(ord("x"), b, 4.0) is None
+
+
+def test_capture_survives_camera_silence(monkeypatch):
+    import time as _time
+
+    import numpy as np
+
+    import vision.live.live as live
+
+    class FakeCap:
+        instances = 0
+
+        def __init__(self, src):
+            FakeCap.instances += 1
+            self.fail = FakeCap.instances == 1  # the first device stays silent, the reopened one works
+            self.props = {}
+
+        def isOpened(self):
+            return True
+
+        def set(self, k, v):
+            self.props[k] = v
+
+        def get(self, k):
+            return 30.0
+
+        def read(self):
+            if self.fail:
+                return False, None
+            return True, np.zeros((4, 4, 3), np.uint8)
+
+        def grab(self):
+            pass
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(live.cv2, "VideoCapture", FakeCap)
+    cap = live.Capture("0")
+    cap.retry_s, cap.reopen_s = 0.0, 0.05
+    assert cap.read() is None and not cap.healthy and cap.reopens == 0
+    _time.sleep(0.06)
+    frame = cap.read()  # reopen kicks in -> the second device delivers
+    assert cap.reopens == 1 and frame is not None and cap.healthy
+    assert FakeCap.instances == 2
