@@ -54,7 +54,8 @@ def rel(p: Path | str) -> str:
 
 def show(cmd: list[str]) -> str:
     """Command line for humans: repo-relative paths, .venv python as-is."""
-    return " ".join(rel(c) if c.startswith(str(ROOT) + "/") else c for c in cmd)
+    prefix = str(ROOT) + "/"
+    return " ".join(c[len(prefix):] if c.startswith(prefix) else c for c in cmd)  # no resolve(): .venv/bin/python is a symlink
 
 
 def sig(path: Path) -> list | None:
@@ -129,16 +130,20 @@ class Pipeline:
         self.clip = Path(a.clip)
         if not self.clip.exists():
             raise SystemExit(f"Clip fehlt: {a.clip}")
+        self.clip = Path(rel(self.clip))  # repo-relative everywhere: stable stamps, short logs (subprocess cwd is ROOT)
         self.stem = self.clip.stem
         self.od = Path(a.out_dir)
         self.od.mkdir(parents=True, exist_ok=True)
+        self.od = Path(rel(self.od))
         self.stamps = self.od / ".run_all"
         self.stamps.mkdir(exist_ok=True)
         self.in_place = self.od.resolve() == (ROOT / "out").resolve()
         self.weights = Path(a.weights) if a.weights else None
         if self.weights and not self.weights.exists():
             raise SystemExit(f"Gewichte fehlen: {a.weights}")
-        self.calib = Path(a.calib) if a.calib else self.default_calib()
+        if self.weights:
+            self.weights = Path(rel(self.weights))
+        self.calib = Path(rel(Path(a.calib) if a.calib else self.default_calib()))
         self.force = a.force
         self.dry = a.dry_run
         self.stride = a.stride
@@ -185,7 +190,7 @@ class Pipeline:
         steps.append(Step("track", [cmd], track_inputs, [tracks, meta]))
 
         # NUMBERS: read.py has fixed outputs in out/ (numbers_reads.json, preview, cache); merge takes --reads/--out
-        reads = ROOT / "out" / "numbers_reads.json"
+        reads = Path("out/numbers_reads.json")
         steps.append(Step(
             "numbers",
             [[PY, "-m", "vision.numbers.read", "--tracks", str(tracks), "--video", str(self.clip)],
@@ -235,7 +240,7 @@ class Pipeline:
 
     # -- stamps ------------------------------------------------------------
     def stamp_of(self, step: Step) -> dict:
-        return {"clip": rel(self.clip), "cmds": step.cmds, "inputs": [sig(p) for p in step.inputs]}
+        return {"clip": rel(self.clip), "cmds": [show(c) for c in step.cmds], "inputs": [sig(p) for p in step.inputs]}
 
     def is_current(self, step: Step) -> tuple[bool, str]:
         if self.force:
