@@ -78,7 +78,7 @@ def court_size(calib: dict) -> tuple[float, float]:
     return float(c.get("length", 28.0)), float(c.get("width", 15.0))
 
 
-def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 1.0) -> bool | None:
+def on_court(calib: dict, frame_no: int, foot: Point, margin_m: float = 0.5) -> bool | None:
     """True/False if the foot point projects inside the court (+margin);
     None when no homography applies to this frame. Uses COURT's
     Calibration (keyframe blending, per-frame npz) when available."""

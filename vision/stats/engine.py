@@ -28,7 +28,7 @@ class OnCourtFilter:
     """Drops bench players and spectators from a frame's player list.
 
     With a calibration: keep a player only while the foot point projects
-    inside the court plus `margin_m`. Without: a track is off court while,
+    inside the court plus `margin_m` (0.5 m). Without: a track is off court while,
     over the trailing `window_s`, its median bbox height is below
     `min_height_ratio` of the median height of all detections in that window
     AND its median foot y lies in the top `top_frac` of the image (bench and
@@ -45,7 +45,7 @@ class OnCourtFilter:
         window_s: float = 5.0,
         min_height_ratio: float = 0.6,
         top_frac: float = 0.35,
-        margin_m: float = 1.0,
+        margin_m: float = 0.5,  # QA 13:25: 1.5 m keeps the bench on court, 0.5 m removes bench/table/spectators
         bench_line_frac: float = 0.0,
     ) -> None:
         self.calib = calib
