@@ -6,8 +6,9 @@ All commands from the repo root, models need the GPU slot (ORCH schedule).
    `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v2/tracks.jsonl`
 2. With models, from file: `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime`
 3. Phone (Continuity Camera): wake the iPhone, then
-   `.venv/bin/python -m vision.live.live --list-sources` → pick the index that says `ok`, or `--source auto`
-   `.venv/bin/python -m vision.live.live --source auto`
+   `.venv/bin/python -m vision.live.live --list-sources` → the iPhone is the highest index (1 on 28.08, "no-frame" in the
+   2 s probe is normal, it wakes up within ~10 s); the Mac's own camera is 0.
+   `.venv/bin/python -m vision.live.live --source 1`   (or `--source auto` = highest camera that delivers)
 4. Stream: put the ingest URL in `.env` as `FOLLOWCAM_RTMP_URL=rtmp://.../<key>` (never in code, never in git);
    the push starts automatically. Local check: `ffmpeg -listen 1 -f flv -i rtmp://127.0.0.1:1935/live/test -f null -`
 5. Browser / OBS source: http://127.0.0.1:8501/stream

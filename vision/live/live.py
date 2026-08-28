@@ -130,9 +130,9 @@ def list_sources(max_index: int = 4, timeout_s: float = 2.0) -> list[tuple[int, 
 
 
 def auto_source(max_index: int = 4, timeout_s: float = 15.0) -> int | None:
-    """First index that delivers a frame, waiting up to `timeout_s` per index
-    (the phone needs a few seconds after waking)."""
-    for i in range(max_index + 1):
+    """Highest index that delivers a frame (the phone/external camera sits
+    above the built-in one at 0), waiting up to `timeout_s` per index."""
+    for i in range(max_index, -1, -1):
         status, _w, _h, _fps = probe_source(i, timeout_s)
         log.info("camera %d: %s", i, status)
         if status == "ok":
