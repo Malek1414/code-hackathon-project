@@ -18,8 +18,9 @@ them. What separates them is time and motion:
   first 0.6 s after the cut at 2798 and the real shot arc (0.83-0.88) was
   gated out.
 * static takeover: when the last 8 accepted positions did not move (< 8 px)
-  the gate opens fully, so a moving high-confidence candidate anywhere beats
-  what is by then most likely a fixture.
+  the gate opens fully and confidence alone decides, so a high-confidence
+  candidate anywhere beats what is by then most likely a fixture (a ball held
+  still keeps winning as long as it scores higher than the alternatives).
 * absolute blacklist while the camera is not panning (hoop box moved < 4 px
   since the previous frame): every static reject is also blacklisted as a
   pixel position, so it cannot win even in frames without a hoop. Cleared
@@ -194,7 +195,8 @@ class BallGate:
         gap = self.gap
         pred = self.predict(gap)
         gate = min(self.base_px + self.per_frame_px * gap, self.max_gate_px)
-        if self._stuck():
+        stuck = self._stuck()
+        if stuck:
             gate = self.max_gate_px  # the "ball" is not moving: let a real one take over
         near = self.near_px + self.near_grow_px * min(gap, 10)
 
@@ -227,6 +229,9 @@ class BallGate:
                 self._reject(box, conf, "gate")
                 continue
             dist_pred = float(np.linalg.norm(c - pred))
+            if stuck:
+                tier2.append((conf, conf, box, c))
+                continue
             score = conf - 0.5 * dist_pred / gate
             (tier1 if dist_pred <= near else tier2).append((score, conf, box, c))
         pool = tier1 or tier2
