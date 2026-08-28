@@ -386,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
     args = ap.parse_args(argv)
     note = args.note
+    tracks_dir = Path(args.tracks).parent  # archived runs: out/<clip>_vN/; cuts and calibration may still live in out/
 
     image_height = 1080.0
     if args.fixture:
@@ -404,14 +405,17 @@ def main(argv: list[str] | None = None) -> int:
 
     calib = None
     distances = None
-    calib_path = None if args.fixture else find_calib(clip, Path(args.tracks).parent, args.calib)
+    calib_path = None if args.fixture else (find_calib(clip, tracks_dir, args.calib) or find_calib(clip, Path("out")))
     if calib_path is not None:
         calib = json.loads(calib_path.read_text())
         distances = court_distances(calib_path, Path(args.tracks))
 
     out = Path(args.out_dir)
-    tracks_dir = Path(args.tracks).parent  # cuts/identities live next to the tracks, not in --out-dir
-    cuts = load_cuts(Path(args.cuts)) if args.cuts else (find_cuts(clip, tracks_dir) if not args.fixture else [])
+    cuts = []
+    if args.cuts:
+        cuts = load_cuts(Path(args.cuts))
+    elif not args.fixture:
+        cuts = find_cuts(clip, tracks_dir) or find_cuts(clip, Path("out"))
     identities = None
     ident_path = Path(args.identities)
     if ident_path.exists() and not args.fixture:
