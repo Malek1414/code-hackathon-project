@@ -21,6 +21,9 @@ Usage:
   .venv/bin/python software/ball_tracker_yolo.py --video clip.mp4 --headless --max-frames 600 --save-frames 3
 
 Keys: q quit. Prints fps and ball hit rate on exit (and every 100 frames headless).
+Control law and serial writer live in software/pan_control.py (PanController,
+ServoSerial: 20 Hz, only on >= 1 degree change); --dry-serial prints the
+A<angle> lines instead of opening a port.
 Deps: the repo .venv (ultralytics, opencv-python), pyserial for --serial.
 """
 import argparse
@@ -30,6 +33,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from software.pan_control import PanController, ServoSerial  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 WEIGHTS = ROOT / "models" / "ball_hoop_avishah.pt"
@@ -51,13 +57,6 @@ EMA = 0.35
 MIN_AREA = 300
 MIN_ROUNDNESS = 0.5     # blob area / enclosing-circle area; only used by the HSV fallback here
 FRAME_W, FRAME_H = 960, 540
-
-
-def open_serial(port):
-    import serial
-    s = serial.Serial(port, 115200, timeout=0.05)
-    time.sleep(2)  # Arduino auto-reset
-    return s
 
 
 def hsv_ball(frame):
@@ -117,6 +116,8 @@ def main():
     ap.add_argument("--cam", type=int, default=0)
     ap.add_argument("--video", default=None)
     ap.add_argument("--serial", default=None)
+    ap.add_argument("--dry-serial", action="store_true", help="print A<angle> lines instead of opening a port")
+    ap.add_argument("--invert", action="store_true", help="flip the pan direction if the camera runs away from the ball")
     ap.add_argument("--device", default="cpu", help="cpu (default, keeps the GPU free) or mps")
     ap.add_argument("--hsv-fallback", action="store_true",
                     help="use the HSV color mask after %d lost frames (off: it fires on skin tones)" % LOST_FRAMES)
@@ -134,13 +135,13 @@ def main():
     cap = cv2.VideoCapture(args.video if args.video else args.cam)
     if not cap.isOpened():
         raise SystemExit("could not open video source")
-    ser = open_serial(args.serial) if args.serial else None
+    ctl = PanController(kp=KP, deadband_px=DEADBAND_PX, ema=EMA, lo=SERVO_MIN, hi=SERVO_MAX,
+                        center=SERVO_CENTER, invert=args.invert)
+    ser = ServoSerial(args.serial, dry=args.dry_serial) if (args.serial or args.dry_serial) else None
     out_dir = Path(args.out_dir)
     if args.save_frames:
         out_dir.mkdir(parents=True, exist_ok=True)
 
-    smooth_x = None
-    angle = float(SERVO_CENTER)
     prev = None
     lost = LOST_FRAMES  # start in "lost" so HSV is allowed until the model sees a ball
     n = hits_model = hits_hsv = saved = 0
@@ -167,6 +168,7 @@ def main():
             lost += 1
             if lost >= 3:
                 prev = None  # widen the search to the full frame
+                ctl.reset()
             if args.hsv_fallback and lost >= LOST_FRAMES:
                 target = hsv_ball(frame)
                 source = "hsv"
@@ -176,17 +178,14 @@ def main():
         if target:
             x, y, r = target
             prev = (x, y)
-            smooth_x = x if smooth_x is None else EMA * x + (1 - EMA) * smooth_x
-            err = smooth_x - w / 2
-            if abs(err) > DEADBAND_PX:
-                angle = float(np.clip(angle - KP * err, SERVO_MIN, SERVO_MAX))
-                # sign convention: if the camera runs away from the ball, flip KP's sign
+            ctl.update(x, w)  # sign convention: --invert if the camera runs away from the ball
             color = (0, 255, 0) if source == "yolo" else (0, 200, 255)
             cv2.circle(frame, (x, y), r, color, 2)
-            cv2.line(frame, (int(smooth_x), 0), (int(smooth_x), h), color, 1)
+            cv2.line(frame, (int(ctl.smooth_x), 0), (int(ctl.smooth_x), h), color, 1)
+        angle = ctl.angle
 
         if ser:
-            ser.write(f"A{int(round(angle))}\n".encode())
+            ser.send(angle)
 
         fps = n / max(1e-6, time.time() - t0)
         cv2.line(frame, (w // 2, 0), (w // 2, h), (255, 255, 255), 1)
@@ -213,13 +212,16 @@ def main():
             break
 
     cap.release()
+    if ser:
+        ser.close()
     if not args.headless:
         cv2.destroyAllWindows()
     dt = time.time() - t0
     print(f"{n} frames in {dt:.1f} s = {n / max(dt, 1e-6):.1f} fps on {args.device}, "
           f"ball by model in {hits_model}/{n} frames ({hits_model / max(n, 1):.0%}), "
           f"by HSV fallback in {hits_hsv} ({hits_hsv / max(n, 1):.0%}), "
-          f"last angle {angle:.1f}" + (f", {saved} frames saved to {out_dir}" if saved else ""))
+          f"last angle {angle:.1f}" + (f", {ser.sent} serial commands" if ser else "")
+          + (f", {saved} frames saved to {out_dir}" if saved else ""))
     return 0
 
 
