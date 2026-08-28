@@ -38,7 +38,8 @@ Rule (docs/ORCHESTRATION.md, STATS milestone 12:45), adapted to sparse tracks
 
 The camera pans, so every test is done in hoop-relative coordinates (ball
 minus hoop in the *same* frame) and only in frames that contain a hoop box.
-Frames without a hoop box never advance the state machine.
+Frames without a hoop box never advance the state machine; ball points
+flagged `predicted` (TRACK's Kalman coasting) are ignored here entirely.
 """
 
 from __future__ import annotations
@@ -220,7 +221,7 @@ class ShotDetector:
     def push(self, index: int) -> list[ShotEvent]:
         fr = self.frames[index]
         vanished = self._check_vanished(fr.t)
-        if fr.ball is None:
+        if fr.ball is None or fr.ball.predicted:  # coasted points never decide a shot
             return vanished
         self._ball_idx.append(index)
         k = len(self._ball_idx) - 1
