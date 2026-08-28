@@ -33,6 +33,7 @@ from .common import (
     TRACKS,
     FrameGrabber,
     fmt_t,
+    is_predicted,
     meta_for,
     put_text,
     qa_lock,
@@ -87,13 +88,16 @@ def draw_frame(img: np.ndarray, line: dict, rejects: list[dict], trail: deque, c
     for i in range(1, len(pts)):
         cv2.line(img, pts[i - 1], pts[i], BALL_COLOR, 2 + i // 8)
     b = line.get("ball")
-    if b:
+    if is_predicted(b):
+        cx, cy = b.get("center") or ((b["bbox"][0] + b["bbox"][2]) / 2, (b["bbox"][1] + b["bbox"][3]) / 2)
+        cv2.circle(img, (int(cx), int(cy)), 22, BALL_COLOR, 2)  # hollow: coasting point, not a detection
+    elif b:
         x1, y1, x2, y2 = (int(v) for v in b["bbox"])
         cv2.rectangle(img, (x1 - 3, y1 - 3), (x2 + 3, y2 + 3), BALL_COLOR, 4)
         put_text(img, f"{b.get('conf', 0):.2f}", (x1, max(30, y1 - 12)), 0.8, BALL_COLOR, 2)
     cv2.rectangle(img, (0, 0), (720, 96), (0, 0, 0), -1)
     put_text(img, counter, (16, 40), 1.0, (255, 255, 255), 2)
-    put_text(img, f"{fmt_t(t)}   gelb = Ball + Spur 1 s, rot x = verworfen, gruen = Korb", (16, 80), 0.7, (200, 200, 200), 1)
+    put_text(img, f"{fmt_t(t)}   gelb = Ball + Spur 1 s, hohler Kreis = vorhergesagt, rot x = verworfen, gruen = Korb", (16, 80), 0.7, (200, 200, 200), 1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -130,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     trail: deque = deque(maxlen=trail_len)
-    n_ball = n_rej = n = 0
+    n_ball = n_rej = n = n_pred = 0
     t0 = time.time()
     try:
         for line in frames:
@@ -141,13 +145,17 @@ def main(argv: list[str] | None = None) -> int:
             rj = rejects.get(line["frame"], [])
             n_rej += len(rj)
             b = line.get("ball")
-            if b:
+            if is_predicted(b):
+                n_pred += 1
+                cx, cy = b.get("center") or ((b["bbox"][0] + b["bbox"][2]) / 2, (b["bbox"][1] + b["bbox"][3]) / 2)
+                trail.append((int(cx), int(cy)))  # the trail follows the coasting point, the box does not
+            elif b:
                 n_ball += 1
                 cx, cy = b.get("center") or ((b["bbox"][0] + b["bbox"][2]) / 2, (b["bbox"][1] + b["bbox"][3]) / 2)
                 trail.append((int(cx), int(cy)))
             else:
                 trail.clear()
-            counter = f"Ball sichtbar: {n_ball}/{n} Frames, verworfen: {n_rej}"
+            counter = f"Ball sichtbar: {n_ball}/{n} Frames, verworfen: {n_rej}" + (f", vorhergesagt: {n_pred}" if n_pred else "")
             draw_frame(img, line, rj, trail, counter, line.get("t", 0.0))
             small = cv2.resize(img, (out_w, OUT_H), interpolation=cv2.INTER_AREA)
             proc.stdin.write(small.tobytes())
@@ -173,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         "ball_frames": n_ball,
         "ball_share": round(n_ball / n, 4) if n else 0,
         "rejects": n_rej,
+        "predicted_frames": n_pred,
         "rejects_file": str(rejects_path.relative_to(ROOT)) if rejects_path and rejects_path.is_relative_to(ROOT) else (str(rejects_path) if rejects_path else None),
         "fps": fps,
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),

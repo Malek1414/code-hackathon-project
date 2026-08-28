@@ -53,6 +53,11 @@ def read_tracks(path: Path = TRACKS) -> list[dict]:
     return frames
 
 
+def is_predicted(ball: dict | None) -> bool:
+    """Kalman coasting point (contract 14:07: "predicted": true, conf 0), never a detection."""
+    return bool(ball) and bool(ball.get("predicted"))
+
+
 def read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text())

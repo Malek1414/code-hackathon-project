@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 
 from .ball_label import frame_of
-from .common import BALL_COLOR, OUT, QA_DIR, ROOT, fit_height, put_text, qa_lock, read_json, read_tracks, save_jpg, tile, with_header
+from .common import BALL_COLOR, OUT, QA_DIR, ROOT, fit_height, is_predicted, put_text, qa_lock, read_json, read_tracks, save_jpg, tile, with_header
 
 LABELS = QA_DIR / "ball_labels.json"
 FRAMES_DIR = ROOT / "data" / "frames"
@@ -55,11 +55,14 @@ def evaluate(labels: list[dict], lines: dict[int, dict]) -> tuple[list[dict], di
         if line is None and fr - 1 in lines:  # tracks with stride 2 and an odd target
             line = lines[fr - 1]
         tb = (line or {}).get("ball")
+        predicted = is_predicted(tb)
+        if predicted:
+            tb = None  # coasting point: counted in "predicted", never as a detection
         tc = None
         if tb:
             x1, y1, x2, y2 = tb["bbox"]
             tc = tb.get("center") or [(x1 + x2) / 2, (y1 + y2) / 2]
-        row = {"file": lb["file"], "frame": fr, "status": lb["status"], "sami": lb.get("ball"), "tracker": tb, "dist_px": None, "dist_r": None}
+        row = {"file": lb["file"], "frame": fr, "status": lb["status"], "sami": lb.get("ball"), "tracker": tb, "predicted": predicted, "dist_px": None, "dist_r": None}
         if line is None:
             row["result"] = "unprocessed"
         elif lb["status"] == "open":
@@ -81,6 +84,8 @@ def evaluate(labels: list[dict], lines: dict[int, dict]) -> tuple[list[dict], di
     tracker_balls = sum(1 for r in rows if r["tracker"] and r["result"] != "unprocessed")
     summary = {
         **c,
+        "predicted": sum(1 for r in rows if r["predicted"] and r["result"] != "unprocessed"),
+        "predicted_on_ball_frames": sum(1 for r in rows if r["predicted"] and r["status"] == "ball" and r["result"] != "unprocessed"),
         "labeled_ball_frames": ball_frames,
         "labeled_none_frames": sum(1 for r in rows if r["status"] == "none" and r["result"] != "unprocessed"),
         "tracker_ball_frames": tracker_balls,
@@ -152,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     head = [
         f"ball eval   {summary['tracks']} ({len(lines)} frames, last {max(lines)})   vs {args.labels.name}   "
         f"recall {rec}   precision {prec}   hit {summary['hit']}  miss {summary['miss']}  off {summary['off']}  false {summary['false']}  "
-        f"unprocessed {summary['unprocessed']}",
+        f"unprocessed {summary['unprocessed']}   predicted (Kalman) {summary['predicted']}",
         f"gruen = Samis Kreis, gelb = Tracker-Box.  hit <= {HIT_R} r, off <= {FALSE_R} r, false > {FALSE_R} r oder Ball auf einem 'kein Ball' Frame.  {N_WORST} schlechteste Frames",
         summary["generated"],
     ]
@@ -160,7 +165,8 @@ def main(argv: list[str] | None = None) -> int:
         save_jpg(args.out / "ball_eval.jpg", with_header(tile(tiles, COLS), head, 0.9), 88)
     print(
         f"{summary['tracks']}: recall {rec} ({summary['hit']}/{summary['labeled_ball_frames']}), precision {prec} ({summary['hit']}/{summary['tracker_ball_frames']}), "
-        f"miss {summary['miss']}, off {summary['off']}, false {summary['false']}, true none {summary['true_none']}, unprocessed {summary['unprocessed']}"
+        f"miss {summary['miss']}, off {summary['off']}, false {summary['false']}, true none {summary['true_none']}, unprocessed {summary['unprocessed']}, "
+        f"predicted {summary['predicted']} (on ball frames {summary['predicted_on_ball_frames']})"
     )
     print(f"misses (frames): {misses}")
     print(f"false (frames): {falses}")

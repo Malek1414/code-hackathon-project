@@ -28,6 +28,7 @@ from .common import (
     FrameGrabber,
     fit_width,
     fmt_t,
+    is_predicted,
     meta_for,
     put_text,
     qa_lock,
@@ -46,6 +47,11 @@ def render_tile(img: np.ndarray, line: dict) -> np.ndarray:
     ball = line.get("ball")
     small = fit_width(img, TILE_W)
     s = TILE_W / img.shape[1]
+    if is_predicted(ball):
+        cx, cy = ball.get("center") or ((ball["bbox"][0] + ball["bbox"][2]) / 2, (ball["bbox"][1] + ball["bbox"][3]) / 2)
+        cv2.circle(small, (int(cx * s), int(cy * s)), 10, BALL_COLOR, 2)
+        put_text(small, "vorhergesagt (Kalman)", (8, 24), 0.6, BALL_COLOR, 2)
+        ball = None
     if ball:
         x1, y1, x2, y2 = ball["bbox"]
         cv2.rectangle(small, (int(x1 * s) - 2, int(y1 * s) - 2), (int(x2 * s) + 2, int(y2 * s) + 2), BALL_COLOR, 2)
@@ -97,14 +103,17 @@ def main(argv: list[str] | None = None) -> int:
         if img is None:
             continue
         tiles.append(render_tile(img, line))
-        listed.append({"frame": line["frame"], "t": line.get("t"), "ball": bool(line.get("ball")), "conf": (line.get("ball") or {}).get("conf")})
+        listed.append({"frame": line["frame"], "t": line.get("t"), "ball": bool(line.get("ball")) and not is_predicted(line.get("ball")),
+                       "predicted": is_predicted(line.get("ball")), "conf": (line.get("ball") or {}).get("conf")})
     grab.close()
     with_ball = sum(1 for l in listed if l["ball"])
-    total_ball = sum(1 for f in frames if f.get("ball"))
+    total_ball = sum(1 for f in frames if f.get("ball") and not is_predicted(f.get("ball")))
+    total_pred = sum(1 for f in frames if is_predicted(f.get("ball")))
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     head = [
         f"ball recall sample   {clip_label}   {len(tiles)} of {len(frames)} processed frames (seed {args.seed})   "
-        f"ball box in {with_ball}/{len(tiles)} sampled, {total_ball}/{len(frames)} overall ({100 * total_ball / len(frames):.0f}%)",
+        f"ball box in {with_ball}/{len(tiles)} sampled, {total_ball}/{len(frames)} overall ({100 * total_ball / len(frames):.0f}%)"
+        + (f", predicted (Kalman) {total_pred}" if total_pred else ""),
         "count: yellow box on the real ball = hit,  box on something else = false positive,  'no ball' while a ball is visible = miss.  inset = 2x zoom on the box",
         time.strftime("generated %Y-%m-%d %H:%M:%S"),
     ]
@@ -112,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     save_jpg(args.out / "ball_recall.jpg", sheet, 88)
     (args.out / "ball_recall.json").write_text(
-        json.dumps({"clip": clip_label, "seed": args.seed, "frames_total": len(frames), "ball_frames_total": total_ball, "sampled": listed}, indent=1)
+        json.dumps({"clip": clip_label, "seed": args.seed, "frames_total": len(frames), "ball_frames_total": total_ball, "predicted_total": total_pred, "sampled": listed}, indent=1)
     )
     print(f"{len(tiles)} tiles, ball box in {with_ball} of them, {total_ball}/{len(frames)} frames overall -> {args.out / 'ball_recall.jpg'}")
     return 0

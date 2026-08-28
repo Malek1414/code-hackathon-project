@@ -93,7 +93,7 @@ def archive_complete(tracks: Path) -> bool:
         last_written = json.loads(lines[-1])["frame"] if lines else -1
     except (OSError, json.JSONDecodeError, KeyError, IndexError):
         return False
-    return last_written >= int(last) - 2 * stride
+    return last_written >= int(last) - max(2 * stride, int(0.05 * int(last)))  # container frame count can exceed the decodable end
 
 
 def run_archives() -> None:
