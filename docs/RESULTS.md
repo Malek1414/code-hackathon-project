@@ -101,3 +101,51 @@ frame) and gives 101 instead of 134 track ids on the same footage, 25 % fewer
 id switches than COCO yolo11s. In the one real shot window of the clip (57.0
 to 57.8 s) the ball is carried onto the rim in 7 of 10 frames in every A and
 C config, and the static wall-fixture false ball never wins any more.
+
+## Court model (COURT, 28 Aug 13:50)
+
+Pipeline: hand-clicked landmarks on stills (`out/court_click.html`, browser,
+no server) → homography per keyframe (`vision/court/from_points.py`, RANSAC in
+pixels) → per-frame homographies by optical-flow camera chaining between
+direct SIFT anchors (`vision/court/propagate.py`) → minimap, overlay lines,
+projection helper (`vision/court/project.py`, used by TRACK, STATS, FRONTEND).
+
+Footage facts that shaped it: the video is an edited production, not one
+continuous pan. dev60 has 7 cuts/dissolves, game10 48 (a 12-cut visual sample
+was 12 real cuts), detected as frame vs. frame-one-second-earlier difference
+after aligning by the tracked camera motion (threshold 25 on 0..255 grey).
+Camera chaining never crosses a cut. dev60 is game10 from frame 3000 on
+(pixel-identical), so keyframes are shared with a +3000 offset. The game is
+played cross-court, the game basket is the ceiling-hung hoop on the far long
+wall; the far half of the court is compressed to about 50 px of image height,
+which bounds depth accuracy near the basket.
+
+Keyframes (Sami's clicks, 6 points each; halfway-line clicks were wrong in
+two frames and dropped):
+
+| Clip / frame | Reprojection error | Inliers |
+|---|---|---|
+| dev60 1000 (= game10 4000) | 1.0 px / 0.07 m | 6/6 |
+| dev60 1500 (= game10 4500) | 1.6 px / 0.03 m | 6/6 |
+| game10 8500 | 2.1 px / 0.08 m | 6/6 |
+| game10 12000 | 11.6 px / 0.09 m | 4/6 |
+| game10 26000 | 4.3 px / 0.08 m | 5/6 |
+
+Propagation (game10, 30001 frames): 203 SIFT auto anchors (one every 100
+frames per segment, 80+ inliers and 0.6+ inlier ratio required, matched on
+the static hall background), 27821 of 30001 frames calibrated (92.7 %), 9
+segments uncalibrated by design (close-ups and scoreboard, NaN for consumers).
+Chain drift measured between consecutive anchors on in-image court points:
+mostly 10 to 60 px; 8 stretches where anchors failed for 100 to 500 frames
+(fast action, zoom) exceed 150 px and are published as `uncertain_frames`
+(2373 frames = 47 s of 600; `Calibration.is_uncertain(frame)`), where FRONTEND
+marks shots as uncertain and distances are not summed. dev60: 21 anchors,
+2148 of 3001 frames calibrated, no uncertain stretch.
+
+Accuracy statement: width across the court is good (a few px at the
+keyframes, tens of px between anchors); depth along the court near the far
+basket is about ±0.5 m at the keyframes because 5.8 m of paint span ~30 px of
+image, worse mid-stretch. Good enough for minimap and shot chart, not for
+metre-precise distances. Stride > 1 in the camera chain is unusable (stride 2
+diverges by thousands of px on a real pan), measured, so chains run at stride
+1 and half resolution (~25 fps CPU, cached per clip).
