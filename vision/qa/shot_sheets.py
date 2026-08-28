@@ -146,6 +146,14 @@ def key_number(key: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def shot_signature(n: int, shot: dict, tracks: Path) -> str:
+    """What a sheet depends on: the shot's own fields plus the tracks and overlay versions.
+    events.json is rewritten often without changing a shot, so its mtime is deliberately not part of it."""
+    fields = {k: shot.get(k) for k in ("t", "frame", "player_id", "team", "made", "shooter_foot", "hoop_bbox", "shooter_confirmed", "player_key")}
+    versions = [int(pth.stat().st_mtime) if pth.exists() else 0 for pth in (tracks, OVERLAY)]
+    return json.dumps([n, fields, versions], sort_keys=True)
+
+
 def _shot_block(s: dict) -> str:
     n = s["n"]
     letter = TEAM_LETTER.get(s["team"])
@@ -514,21 +522,18 @@ def main(argv: list[str] | None = None) -> int:
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
     sheets = []  # files are replaced per shot; stale ones are pruned only after a complete run (an interrupted run must not empty the page)
-    previous = {round(m["t"], 2): m for m in ((read_json(args.out / "sheets.json") or {}).get("shots") or [])}
-    deps = [pth for pth in (args.events, args.tracks, OVERLAY) if pth.exists()]
-    deps_mtime = max(pth.stat().st_mtime for pth in deps) if deps else 0.0
+    previous = {m.get("sig"): m for m in ((read_json(args.out / "sheets.json") or {}).get("shots") or []) if m.get("sig")}
     reused = 0
     for n, shot in enumerate(shots, 1):
-        prev = previous.get(round(float(shot["t"]), 2))
-        prev_files = [args.out / prev[k] for k in ("file", "video", "video_half") if prev and prev.get(k)] if prev else []
-        if (
-            prev and prev.get("n") == n and prev.get("made") == bool(shot.get("made")) and prev.get("player_id") == shot.get("player_id")
-            and len(prev_files) == 3 and all(f.exists() and f.stat().st_mtime > deps_mtime for f in prev_files)
-        ):
-            sheets.append(prev)  # strip and videos are newer than events, tracks and overlay: nothing to redo
+        sig = shot_signature(n, shot, args.tracks)
+        prev = previous.get(sig)
+        prev_files = [args.out / prev[k] for k in ("file", "video", "video_half") if prev.get(k)] if prev else []
+        if prev and len(prev_files) == 3 and all(f.exists() for f in prev_files):
+            sheets.append(prev)  # same shot, same tracks and overlay, files present: nothing to redo
             reused += 1
             continue
         img, m = render_shot(n, shot, grab, index)
+        m["sig"] = sig
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
         m["number_prefill"] = key_number(m.get("player_key"))
         save_jpg(args.out / m["file"], img)
@@ -547,6 +552,9 @@ def main(argv: list[str] | None = None) -> int:
         sheets.append(m)
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
     numbers = build_number_cards(frames, grab, args.out, args.identities, clip)
+    if not numbers:
+        for stale in args.out.glob("num_*.jpg"):
+            stale.unlink()
     grab.close()
     if reused:
         print(f"  {reused} of {len(shots)} sheets reused (files newer than events, tracks and overlay)")
