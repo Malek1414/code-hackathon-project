@@ -141,3 +141,42 @@ def distances_m(frames: list[Frame], calib: dict) -> dict[int, float]:
                     total[p.id] += d
             last[p.id] = (fr.t, m)
     return dict(total)
+
+
+THREE_POINT_M = 6.75  # FIBA arc radius from the basket centre
+THREE_CORNER_M = 6.60  # straight part along the sidelines (0.9 m from the sideline)
+
+
+def hoops_m(calib: dict) -> list[Point]:
+    """Basket centres in court metres (FIBA: 1.575 m from each baseline, mid-width)."""
+    length, width = court_size(calib)
+    return [(1.575, width / 2), (length - 1.575, width / 2)]
+
+
+def shot_points(calib: dict | None, frame_no: int | None, foot: Point | None, made: bool) -> tuple[int, bool]:
+    """(points, three_estimated) for a shot: 0 for a miss, 2 by default, 3 when
+    the shooter's projected foot lies beyond the three-point line of the
+    nearest basket — an estimate (release foot, +-0.5 m calibration depth)."""
+    if not made:
+        return 0, False
+    if calib is None or foot is None or frame_no is None:
+        return 2, False
+    cal = _court_calibration(calib)
+    if cal is not None:
+        xy = cal.project(frame_no, [list(foot)])[0]
+        x, y = float(xy[0]), float(xy[1])
+    else:
+        H = homography_for(calib, frame_no)
+        if H is None:
+            return 2, False
+        x, y = project(H, foot)
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return 2, False
+    length, width = court_size(calib)
+    hx, hy = min(hoops_m(calib), key=lambda h: math.hypot(h[0] - x, h[1] - y))
+    d = math.hypot(x - hx, y - hy)
+    near_sideline = min(y, width - y) < 0.9 + 0.5  # corner: straight line at 6.60 m along the sideline
+    limit = THREE_CORNER_M if near_sideline else THREE_POINT_M
+    if d >= limit and 0 <= x <= length and 0 <= y <= width:
+        return 3, True
+    return 2, False

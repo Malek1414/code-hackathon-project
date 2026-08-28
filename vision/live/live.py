@@ -2,7 +2,7 @@
 
     .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime
     .venv/bin/python -m vision.live.live --source 0            # camera index (Continuity Camera)
-    .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/tracks.jsonl
+    .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v5/tracks.jsonl
 
 Detection runs in a worker thread at whatever rate the models allow (~10 fps
 on MPS) using TRACK's per-frame API (vision.track.tracker.Tracker.step);
@@ -85,7 +85,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights", default=None, help="single contract model (LABEL's best.pt)")
     ap.add_argument("--replay", default=None,
                     help="tracks.jsonl to replay instead of running the models; must be the tracks of the SAME clip "
-                         "as --source (e.g. --source data/clips/dev60.mp4 --replay out/dev60/tracks.jsonl)")
+                         "as --source (stage fallback: --source data/clips/dev60.mp4 --replay out/dev60_v5/tracks.jsonl)")
     ap.add_argument("--minimap", choices=["panel", "window", "off"], default="panel",
                     help="2D court: right third of the output (panel), its own window, or off")
     ap.add_argument("--calib", default=None,
@@ -103,6 +103,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--widgets", choices=["on", "off"], default="on", help="Big Ball Baller widgets (off = plain score bar)")
     ap.add_argument("--assets", default="broadcast/assets")
     ap.add_argument("--state-out", default="out/live_state.json")
+    ap.add_argument("--overview-every", type=float, default=300.0, help="team overview interval in seconds")
+    ap.add_argument("--ball-blacklist", default=None,
+                    help="track_summary.json of a known gym: seeds TRACK's hoop-relative wall-fixture blacklist (default none)")
     ap.add_argument("--snapshot-at", action="append", default=[], metavar="T:PATH",
                     help="save the composed frame at video time T seconds to PATH (repeatable; tests)")
     ap.add_argument("--panel-every", type=int, default=3,
@@ -317,7 +320,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from vision.track.tracker import Tracker  # TRACK's per-frame API (loads torch/ultralytics)
 
-        tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps)
+        blacklist = None
+        if args.ball_blacklist:
+            try:
+                blacklist = json.loads(Path(args.ball_blacklist).read_text()).get("ball_blacklist_rel_hoopwidths") or None
+                log.info("ball blacklist seeded from %s: %d fixtures", args.ball_blacklist, len(blacklist or []))
+            except (OSError, json.JSONDecodeError) as exc:
+                log.warning("ball blacklist %s unusable: %s", args.ball_blacklist, exc)
+        tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps,
+                          ball_blacklist_rel=blacklist)
     engine = StatsEngine(dt=1.0 / args.process_fps, fps=src_fps)
     events: queue.Queue = queue.Queue()
     worker = Worker(tracker, engine, events)
@@ -382,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
     panel = None
     team_cfg = load_team_config(team_a=args.team_a, team_b=args.team_b, color_a=args.color_a, color_b=args.color_b)
     live_stats = LiveStats(numbers=load_numbers(args.identities))
-    widgets = WidgetScheduler(Assets(args.assets), title=args.title) if args.widgets == "on" else None
+    widgets = WidgetScheduler(Assets(args.assets), title=args.title, overview_every_s=args.overview_every) if args.widgets == "on" else None
     last_event: dict | None = None
     last_state_t = -1.0
     snapshots = []
@@ -512,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
                 if status == "Ende der Datei":
                     widgets.end_of_file(t)
                 clock = f"{int(t // 60):02d}:{int(t % 60):02d}"
-                widgets.render(view, t, state_teams, state_players, clock)
+                widgets.render(view, t, state_teams, state_players, clock, last_event=last_event)
                 color, scale_, thick = ((0, 200, 255), 0.8, 2) if status else ((200, 200, 200), 0.6, 1)
                 cv2.putText(view, info, (24, view.shape[0] - 16), cv2.FONT_HERSHEY_SIMPLEX, scale_, color, thick)
             else:

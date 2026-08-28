@@ -19,7 +19,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .court import distances_m
+from .court import distances_m, shot_points
 from .engine import StatsEngine
 from .io import Frame, infer_fps, median_dt, read_tracks, synthetic_scenario
 from .possession import PossessionParams, PossessionResult, possession_seconds
@@ -63,6 +63,10 @@ def build(
         if s.player_id in ident and ident[s.player_id].team >= 0:
             s.team = ident[s.player_id].team
             s.team_source = "identity"
+    points: dict[int, tuple[int, bool]] = {}  # shot index -> (points, three_estimated): ONE rule for every consumer
+    for i, s in enumerate(shots):
+        frame_no = s.release_frame if s.release_frame is not None else s.frame
+        points[i] = shot_points(calib, frame_no, s.shooter_foot, bool(s.made and s.made_confirmed))
 
     def key_of(pid: int | None, team: int) -> str | None:
         if pid is None:
@@ -76,7 +80,8 @@ def build(
         "clip": clip,
         "cuts": sorted(set(int(c) for c in (cuts or []))),
         "off_court_track_ids": sorted(engine.removed_ids),
-        "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team)} for s in shots],
+        "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team), "points": points[i][0],
+                   "three_estimated": points[i][1]} for i, s in enumerate(shots)],
         "possessions": [
             {
                 "player_id": s.player_id,
@@ -90,7 +95,8 @@ def build(
             for s in possession.segments
         ],
     }
-    stats = player_stats(frames, possession, shots, calib=calib, distances=distances, identities=ident)
+    stats = player_stats(frames, possession, shots, calib=calib, distances=distances, identities=ident,
+                         points=[points[i][0] for i in range(len(shots))])
     return events, stats
 
 
@@ -218,9 +224,11 @@ def player_stats(
     calib: dict | None = None,
     distances: dict[int, float] | None = None,
     identities: dict[int, Identity] | None = None,
+    points: list[int] | None = None,
 ) -> dict:
     """One row per real player when identities are known (track ids merged
-    under their `key`), else one row per track id with key `A?<id>`."""
+    under their `key`), else one row per track id with key `A?<id>`.
+    `points` per shot (same order as `shots`) feeds player pts and team score."""
     dt = median_dt(frames)
     ident = identities or {}
     seen: Counter[int] = Counter()
@@ -233,10 +241,13 @@ def player_stats(
 
     fga: Counter[int] = Counter()
     fgm: Counter[int] = Counter()
-    for s in shots:
+    pts: Counter[int] = Counter()
+    pts_list = points if points is not None else [2 if s.made else 0 for s in shots]
+    for s, pt in zip(shots, pts_list):
         if s.player_id is not None:
             fga[s.player_id] += 1
             fgm[s.player_id] += int(s.made)
+            pts[s.player_id] += pt
     poss_s = possession_seconds(frames, possession)
     distance = distances if distances is not None else (distances_m(frames, calib) if calib else {})
 
@@ -254,11 +265,12 @@ def player_stats(
             key, team, number = f"{TEAM_LETTER.get(track_team, '?')}?{pid}", track_team, None
         row = rows.setdefault(
             key,
-            {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "fga": 0, "fgm": 0,
+            {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "pts": 0, "fga": 0, "fgm": 0,
              "fg_pct": None, "possession_s": 0.0, "distance_m": None, "_seen": 0},
         )
         row["id"] = min(row["id"], pid)
         row["track_ids"].append(pid)
+        row["pts"] += pts[pid]
         row["fga"] += fga[pid]
         row["fgm"] += fgm[pid]
         row["possession_s"] += poss_s.get(pid, 0.0)
@@ -277,15 +289,17 @@ def player_stats(
         if row["distance_m"] is not None:
             row["distance_m"] = round(row["distance_m"], 1)
         players.append(row)
-    players.sort(key=lambda p: (-p["fga"], -p["possession_s"], p["id"]))
+    players.sort(key=lambda p: (-p["pts"], -p["fga"], -p["possession_s"], p["id"]))
 
     team_fga: Counter[int] = Counter()
     team_fgm: Counter[int] = Counter()
-    for s in shots:
+    team_pts: Counter[int] = Counter()
+    for s, pt in zip(shots, pts_list):
         team_fga[s.team] += 1
         team_fgm[s.team] += int(s.made)
+        team_pts[s.team] += pt
     team_ids = sorted({0, 1} | {t for t in team_fga if t >= 0} | ({-1} if team_fga[-1] else set()))
-    team_rows = [{"team": t, "fga": team_fga[t], "fgm": team_fgm[t]} for t in team_ids]
+    team_rows = [{"team": t, "score": team_pts[t], "fga": team_fga[t], "fgm": team_fgm[t]} for t in team_ids]
     return {"players": players, "teams": team_rows}
 
 

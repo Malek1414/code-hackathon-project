@@ -14,6 +14,7 @@ end_summary + heat_map on hotkey e or at the end of the file.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import cv2
@@ -75,21 +76,25 @@ class Assets:
             boxes = [{"id": k, **v} for k, v in boxes.items() if isinstance(v, dict)]
         return boxes if isinstance(boxes, list) else []
 
-    def get(self, wid: str) -> np.ndarray | None:
+    def get(self, wid: str, variant: str = "") -> np.ndarray | None:
         """Sprite for the widget: the rendered PNG (static widgets) or the
-        template PNG (dynamic widgets), or None (placeholder)."""
+        template PNG (dynamic widgets; `variant` "_b" = team B tint when that
+        file exists), or None (placeholder)."""
         import time as _time
 
+        key = wid + variant
         now = _time.monotonic()
-        if wid in self._cache and now - self._checked.get(wid, 0.0) < self.refresh_s:
-            return self._cache[wid]
-        self._checked[wid] = now
-        name = f"{wid}_template.png" if wid in DYNAMIC_WIDGETS else f"{wid}.png"
+        if key in self._cache and now - self._checked.get(key, 0.0) < self.refresh_s:
+            return self._cache[key]
+        self._checked[key] = now
+        name = f"{wid}_template{variant}.png" if wid in DYNAMIC_WIDGETS else f"{wid}.png"
         path = self.folder / name
+        if variant and not path.exists():
+            return self.get(wid)  # no team-B file: the team-A template
         mtime = path.stat().st_mtime if path.exists() else -1.0
-        if wid in self._cache and self._mtime.get(wid) == mtime:
-            return self._cache[wid]
-        self._mtime[wid] = mtime
+        if key in self._cache and self._mtime.get(key) == mtime:
+            return self._cache[key]
+        self._mtime[key] = mtime
         img = None
         if path.exists():
             raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
@@ -104,7 +109,7 @@ class Assets:
                     full[y:y + h, x:x + w] = cv2.resize(raw, (w, h))
                     raw = full
                 img = _crop_to_alpha(raw)
-        self._cache[wid] = img
+        self._cache[key] = img
         return img
 
     def external(self, name: str) -> np.ndarray | None:
@@ -181,19 +186,67 @@ def _geom(frame: np.ndarray, wid: str) -> tuple[int, int, int, int]:
 
 
 ROLE_COLORS = {"white": TEXT, "muted": DIM, "text": TEXT}
+BOX_FONT = cv2.FONT_HERSHEY_SIMPLEX  # plain zero (DUPLEX draws a slashed one); 1.0 ~ 22 px cap height
+HERSHEY_CAP_PX = 22.0
+_PATH = re.compile(r"\{([^{}]+)\}")
 
 
-def draw_boxes(frame: np.ndarray, boxes: list[dict], fields: dict, teams: list[dict]) -> None:
-    """Live text into FRONTEND's layout boxes (canvas px: x, y, w, h, font_px,
-    align left|center|right, color_role team_a|team_b|white|muted, field)."""
+def resolve_path(path: str, ctx: dict):
+    """'teams[last_event.team].name' style paths against the state context."""
+    cur = ctx
+    for part in re.findall(r"[^.\[\]]+|\[[^\]]+\]", path):
+        if part.startswith("["):
+            idx = part[1:-1]
+            if not idx.lstrip("-").isdigit():
+                idx = resolve_path(idx, ctx)
+            try:
+                cur = cur[int(idx)]
+            except (TypeError, ValueError, IndexError, KeyError):
+                return None
+        else:
+            if isinstance(cur, dict):
+                cur = cur.get(part)
+            else:
+                cur = getattr(cur, part, None)
+        if cur is None:
+            return None
+    return cur
+
+
+def render_format(fmt: str, ctx: dict) -> str | None:
+    """FRONTEND's format strings, e.g. 'BASKET  {teams[last_event.team].name} +{last_event.points}'."""
+    missing = False
+
+    def sub(m):
+        nonlocal missing
+        v = resolve_path(m.group(1).strip(), ctx)
+        if v is None:
+            missing = True
+            return ""
+        if isinstance(v, float):
+            return f"{int(round(v * 100))}%" if 0 <= v <= 1 and "pct" in m.group(1) else f"{v:g}"
+        return str(v)
+
+    out = _PATH.sub(sub, fmt)
+    return None if missing else out
+
+
+def draw_boxes(frame: np.ndarray, boxes: list[dict], fields: dict, teams: list[dict], ctx: dict | None = None) -> None:
+    """Live text into FRONTEND's layout boxes (canvas px: x, y, w, h, baseline,
+    font_px, align left|center|right, color_role team_a|team_b|white|muted;
+    text from the box's `format` over the state context, else from `field`)."""
     k = _scale(frame)
     for b in boxes:
-        val = fields.get(b.get("field", b.get("id")))
+        val = None
+        if ctx is not None and b.get("format"):
+            val = render_format(b["format"], ctx)
+        if val is None:
+            val = fields.get(b.get("field", b.get("id")))
         if val is None:
             continue
-        s = str(val)
-        size = float(b.get("font_px", 32)) / 32.0 * k  # Hershey 1.0 ~ 32 px cap height
-        thick = max(1, int(round(size * 2)))
+        s = str(val).replace("0", "O")  # every Hershey face slashes its zero; the capital O is the plain oval
+        size = float(b.get("font_px", 24)) / HERSHEY_CAP_PX * k
+        thick = max(1, int(round(size * 1.6)))
         role = b.get("color_role", "white")
         if role == "team_a":
             color = hex_to_bgr(teams[0]["color"])
@@ -201,17 +254,24 @@ def draw_boxes(frame: np.ndarray, boxes: list[dict], fields: dict, teams: list[d
             color = hex_to_bgr(teams[1]["color"])
         else:
             color = ROLE_COLORS.get(role, TEXT)
-        (tw, th), _ = cv2.getTextSize(s, cv2.FONT_HERSHEY_DUPLEX, size, thick)
+        (tw, th), _ = cv2.getTextSize(s, BOX_FONT, size, thick)
         x, y, w, h = (float(b.get("x", 0)) * k, float(b.get("y", 0)) * k, float(b.get("w", 0)) * k, float(b.get("h", 0)) * k)
+        if w and tw > w:  # never spill out of the box: shrink to fit
+            size *= w / tw
+            thick = max(1, int(round(size * 1.6)))
+            (tw, th), _ = cv2.getTextSize(s, BOX_FONT, size, thick)
         align = b.get("align", "left")
         if align == "center":
             x = x + (w - tw) / 2
         elif align == "right":
             x = x + w - tw
-        baseline = y + h if h else y  # boxes give the top-left and size; a bare y is the baseline
-        if h:
+        if b.get("baseline") is not None:
+            baseline = float(b["baseline"]) * k
+        elif h:
             baseline = y + (h + th) / 2
-        cv2.putText(frame, s, (int(x), int(baseline)), cv2.FONT_HERSHEY_DUPLEX, size, color, thick, cv2.LINE_AA)
+        else:
+            baseline = y
+        cv2.putText(frame, s, (int(x), int(baseline)), BOX_FONT, size, color, thick, cv2.LINE_AA)
 
 
 def composite(frame: np.ndarray, sprite, alpha_scale: float = 1.0) -> None:
@@ -233,15 +293,15 @@ def composite(frame: np.ndarray, sprite, alpha_scale: float = 1.0) -> None:
 
 
 def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None, fields: dict | None = None,
-           teams: list[dict] | None = None) -> tuple[int, int, int, int, float] | None:
+           teams: list[dict] | None = None, ctx: dict | None = None, variant: str = "") -> tuple[int, int, int, int, float] | None:
     """Composite FRONTEND's widget (static: as rendered; dynamic: template +
     live text from layout.json) and return None, or draw the placeholder
     panel and return its geometry for the built-in text."""
-    img = assets.get(wid)
+    img = assets.get(wid, variant)
     if img is not None:
         composite(frame, img)
         if wid in DYNAMIC_WIDGETS and fields is not None:
-            draw_boxes(frame, assets.layout(wid), fields, teams or [])
+            draw_boxes(frame, assets.layout(wid), fields, teams or [], ctx)
         return None
     x, y, w, h = _geom(frame, wid)
     glass(frame, x, y, w, h, accent=accent)
@@ -251,10 +311,10 @@ def _place(frame: np.ndarray, assets: Assets, wid: str, accent=None, fields: dic
 # --- individual widgets --------------------------------------------------------
 
 
-def draw_score_bug(frame, assets: Assets, teams: list[dict], clock: str) -> None:
+def draw_score_bug(frame, assets: Assets, teams: list[dict], clock: str, ctx: dict | None = None) -> None:
     fields = {"team_a_name": teams[0]["name"], "team_b_name": teams[1]["name"], "score_a": teams[0]["score"],
               "score_b": teams[1]["score"], "clock": clock, "period": "P1"}
-    placed = _place(frame, assets, "score_bug", fields=fields, teams=teams)
+    placed = _place(frame, assets, "score_bug", fields=fields, teams=teams, ctx=ctx)
     if placed is None:
         return
     x, y, w, h, k = placed
@@ -271,14 +331,15 @@ def draw_score_bug(frame, assets: Assets, teams: list[dict], clock: str) -> None
     text(frame, f"{b['score']}", x + w - int(24 * k) - tw, y + int(76 * k), 1.2 * k, TEXT, 2)
 
 
-def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s: float, duration_s: float) -> None:
+def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s: float, duration_s: float,
+                    ctx: dict | None = None, teams: list[dict] | None = None) -> None:
     x, y, w, h, k = _geom(frame, "made_flash") + (_scale(frame),)
     fade = max(0.0, 1 - age_s / duration_s)
     col = hex_to_bgr(team["color"]) if team else (60, 200, 60)
-    img = assets.get("made_flash")
+    img = assets.get("made_flash", "_b" if team and team.get("id") == 1 else "")
     if img is not None:
         composite(frame, img, alpha_scale=fade)
-        draw_boxes(frame, assets.layout("made_flash"), {"label": label}, [team or {"color": "#3cc83c"}] * 2)
+        draw_boxes(frame, assets.layout("made_flash"), {"label": label}, teams or [team or {"color": "#3cc83c"}] * 2, ctx)
         return
     else:
         overlay = frame.copy()
@@ -288,13 +349,14 @@ def draw_made_flash(frame, assets: Assets, team: dict | None, label: str, age_s:
     text(frame, label, x + (w - tw) // 2, y + h + int(36 * k), 0.9 * k, TEXT, 2)
 
 
-def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
+def draw_player_card(frame, assets: Assets, player: dict, team: dict, ctx: dict | None = None) -> None:
     pct = f"{int(round(100 * player['fg_pct']))}%" if player.get("fg_pct") is not None else "-"
     fields = {"number": f"#{player['number']}" if player.get("number") else player["key"], "key": player["key"],
               "team_name": team["name"], "pts": player["pts"], "fg": f"{player['fgm']}/{player['fga']}", "fg_pct": pct,
               "line": f"{player['fgm']}/{player['fga']} FG, {pct}"}
+    pctx = dict(ctx or {}, player=player, team=team)
     placed = _place(frame, assets, "player_card", accent=hex_to_bgr(team["color"]), fields=fields,
-                    teams=[team, team] if team["id"] == 0 else [team, team])
+                    teams=(ctx or {}).get("teams") or [team, team], ctx=pctx, variant="_b" if team.get("id") == 1 else "")
     if placed is None:
         return
     x, y, w, h, k = placed
@@ -306,7 +368,7 @@ def draw_player_card(frame, assets: Assets, player: dict, team: dict) -> None:
     text(frame, f"PTS {player['pts']}   FG {fg}   {pct}", x + int(24 * k), y + int(140 * k), 0.75 * k, TEXT, 2)
 
 
-def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[dict]) -> None:
+def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[dict], ctx: dict | None = None) -> None:
     fields = {}
     for i, suf in enumerate(("a", "b")):
         t = teams[i]
@@ -316,7 +378,7 @@ def draw_team_overview(frame, assets: Assets, teams: list[dict], players: list[d
                        f"fg_pct_{suf}": pct, f"poss_{suf}": t["possessions"],
                        f"top_{suf}": (f"#{top['number']}" if top and top.get("number") else (top["key"] if top else "-")),
                        f"top_pts_{suf}": top["pts"] if top else 0})
-    placed = _place(frame, assets, "team_overview", fields=fields, teams=teams)
+    placed = _place(frame, assets, "team_overview", fields=fields, teams=teams, ctx=ctx)
     if placed is None:
         return
     x, y, w, h, k = placed
@@ -396,9 +458,11 @@ def draw_heat_map(frame, assets: Assets) -> bool:
 
 
 class WidgetScheduler:
-    def __init__(self, assets: Assets, title: str = "") -> None:
+    def __init__(self, assets: Assets, title: str = "", overview_every_s: float = 300.0, top_cards_every_s: float = 180.0) -> None:
         self.assets = assets
         self.title = title
+        self.overview_every_s = overview_every_s
+        self.top_cards_every_s = top_cards_every_s
         self.flash: tuple[str, int | None, float] | None = None  # label, team id, shown at t
         self.card: tuple[str, float] | None = None  # player key, shown at t
         self.overview_until = -1.0
@@ -430,18 +494,26 @@ class WidgetScheduler:
             self.end_since = t
 
     # per frame
-    def render(self, frame, t: float, teams: list[dict], players: list[dict], clock: str) -> None:
+    def render(self, frame, t: float, teams: list[dict], players: list[dict], clock: str,
+               last_event: dict | None = None, period: int = 1) -> None:
         if self.end_since is not None:
             page = int((t - self.end_since) // 6) % 2
             if page == 0 or not draw_heat_map(frame, self.assets):
                 draw_end_summary(frame, self.assets, teams, players)
             return
-        draw_score_bug(frame, self.assets, teams, clock)
-        if self.flash and t - self.flash[2] <= 1.5:
+        top = {}
+        for tid in (0, 1):
+            top[tid] = next((p for p in players if p["team"] == tid and p["pts"] > 0), None)
+        ctx = {"teams": teams, "players": players, "clock": clock, "period": period, "last_event": last_event or {},
+               "top": [top[0] or {}, top[1] or {}]}
+        flashing = bool(self.flash and t - self.flash[2] <= 1.5)
+        if flashing:  # the flash panel sits on the score bug: one of them at a time
             team = teams[self.flash[1]] if self.flash[1] in (0, 1) else None
-            draw_made_flash(frame, self.assets, team, self.flash[0], t - self.flash[2], 1.5)
+            draw_made_flash(frame, self.assets, team, self.flash[0], t - self.flash[2], 1.5, ctx=ctx, teams=teams)
+        else:
+            draw_score_bug(frame, self.assets, teams, clock, ctx=ctx)
         # top scorer cards every 3 min
-        if t - self.last_top_cards >= 180.0 and t > 0:
+        if t - self.last_top_cards >= self.top_cards_every_s and t > 0:
             self.last_top_cards = t
             self.top_queue = [p["key"] for tid in (0, 1) for p in players if p["team"] == tid and p["pts"] > 0][:2]
         if (self.card is None or t - self.card[1] > 3.0) and self.top_queue:
@@ -449,11 +521,11 @@ class WidgetScheduler:
         if self.card and t - self.card[1] <= 3.0:
             p = next((p for p in players if p["key"] == self.card[0]), None)
             if p and p["team"] in (0, 1):
-                draw_player_card(frame, self.assets, p, teams[p["team"]])
-        if t - self.last_overview >= 300.0 and t > 0:
+                draw_player_card(frame, self.assets, p, teams[p["team"]], ctx=ctx)
+        if t - self.last_overview >= self.overview_every_s and t > 0:
             self.last_overview = t
             self.overview_until = t + 6.0
         if t <= self.overview_until:
-            draw_team_overview(frame, self.assets, teams, players)
+            draw_team_overview(frame, self.assets, teams, players, ctx=ctx)
         if t <= self.lower_third_until:
             draw_lower_third(frame, self.assets, self.title)

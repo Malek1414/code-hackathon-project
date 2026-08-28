@@ -3,7 +3,7 @@
 All commands from the repo root, models need the GPU slot (ORCH schedule).
 
 1. Without GPU (any time): replay the tracked clip like a live camera
-   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v2/tracks.jsonl`
+   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v5/tracks.jsonl`
 2. With models, from file: `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime`
 3. Phone (Continuity Camera): wake the iPhone, then
    `.venv/bin/python -m vision.live.live --list-sources` → the iPhone is the highest index (1 on 28.08, "no-frame" in the
