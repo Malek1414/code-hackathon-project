@@ -106,6 +106,11 @@ class PossessionTracker:
     def current(self) -> int | None:
         return self._current
 
+    def reset(self) -> None:
+        """Forget the holder and any pending streak (cut in the footage)."""
+        self._current = None
+        self._pending, self._pending_len = _NO_PENDING, 0
+
     def push(self, fr: Frame) -> int | None:
         self.frames.append(fr)
         i = len(self.frames) - 1

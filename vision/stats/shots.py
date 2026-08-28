@@ -166,10 +166,20 @@ class ShotDetector:
         self._last_above_k: int | None = None
         self._last_event_t = -math.inf
         self._pending: _Pending | None = None
+        self._floor_k = 0  # _ball_idx position of the last cut: never look back past it
+        self._floor_index = 0  # frame-list index of the last cut
 
     @property
     def frames(self) -> list[Frame]:
         return self.possession.frames
+
+    def reset(self) -> None:
+        """Cut in the footage: drop the episode and never look back past here."""
+        self._up_k = self._last_above_k = None
+        self._pending = None
+        self._last_event_t = -math.inf
+        self._floor_k = len(self._ball_idx)
+        self._floor_index = len(self.frames)
 
     def push(self, index: int) -> list[ShotEvent]:
         fr = self.frames[index]
@@ -268,7 +278,7 @@ class ShotDetector:
         p = self.p
         fr = self.frames[self._ball_idx[k]]
         rel: list[Point] = []
-        for j in range(k, -1, -1):
+        for j in range(k, self._floor_k - 1, -1):
             f = self.frames[self._ball_idx[j]]
             if fr.t - f.t > p.arc_window_s:
                 break
@@ -292,7 +302,9 @@ class ShotDetector:
         frames = self.frames
         t_up = frames[up_index].t
         candidates = [
-            s for s in self.possession.segments if s.start_t < t_up and s.end_t >= t_up - p.shooter_lookback_s
+            s
+            for s in self.possession.segments
+            if s.start_t < t_up and s.end_t >= t_up - p.shooter_lookback_s and s.start_index >= self._floor_index
         ]
         if not candidates:
             return None, None, None, False

@@ -1,10 +1,10 @@
 import json
 
-from vision.stats.build import build, distances_m, main
+from vision.stats.build import build, distances_m, load_cuts, load_identities, main
 from vision.stats.io import synthetic_scenario, write_tracks
 
 CONTRACT_SHOT_KEYS = {"t", "frame", "player_id", "team", "made", "shooter_foot", "hoop_bbox"}
-CONTRACT_PLAYER_KEYS = {"id", "team", "fga", "fgm", "fg_pct", "possession_s", "distance_m"}
+CONTRACT_PLAYER_KEYS = {"id", "team", "fga", "fgm", "fg_pct", "possession_s", "distance_m", "key", "number"}
 
 
 def test_build_matches_contract():
@@ -59,3 +59,52 @@ def test_meta_fps_prefers_source_rate(tmp_path):
     (tmp_path / "tracks_meta.json").write_text(json.dumps({"source_fps": 50.0, "stride": 2, "fps": 25.0}))
     assert meta_fps(tmp_path / "tracks.jsonl") == 50.0
     assert meta_fps(tmp_path / "elsewhere" / "tracks.jsonl") is None
+
+
+def test_identities_merge_tracks_into_players(tmp_path):
+    frames = synthetic_scenario("made")
+    for fr in frames:  # the shooter (id 2) is re-identified as id 20 after 3.0 s
+        fr.players = [type(p)(id=20 if (p.id == 2 and fr.t >= 3.0) else p.id, bbox=p.bbox, foot=p.foot, team=p.team)
+                      for p in fr.players]
+    ident_file = tmp_path / "identities.json"
+    ident_file.write_text(json.dumps({
+        "clip": "x",
+        "tracks": {"3": {"team": 1, "number": 7, "conf": 0.9}},
+        "players": [{"key": "A12", "team": 0, "number": 12, "track_ids": [2, 20]}],
+    }))
+    identities = load_identities(ident_file)
+    assert identities[3].key == "B7" and identities[20].key == "A12"
+    events, stats = build(frames, fps=50, clip="x", identities=identities)
+    assert events["shots"][0]["player_key"] == "A12"
+    row = next(p for p in stats["players"] if p["key"] == "A12")
+    assert row["track_ids"] == [2, 20] and row["number"] == 12 and row["fga"] == 1 and row["id"] == 2
+    assert next(p for p in stats["players"] if p["key"] == "B7")["number"] == 7
+    assert next(p for p in stats["players"] if p["id"] == 1)["key"] == "A?1"
+
+
+def test_cut_resets_possession_and_shot_state():
+    """A cut while the ball is in the air: the shooter's possession before the
+    cut must not be carried across (shot stays, shooter unknown), and no
+    possession segment spans the cut."""
+    frames = synthetic_scenario("made")
+    cut_frame = 180  # 3.6 s: ball is in the air above the rim
+    events, stats = build(frames, fps=50, clip="x", cuts=[cut_frame])
+    assert events["cuts"] == [cut_frame]
+    assert len(events["shots"]) == 1
+    shot = events["shots"][0]
+    assert shot["made"] is True and shot["player_id"] is None and shot["shooter_confirmed"] is False
+    assert all(not (s["start_frame"] < cut_frame <= s["end_frame"]) for s in events["possessions"])
+    # a cut earlier, while the ball is still in the shooter's hands, keeps the attribution
+    events2, _ = build(synthetic_scenario("made"), fps=50, clip="x", cuts=[100])
+    assert events2["shots"][0]["player_id"] == 2
+    # without the cut the same frames give the made shot
+    assert build(synthetic_scenario("made"), fps=50, clip="x")[0]["shots"][0]["made"] is True
+
+
+def test_load_cuts_formats(tmp_path):
+    (tmp_path / "a.json").write_text("[5, 900, 5]")
+    (tmp_path / "b.json").write_text(json.dumps({"clip": "x", "cuts": [{"frame": 700, "t": 14.0}, 2800]}))
+    (tmp_path / "c.txt").write_text("# cuts\n650 close-up ends\n2800\n\n")
+    assert load_cuts(tmp_path / "a.json") == [5, 900]
+    assert load_cuts(tmp_path / "b.json") == [700, 2800]
+    assert load_cuts(tmp_path / "c.txt") == [650, 2800]

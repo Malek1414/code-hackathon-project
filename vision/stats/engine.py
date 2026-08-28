@@ -29,9 +29,12 @@ class StatsEngine:
         possession_params: PossessionParams = PossessionParams(),
         shot_params: ShotParams = ShotParams(),
         max_gap_s: float = 0.6,
+        cuts: list[int] | None = None,
     ) -> None:
         self.fps = fps
         self.max_gap_s = max_gap_s
+        self._cuts = sorted(set(int(c) for c in (cuts or [])))  # frame numbers where the footage jumps
+        self.cuts_applied = 0
         self.possession = PossessionTracker(possession_params, dt=dt)
         self.detector = ShotDetector(self.possession, shot_params)
         self._queue: list[Frame] = []  # frames not yet processed (first one may hold a ball under judgement)
@@ -54,11 +57,28 @@ class StatsEngine:
 
     def push(self, frame: Frame | dict) -> list[ShotEvent]:
         fr = frame if isinstance(frame, Frame) else frame_from_dict(frame, self.fps)
+        done: list[ShotEvent] = []
+        if self._cuts and fr.frame >= self._cuts[0]:
+            while self._cuts and fr.frame >= self._cuts[0]:
+                self._cuts.pop(0)
+            done += self.reset()
         if fr.ball is not None and fr.ball.bbox is not None and not is_round_ball(fr.ball.bbox):
             fr.ball = None
             self.dropped_balls += 1
         self._queue.append(fr)
-        return self._drain(final=False)
+        return done + self._drain(final=False)
+
+    def reset(self) -> list[ShotEvent]:
+        """A cut in the footage (or a new camera position): everything that
+        looks back in time starts over. Frames stay, so segments and stats
+        before the cut are kept; a pending verdict becomes a miss."""
+        done = self._drain(final=True)
+        done += self.detector.finish()
+        self.possession.reset()
+        self.detector.reset()
+        self._last_kept = None
+        self.cuts_applied += 1
+        return done
 
     def finish(self) -> list[ShotEvent]:
         done = self._drain(final=True)

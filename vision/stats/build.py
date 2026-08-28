@@ -35,23 +35,40 @@ def build(
     clip: str,
     calib: dict | None = None,
     distances: dict[int, float] | None = None,
+    cuts: list[int] | None = None,
+    identities: dict[int, "Identity"] | None = None,
     possession_params: PossessionParams = PossessionParams(),
     shot_params: ShotParams = ShotParams(),
 ) -> tuple[dict, dict]:
-    """`distances` (player id -> metres) wins over `calib` (own projection)."""
-    engine = StatsEngine(dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params)
+    """`distances` (player id -> metres) wins over `calib` (own projection).
+    `cuts` = frame numbers where the footage jumps (engine state is reset).
+    `identities` = track id -> real player (NUMBERS); stats are per player key."""
+    engine = StatsEngine(
+        dt=median_dt(frames), possession_params=possession_params, shot_params=shot_params, cuts=cuts
+    )
     for fr in frames:
         engine.push(fr)
     engine.finish()
     possession = engine.possession.result()
     shots = engine.shots
+    ident = identities or {}
+
+    def key_of(pid: int | None, team: int) -> str | None:
+        if pid is None:
+            return None
+        if pid in ident:
+            return ident[pid].key
+        return f"{TEAM_LETTER.get(team, '?')}?{pid}"
+
     events = {
         "fps": fps,
         "clip": clip,
-        "shots": [s.to_dict() for s in shots],
+        "cuts": sorted(set(int(c) for c in (cuts or []))),
+        "shots": [{**s.to_dict(), "player_key": key_of(s.player_id, s.team)} for s in shots],
         "possessions": [
             {
                 "player_id": s.player_id,
+                "player_key": key_of(s.player_id, s.team),
                 "team": s.team,
                 "start_t": round(s.start_t, 3),
                 "end_t": round(s.end_t, 3),
@@ -61,8 +78,70 @@ def build(
             for s in possession.segments
         ],
     }
-    stats = player_stats(frames, possession, shots, calib=calib, distances=distances)
+    stats = player_stats(frames, possession, shots, calib=calib, distances=distances, identities=ident)
     return events, stats
+
+
+TEAM_LETTER = {0: "A", 1: "B"}
+
+
+class Identity:
+    """One real player from out/identities.json (NUMBERS)."""
+
+    __slots__ = ("key", "team", "number")
+
+    def __init__(self, key: str, team: int, number: int | None) -> None:
+        self.key, self.team, self.number = key, team, number
+
+
+def load_identities(path: Path) -> dict[int, Identity]:
+    """track id -> Identity, from the `players` list (preferred) or `tracks`."""
+    d = json.loads(path.read_text())
+    out: dict[int, Identity] = {}
+    for pl in d.get("players") or []:
+        ident = Identity(str(pl["key"]), int(pl.get("team", -1)), pl.get("number"))
+        for tid in pl.get("track_ids") or []:
+            out[int(tid)] = ident
+    for tid, tr in (d.get("tracks") or {}).items():
+        tid = int(tid)
+        if tid in out:
+            continue
+        team = int(tr.get("team", -1))
+        number = tr.get("number")
+        letter = TEAM_LETTER.get(team, "?")
+        key = f"{letter}{number}" if number is not None else f"{letter}?{tid}"
+        out[tid] = Identity(key, team, number)
+    return out
+
+
+def find_cuts(clip: str, out_dir: Path) -> list[int]:
+    """COURT's cut list for this clip, if any: out/cuts_<stem>.json (list of
+    frames, or {"cuts": [...]} / {"frames": [...]} with ints or {"frame": n}),
+    or out/court_cuts_<stem>.txt with one frame number per line."""
+    stem = Path(clip).stem
+    for name in (f"cuts_{stem}.json", f"court_cuts_{stem}.json", f"cuts_{stem}.txt", f"court_cuts_{stem}.txt"):
+        path = out_dir / name
+        if path.exists():
+            return load_cuts(path)
+    return []
+
+
+def load_cuts(path: Path) -> list[int]:
+    text = path.read_text().strip()
+    if not text:
+        return []
+    frames: list[int] = []
+    if path.suffix == ".json":
+        d = json.loads(text)
+        items = d if isinstance(d, list) else (d.get("cuts") or d.get("frames") or [])
+        for it in items:
+            frames.append(int(it["frame"]) if isinstance(it, dict) else int(it))
+    else:
+        for line in text.splitlines():
+            tok = line.strip().split()
+            if tok and tok[0].lstrip("-").isdigit():
+                frames.append(int(tok[0]))
+    return sorted(set(frames))
 
 
 def player_stats(
@@ -72,8 +151,12 @@ def player_stats(
     *,
     calib: dict | None = None,
     distances: dict[int, float] | None = None,
+    identities: dict[int, Identity] | None = None,
 ) -> dict:
+    """One row per real player when identities are known (track ids merged
+    under their `key`), else one row per track id with key `A?<id>`."""
     dt = median_dt(frames)
+    ident = identities or {}
     seen: Counter[int] = Counter()
     teams: dict[int, Counter] = defaultdict(Counter)
     for fr in frames:
@@ -91,22 +174,38 @@ def player_stats(
     poss_s = possession_seconds(frames, possession)
     distance = distances if distances is not None else (distances_m(frames, calib) if calib else {})
 
-    players = []
+    rows: dict[str, dict] = {}
     for pid, n in seen.items():
-        if fga[pid] == 0 and n * dt < MIN_SEEN_S:
-            continue
-        team = teams[pid].most_common(1)[0][0] if teams[pid] else -1
-        players.append(
-            {
-                "id": pid,
-                "team": team,
-                "fga": fga[pid],
-                "fgm": fgm[pid],
-                "fg_pct": round(fgm[pid] / fga[pid], 3) if fga[pid] else 0.0,
-                "possession_s": round(poss_s.get(pid, 0.0), 1),
-                "distance_m": round(distance[pid], 1) if pid in distance else None,
-            }
+        track_team = teams[pid].most_common(1)[0][0] if teams[pid] else -1
+        if pid in ident:
+            key, team, number = ident[pid].key, ident[pid].team, ident[pid].number
+        else:
+            key, team, number = f"{TEAM_LETTER.get(track_team, '?')}?{pid}", track_team, None
+        row = rows.setdefault(
+            key,
+            {"id": pid, "key": key, "number": number, "team": team, "track_ids": [], "fga": 0, "fgm": 0,
+             "fg_pct": 0.0, "possession_s": 0.0, "distance_m": None, "_seen": 0},
         )
+        row["id"] = min(row["id"], pid)
+        row["track_ids"].append(pid)
+        row["fga"] += fga[pid]
+        row["fgm"] += fgm[pid]
+        row["possession_s"] += poss_s.get(pid, 0.0)
+        row["_seen"] += n
+        if pid in distance:
+            row["distance_m"] = (row["distance_m"] or 0.0) + distance[pid]
+
+    players = []
+    for row in rows.values():
+        if row["fga"] == 0 and row["_seen"] * dt < MIN_SEEN_S:
+            continue
+        row.pop("_seen")
+        row["track_ids"].sort()
+        row["fg_pct"] = round(row["fgm"] / row["fga"], 3) if row["fga"] else 0.0
+        row["possession_s"] = round(row["possession_s"], 1)
+        if row["distance_m"] is not None:
+            row["distance_m"] = round(row["distance_m"], 1)
+        players.append(row)
     players.sort(key=lambda p: (-p["fga"], -p["possession_s"], p["id"]))
 
     team_fga: Counter[int] = Counter()
@@ -198,10 +297,11 @@ def summary(events: dict, stats: dict) -> str:
         who = f"#{s['player_id']}" if s["player_id"] is not None else "?"
         flag = "" if s["shooter_confirmed"] else " (unconfirmed)"
         lines.append(f"  {s['t']:8.2f}s  {'MADE' if s['made'] else 'miss'}  {who} team {s['team']}{flag}")
-    lines.append("players (id team fga fgm fg% poss_s):")
+    lines.append("players (key team fga fgm fg% poss_s tracks):")
     for p in stats["players"][:12]:
         lines.append(
-            f"  {p['id']:>4} {p['team']:>2} {p['fga']:>3} {p['fgm']:>3} {p['fg_pct']:.2f} {p['possession_s']:6.1f}"
+            f"  {p['key']:>6} {p['team']:>2} {p['fga']:>3} {p['fgm']:>3} {p['fg_pct']:.2f} {p['possession_s']:6.1f}"
+            f"  {len(p['track_ids'])}"
         )
     for t in stats["teams"]:
         lines.append(f"team {t['team']}: {t['fgm']}/{t['fga']}")
@@ -215,6 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fps", type=float, default=None, help="default: inferred from tracks")
     ap.add_argument("--calib", default="out/court_calib.json", help="used if the file exists")
     ap.add_argument("--out-dir", default="out")
+    ap.add_argument("--cuts", default=None, help="cut list; default: out/cuts_<clip>.json if present")
+    ap.add_argument("--identities", default="out/identities.json", help="used if the file exists")
     ap.add_argument("--fixture", choices=["made", "miss", "pass"], help="run on a synthetic scenario")
     ap.add_argument("--min-hold", type=float, default=PossessionParams.min_hold_s, help="seconds")
     ap.add_argument("--max-dist", type=float, default=PossessionParams.max_dist_heights)
@@ -241,19 +343,28 @@ def main(argv: list[str] | None = None) -> int:
         if not args.fixture:
             distances = court_distances(calib_path, Path(args.tracks))
 
+    out = Path(args.out_dir)
+    cuts = load_cuts(Path(args.cuts)) if args.cuts else (find_cuts(clip, out) if not args.fixture else [])
+    identities = None
+    ident_path = Path(args.identities)
+    if ident_path.exists() and not args.fixture:
+        identities = load_identities(ident_path)
+
     events, stats = build(
         frames,
         fps=fps,
         clip=clip,
         calib=calib,
         distances=distances,
+        cuts=cuts,
+        identities=identities,
         possession_params=PossessionParams(max_dist_heights=args.max_dist, min_hold_s=args.min_hold),
     )
-    out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "events.json").write_text(json.dumps(events, indent=1))
     (out / "stats.json").write_text(json.dumps(stats, indent=1))
-    print(f"{len(frames)} frames @ {fps:g} fps -> {out / 'events.json'}, {out / 'stats.json'}")
+    print(f"{len(frames)} frames @ {fps:g} fps, {len(cuts)} cuts, identities {'yes' if identities else 'no'} "
+          f"-> {out / 'events.json'}, {out / 'stats.json'}")
     print(summary(events, stats))
     return 0
 

@@ -38,7 +38,7 @@ def report(frames: list[Frame]) -> str:
             seen[p.id] += 1
             team_of.setdefault(p.id, Counter())[p.team] += 1
     long_ids = [pid for pid, c in seen.items() if c * dt >= 2.0]
-    teams = Counter(t.most_common(1)[0][0] for t in team_of.values())
+    teams = Counter(team_of[pid].most_common(1)[0][0] for pid in long_ids)
 
     # longest ball gaps
     gaps = []

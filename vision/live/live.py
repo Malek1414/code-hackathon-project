@@ -2,6 +2,7 @@
 
     .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime
     .venv/bin/python -m vision.live.live --source 0            # camera index (Continuity Camera)
+    .venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/tracks.jsonl
 
 Detection runs in a worker thread at whatever rate the models allow (~10 fps
 on MPS) using TRACK's per-frame API (vision.track.tracker.Tracker.step);
@@ -54,6 +55,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights-players", default="models/yolo11s.pt")
     ap.add_argument("--weights-ballhoop", default="models/ball_hoop_avishah.pt")
     ap.add_argument("--weights", default=None, help="single contract model (LABEL's best.pt)")
+    ap.add_argument("--replay", default=None, help="tracks.jsonl to replay instead of running the models")
     return ap.parse_args(argv)
 
 
@@ -116,10 +118,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     load_dotenv(".env")
 
-    from vision.track.tracker import Tracker  # TRACK's per-frame API (loads torch/ultralytics)
-
     cap, is_cam, src_fps = open_source(args.source)
-    tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps)
+    if args.replay:
+        from vision.live.replay import ReplayTracker
+
+        tracker = ReplayTracker(args.replay, fps=src_fps)
+        log.info("replaying tracks from %s (no models)", args.replay)
+    else:
+        from vision.track.tracker import Tracker  # TRACK's per-frame API (loads torch/ultralytics)
+
+        tracker = Tracker(args.weights_players, args.weights_ballhoop, args.device, weights=args.weights, fps=src_fps)
     engine = StatsEngine(dt=1.0 / args.process_fps, fps=src_fps)
     events: queue.Queue = queue.Queue()
     worker = Worker(tracker, engine, events)
