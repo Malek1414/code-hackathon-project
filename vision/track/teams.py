@@ -35,8 +35,13 @@ L_WEIGHT = 0.5
 BLUE_B_MAX = 118.0  # OpenCV LAB b channel (b* + 128); blue jerseys measured 99-117
 RED_A_MIN = 150.0  # a channel; red panels measured 160+
 DARK_L_MAX = 60.0  # black jerseys measured L 12-40, grey referee 107, white 198
-BLUE_SHARE, RED_SHARE, DARK_SHARE = 0.15, 0.2, 0.4  # black jerseys measured blue share 0.00-0.01
+BLUE_SHARE, RED_SHARE, DARK_SHARE = 0.15, 0.12, 0.4
+# Measured on dev60: black jerseys blue share 0.00-0.01; a brightly lit black/red
+# jersey (track 805, L 82) has dark share only 0.32 but red share 0.14-0.24,
+# referees 0.00-0.02 red. Crop rows 15-45 % on purpose: 20-55 % pulls the
+# referee's black shorts in (dark share 0.47) and he becomes team 1.
 VOTE_WINDOW = 50  # labels per track kept for the majority vote (2 s at 25 fps)
+SWITCH_RUN = 10  # this many consecutive labels against the majority = the box changed player
 
 
 def torso_color(frame_bgr: np.ndarray, bbox) -> np.ndarray | None:
@@ -126,15 +131,33 @@ class TeamClassifier:
         k = int(np.argmin(d))
         return -1 if d[k] > self.referee_dist else k
 
-    def assign(self, track_id: int, feat: np.ndarray | None) -> int:
-        """Vote-smoothed team for this track: 0, 1 or -1."""
+    def assign(self, track_id: int, feat: np.ndarray | None) -> tuple[int, bool]:
+        """Vote-smoothed team for this track: (0 | 1 | -1, switched).
+
+        `switched` is True when the last SWITCH_RUN labels all say one team and
+        the labels before them say the other: the tracker's box drifted onto
+        another player (dev60 id 611: black #9, then blue #55 without a gap).
+        The caller closes the id; the history restarts from the run."""
         label = self.raw_label(feat)
         hist = self.votes[track_id]
         hist.append(label)
+        switched = False
+        if len(hist) >= 2 * SWITCH_RUN and label in (0, 1):
+            recent = list(hist)[-SWITCH_RUN:]
+            older = list(hist)[:-SWITCH_RUN]
+            other = 1 - label
+            if all(v == label for v in recent) and older.count(other) > older.count(label) \
+                    and older.count(other) >= SWITCH_RUN // 2:
+                switched = True
+                hist.clear()
+                hist.extend(recent)
         n0, n1, nu = hist.count(0), hist.count(1), hist.count(-1)
         if n0 == 0 and n1 == 0:
-            return -1
+            return -1, switched
         # Unknown wins only if it clearly dominates the recent history.
         if nu > 2 * max(n0, n1) and nu >= 5:
-            return -1
-        return 0 if n0 >= n1 else 1
+            return -1, switched
+        return (0 if n0 >= n1 else 1), switched
+
+    def move_votes(self, old_id: int, new_id: int) -> None:
+        self.votes[new_id] = self.votes.pop(old_id)

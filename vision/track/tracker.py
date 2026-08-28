@@ -113,6 +113,9 @@ class Tracker:
         self._auto_index = 0
         self.id_offset = 0
         self.max_raw_id = 0
+        self.max_emitted_id = 0
+        self.id_remap: dict[int, int] = {}  # raw tracker id → id after a color switch
+        self.switches = 0
         self.resets = 0
         self.stats = {"frames": 0, "ball_frames": 0, "hoop_frames": 0, "hoop_fresh": 0,
                       "hoop_rejected": 0, "player_dets": 0, "ids": set()}
@@ -120,8 +123,9 @@ class Tracker:
     def reset(self) -> None:
         """Cut in the footage: forget tracks, ball history and the hoop."""
         self.resets += 1
-        self.id_offset += self.max_raw_id
+        self.id_offset = self.max_emitted_id
         self.max_raw_id = 0
+        self.id_remap.clear()
         for m in {id(self.person_model): self.person_model}.values():
             pred = getattr(m, "predictor", None)
             if pred is not None and getattr(pred, "trackers", None):
@@ -195,11 +199,21 @@ class Tracker:
         persons, balls, hoops = self._detect(frame)
 
         players = []
-        for box, conf, tid, is_ref in persons:
-            self.max_raw_id = max(self.max_raw_id, tid)
-            tid += self.id_offset
+        for box, conf, raw_id, is_ref in persons:
+            self.max_raw_id = max(self.max_raw_id, raw_id)
+            tid = self.id_remap.get(raw_id, raw_id + self.id_offset)
             b = _round(box)
-            team = -1 if is_ref else self.teams.assign(tid, torso_color(frame, box))
+            team = -1
+            if not is_ref:
+                team, switched = self.teams.assign(tid, torso_color(frame, box))
+                if switched:
+                    # The box now follows another player: close this id, open a new one.
+                    new_id = self.max_emitted_id + 1
+                    self.teams.move_votes(tid, new_id)
+                    self.id_remap[raw_id] = new_id
+                    tid = new_id
+                    self.switches += 1
+            self.max_emitted_id = max(self.max_emitted_id, tid)
             players.append({"id": tid, "bbox": b, "foot": [round((b[0] + b[2]) / 2, 1), b[3]],
                             "team": team, "conf": round(conf, 3),
                             "on_court": None})  # STATS fills this from the calibration
@@ -267,5 +281,6 @@ class Tracker:
                 "hoop_frame_share": round(st["hoop_frames"] / n, 4),
                 "hoop_detected_share": round(st["hoop_fresh"] / n, 4),
                 "hoop_rejected": st["hoop_rejected"], "resets": self.resets,
+                "id_switches": self.switches,
                 "track_ids": len(st["ids"]), "team_mode": self.teams.mode,
                 "team_centroids_lab": self.teams.centroids_lab, **self.gate.summary()}
