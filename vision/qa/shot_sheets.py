@@ -221,6 +221,36 @@ def _number_card(i: int, c: dict) -> str:
 </div>"""
 
 
+def _ball_section(out: Path) -> str:
+    chk = read_json(out / "ball_check.json") or {}
+    rec = read_json(out / "ball_recall.json") or {}
+    parts = []
+    if chk.get("frames"):
+        parts.append(
+            f"Ball-Box in {chk['ball_frames']} von {chk['frames']} Frames ({100 * chk['ball_share']:.0f} %), "
+            f"{chk['rejects']} verworfene Kandidaten" + (" (noch keine Rejects-Datei von TRACK)" if not chk.get("rejects_file") else "")
+            + f", Stand {chk.get('generated', '?')[11:16]}."
+        )
+    if rec.get("frames_total"):
+        parts.append(f"Stichprobe ball_recall.jpg: {rec['ball_frames_total']} von {rec['frames_total']} Frames mit Ball-Box.")
+    video = (
+        '<video controls muted playsinline preload="metadata" src="ball_check.mp4"></video>'
+        if (out / "ball_check.mp4").exists()
+        else '<div class="empty">ball_check.mp4 wird noch gebaut.</div>'
+    )
+    return f"""
+<div class="ball">
+  <div class="cap">Worauf achten: jede gelbe Box, die auf einem Wandobjekt (Leuchten, Schilder, Zuschauer) sitzt, ist ein Fehler. Zaehle sie. Rote x sind Kandidaten, die das System selbst verworfen hat (S statisch, R Radius, H Kopf, G Gate).</div>
+  {video}
+  <div class="links"><a href="ball_check.mp4" target="_blank">ball_check.mp4</a><a href="ball_recall.jpg" target="_blank">ball_recall.jpg (40 Zufallsframes)</a></div>
+  <div class="cap">{html.escape(' '.join(parts) if parts else 'Noch keine Ball-Auswertung.')}</div>
+  <div class="row">
+    <label>gelbe Boxen an der Wand gezaehlt: <input type="number" class="num" name="wall_hits" min="0" step="1" placeholder="Anzahl"></label>
+    <input type="text" class="note" name="ball_note" placeholder="Notiz zum Ball (optional)">
+  </div>
+</div>"""
+
+
 def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     made = sum(1 for s in sheets if s["made"])
@@ -234,7 +264,7 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
     cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers)) if numbers else '<div class="empty">Noch keine identities.json.</div>'
     manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers})
     stored_js = json.dumps({"reviewed": stored.get("reviewed"), "uncalled": stored.get("uncalled_shots", 0), "shots": stored.get("shots", []), "numbers": stored.get("numbers", [])})
-    page = PAGE.replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
+    page = PAGE.replace("{{BALL}}", _ball_section(out)).replace("{{TITLE}}", html.escape(Path(clip).name)).replace(
         "{{META}}",
         f"{len(sheets)} Wuerfe vom System erkannt ({made} Treffer, {len(sheets) - made} Fehlwuerfe), {tracks_n} verfolgte Frames, "
         f"{len(numbers)} Spieler im Nummern-Check, Stand {stamp}. {html.escape(stored_line)}",
@@ -289,12 +319,17 @@ PAGE = r"""<!doctype html>
   .bar button.primary { background: #ffd23f; color: #111; border-color: #ffd23f; font-weight: 600; }
   #summary { color: #bbb; }
   .empty { padding: 30px 0; color: #999; }
+  .ball video { display: block; width: 100%; max-width: 960px; height: auto; border-radius: 6px; background: #000; }
+  .ball .links { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
+  .ball a { color: #ffd23f; }
 </style>
 </head>
 <body>
 <h1>Wurf-Check: {{TITLE}}</h1>
 <div class="intro">Diese Seite prueft, ob das System Wuerfe, Werfer und Rueckennummern richtig erkannt hat. Deine Antworten werden als JSON gespeichert und fuer Tests und Training genutzt.</div>
 <div class="meta">{{META}}</div>
+<h3>Ball-Check</h3>
+{{BALL}}
 <h3>Wuerfe</h3>
 {{SHOTS}}
 <div class="extra">
@@ -327,9 +362,10 @@ function state() {
       number: numVal("num" + s.n), number_team: t === null ? null : Number(t),
       note: ($('input[name="n' + s.n + '"]') || {}).value || "" };
   });
+  const ball = { wall_hits: numVal("wall_hits"), note: ($('input[name="ball_note"]') || {}).value || "" };
   const numbers = MANIFEST.numbers.map((c, i) => ({ key: c.key, track_ids: c.track_ids, team: c.team, detected: c.detected,
     true_number: numVal("nn" + i), unreadable: !!($('input[name="un' + i + '"]') || {}).checked }));
-  return { shots, numbers, uncalled: Number($("#uncalled").value || 0), saved: new Date().toISOString() };
+  return { shots, numbers, ball, uncalled: Number($("#uncalled").value || 0), saved: new Date().toISOString() };
 }
 function counts(st) {
   const c = { shots_answered: 0, shots_open: 0, shot_ok: 0, shot_flipped: 0, shot_no_shot: 0, shooter_ok: 0, shooter_wrong: 0, numbers_answered: 0, numbers_confirmed: 0, numbers_corrected: 0, numbers_unreadable: 0 };
@@ -350,7 +386,8 @@ function summary() {
     "Wuerfe: " + c.shots_answered + " von " + st.shots.length + " beantwortet (" + c.shot_ok + " stimmt, " + c.shot_flipped + " vertauscht, " + c.shot_no_shot + " kein Wurf), " +
     "Werfer richtig " + c.shooter_ok + ", falsch " + c.shooter_wrong + ".  " +
     "Nummern: " + c.numbers_answered + " von " + st.numbers.length + " (" + c.numbers_confirmed + " bestaetigt, " + c.numbers_corrected + " korrigiert, " + c.numbers_unreadable + " nicht lesbar)" +
-    (st.uncalled ? ".  " + st.uncalled + " nicht erkannte Wuerfe" : "");
+    (st.uncalled ? ".  " + st.uncalled + " nicht erkannte Wuerfe" : "") +
+    (st.ball.wall_hits !== null ? ".  Ball an der Wand: " + st.ball.wall_hits : "");
   try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
 }
 function applyShot(s, v) {
@@ -385,6 +422,7 @@ function apply(src) {
     hit++;
   });
   if (src.uncalled) $("#uncalled").value = src.uncalled;
+  if (src.ball) { setVal("wall_hits", src.ball.wall_hits); if (src.ball.note) setVal("ball_note", src.ball.note); hit++; }
   return hit > 0;
 }
 function restore() {
@@ -407,7 +445,7 @@ $("#reset").onclick = () => {
 $("#download").onclick = () => {
   const st = state();
   const doc = { clip: MANIFEST.clip, events: MANIFEST.events, sheets_generated: MANIFEST.generated,
-    reviewed: st.saved, counts: counts(st), uncalled_shots: st.uncalled, shots: st.shots, numbers: st.numbers };
+    reviewed: st.saved, counts: counts(st), uncalled_shots: st.uncalled, shots: st.shots, numbers: st.numbers, ball: st.ball };
   const blob = new Blob([JSON.stringify(doc, null, 1)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);

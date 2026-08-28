@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from .clips import OVERLAY
+from .ball_check import DEFAULT_REJECTS
 from .numbers_sheet import IDENTITIES
 from .common import EVENTS, QA_DIR, ROOT, TRACKS
 
@@ -25,6 +26,7 @@ PY = sys.executable
 JOBS = {  # module -> files it depends on
     "vision.qa.ball_recall": (TRACKS,),
     "vision.qa.team_check": (TRACKS,),
+    "vision.qa.ball_check": (TRACKS, *DEFAULT_REJECTS),
     "vision.qa.shot_sheets": (TRACKS, EVENTS, OVERLAY, IDENTITIES),
 }
 
@@ -65,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         for m in JOBS:
             run(m)
         return 0
-    done: dict[Path, tuple[float, int] | None] = {p: None for p in (TRACKS, EVENTS, OVERLAY, IDENTITIES)}  # signature last processed
+    done: dict[Path, tuple[float, int] | None] = {p: None for p in (TRACKS, EVENTS, OVERLAY, IDENTITIES, *DEFAULT_REJECTS)}  # signature last processed
     seen: dict[Path, tuple[tuple[float, int] | None, float]] = {p: (sig(p), 0.0) for p in done}  # (sig, since)
     log(f"watching {TRACKS.relative_to(ROOT)}, {EVENTS.relative_to(ROOT)} and {OVERLAY.relative_to(ROOT)} (+identities.json) every {POLL_S:g}s, pid {os.getpid()}")
     while True:
