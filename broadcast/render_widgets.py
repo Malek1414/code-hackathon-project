@@ -136,7 +136,8 @@ def main(argv=None) -> int:
             except (RuntimeError, OSError) as exc:
                 print(f"{wid}: chrome failed: {exc}", file=sys.stderr)
                 continue
-            print(f"{wid}: {out_png.relative_to(ROOT)} ({alpha_report(out_png)})")
+            shown = out_png.relative_to(ROOT) if out_png.is_relative_to(ROOT) else out_png
+            print(f"{wid}: {shown} ({alpha_report(out_png)})")
     return 0
 
 

@@ -175,7 +175,7 @@ menu json `broadcast/config.json`), never guessed.
 |---|---|---|
 | `score_bug` | top centre, 520x88 | always |
 | `made_flash` | over the score bug | 1.5 s after a made basket (auto or manual) |
-| `player_card` | lower left, 420x160: number, name/key, PTS, FGM/FGA, FG% | 3 s after a made basket by that player; and the top scorer of each team every 3 min |
+| `player_card` | lower left, 480x160 (widened 14:58 so #55 and 10/12 FG, 100% fit): number, name/key, PTS, FGM/FGA, FG% | 3 s after a made basket by that player; and the top scorer of each team every 3 min |
 | `team_overview` | centre, 900x420: both teams score, FG%, possessions, top scorer | every 5 min for 6 s, and on `--timeout` hotkey `t` |
 | `lower_third` | bottom, 1920x120: "Big Ball Baller" brand + game title | first 10 s and on demand hotkey `b` |
 | `end_summary` | full frame 1920x1080: efficiency table (pts, FGA, FGM, FG%, possession share) per player and team | on hotkey `e` or end of file |
