@@ -31,7 +31,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from vision.track.overlay import OverlayWriter  # noqa: E402
+from vision.track.overlay import OverlayWriter, default_calib  # noqa: E402
 from vision.track.tracker import TRACKERS, Tracker  # noqa: E402,F401
 
 log = logging.getLogger("track")
@@ -62,8 +62,9 @@ def parse_args() -> argparse.Namespace:
                    help="STATS output; shot flashes + off_court ids are used if it exists")
     p.add_argument("--identities", type=Path, default=Path("out/identities.json"),
                    help="NUMBERS output; jersey numbers as labels if it exists")
-    p.add_argument("--calib", type=Path, default=Path("out/court_calib.json"),
-                   help="COURT output; only players on the court are drawn if it exists")
+    p.add_argument("--calib", type=Path, default=None,
+                   help="COURT output (default out/court_calib_<clip>.json, else out/court_calib.json); "
+                        "only players on the court are drawn if it exists")
     p.add_argument("--device", default="mps")
     p.add_argument("--conf-player", type=float, default=0.3)
     p.add_argument("--conf-ball", type=float, default=0.45)
@@ -182,7 +183,8 @@ def main() -> None:
     writer = None
     if not a.no_overlay:
         writer = OverlayWriter(w_overlay, width=width, height=height, fps=fps / a.stride,
-                               events=a.events, identities=a.identities, calib=a.calib,
+                               events=a.events, identities=a.identities,
+                               calib=default_calib(a.video, a.calib),
                                cuts=a.cuts or Path("out") / f"cuts_{a.video.stem}.json",
                                source_fps=fps, latest_path=a.overlay.with_name("overlay_latest.jpg"))
 

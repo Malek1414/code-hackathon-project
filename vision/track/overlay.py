@@ -53,6 +53,13 @@ TRAIL_GAP_S = 0.5
 FLASH_S = 1.0
 
 
+def default_calib(video: Path, calib: Path | None) -> Path | None:
+    if calib is not None:
+        return calib
+    per_clip = Path("out") / f"court_calib_{video.stem}.json"
+    return per_clip if per_clip.exists() else Path("out") / "court_calib.json"
+
+
 def load_json(path: Path | None) -> dict:
     if path is None or not path.exists():
         return {}
@@ -258,6 +265,7 @@ def render(video: Path, tracks: Path, out: Path, *, identities: Path | None, cal
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     if cuts is None:
         cuts = Path("out") / f"cuts_{video.stem}.json"
+    calib = default_calib(video, calib)
     w = OverlayWriter(out, width=width, height=height, fps=source_fps / stride, events=events,
                       identities=identities, calib=calib, cuts=cuts, source_fps=source_fps,
                       court_lines=court_lines)
@@ -291,7 +299,8 @@ def main() -> None:
     p.add_argument("--tracks", type=Path, default=Path("out/tracks.jsonl"))
     p.add_argument("--out", type=Path, default=Path("out/overlay.mp4"))
     p.add_argument("--identities", type=Path, default=Path("out/identities.json"))
-    p.add_argument("--calib", type=Path, default=Path("out/court_calib.json"))
+    p.add_argument("--calib", type=Path, default=None,
+                   help="default out/court_calib_<clip>.json, else out/court_calib.json")
     p.add_argument("--events", type=Path, default=Path("out/events.json"))
     p.add_argument("--cuts", type=Path, default=None, help="default out/cuts_<clip>.json")
     p.add_argument("--max-frames", type=int, default=0)
