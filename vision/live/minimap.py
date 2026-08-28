@@ -69,10 +69,16 @@ class MiniMap:
 
     def render(self, record: dict | None, holder: int | None, pan_deg: float | None = None) -> np.ndarray:
         rec = record or {"frame": 0, "t": 0.0, "players": [], "ball": None, "hoops": []}
-        img = render_frame(self.canvas, self.cal, rec, self.trail, show_ids=False)
+        panning = pan_deg is not None and abs(pan_deg) >= 1.0
+        if panning:
+            # the static calibration does not hold while the rig pans: no moving dots, only the notice
+            rec = {**rec, "players": [], "ball": None}
+            self.trail.clear()
+        img = render_frame(self.canvas, self.cal, rec, self.trail, show_ids=False)  # COURT's path: dots, trail, limits
         frame = int(rec.get("frame", 0))
         calibrated = self.cal is not None and np.isfinite(self.cal.H_m_to_px(frame)).all()
-        if calibrated and rec.get("players"):
+        uncertain = calibrated and hasattr(self.cal, "is_uncertain") and bool(self.cal.is_uncertain(frame))
+        if calibrated and rec.get("players") and not uncertain:
             players = rec["players"]
             feet = self.cal.project(frame, [p["foot"] for p in players])
             ok = self.cal.on_court(feet)
@@ -89,8 +95,8 @@ class MiniMap:
                     org = (c[0] + 12, c[1] + th // 2)
                     cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (20, 20, 20), 3, cv2.LINE_AA)
                     cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, TEXT, 1, cv2.LINE_AA)
-        if pan_deg:
-            cv2.putText(img, f"pan {pan_deg:+.0f} deg: calibration off", (12, self.canvas.h - 12),
+        if panning:
+            cv2.putText(img, f"Kamera schwenkt ({pan_deg:+.0f} deg): Kalibrierung aus", (12, self.canvas.h - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 60, 240), 2, cv2.LINE_AA)
         elif calibrated and self.cal.mode == "single":
             cv2.putText(img, "static calibration", (12, self.canvas.h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5,

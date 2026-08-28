@@ -521,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
                     draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
             if minimap and (panel is None or frames_rendered % max(args.panel_every, 1) == 0):
                 pan_note = None if pan_deg is None else (pan_deg - 90.0)  # calibration holds only at the centre
-                panel = minimap.render(worker.latest, worker.holder, pan_deg=pan_note if pan_note and abs(pan_note) >= 1 else None)
+                panel = minimap.render(worker.latest, worker.holder, pan_deg=pan_note)
             if args.minimap == "panel":
                 small = compose_side_by_side(view, panel, out_w, out_h)
             else:
