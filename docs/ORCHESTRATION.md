@@ -163,6 +163,17 @@ Fallbacks: no `best.pt` by 13:30 → COCO weights stay. Ball too unreliable for
 shots → shots from hoop-zone + player proximity only, flagged "unconfirmed".
 Panning camera → calibrate on 2–3 keyframes and interpolate H by time.
 
+## Freeze sequence (13:30 → 14:30, written 13:22)
+
+| When | Who | What |
+|---|---|---|
+| ~13:32 | TRACK | game10 published (out/game10_v1 archive), consumer lines sent, then dev60 v4 (~5 min) |
+| 13:32 → 13:45 | COURT, NUMBERS, STATS, QA, FRONTEND | game10: propagate + minimap_game10, identities (long tracks first), events/stats, shot videos + sheets, dashboard rebuild on game10 |
+| 13:45 → 14:00 | STATS/LIVE | live window test from file, then phone camera (`--source auto`), hotkeys; RISK second pass 13:40 |
+| 14:00 → 14:15 | PITCH (LABEL), DECK (FRONTEND) | side-by-side video from game10 overlay + minimap, slides numbers from game10 events/stats, deck screenshots |
+| 14:15 | DOCS (LABEL) | refresh VISION.md, README section, PR body with game10 numbers |
+| 14:30 | ORCH | **FREEZE**: `make demo CLIP=data/clips/game10.mp4` must pass from a clean state, PR body final, all model jobs killed at 15:50 for the live demo |
+
 ## Reporting
 On every milestone, and on any blocker >10 min:
 `SendMessage(to: "samimagdouli-61", message: "<ROLE> <milestone> done|blocked: <one line> — <path to artifact>")`.
