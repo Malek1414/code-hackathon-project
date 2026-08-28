@@ -52,7 +52,8 @@ def main(argv=None) -> int:
             try:
                 # pass 1: long tracks only, identities.json out fast; pass 2: the fragments, rewrite
                 shooters = read.shooter_ids(a.tracks)
-                passes = [(0.0, read.MAX_CROPS, shooters)] if shooters else []  # shooters first, whatever their length
+                # shooters first, whatever their length, with twice the crops: their number decides the stats
+                passes = [(0.0, 2 * read.MAX_CROPS, shooters)] if shooters else []
                 passes += [(min_s, crops, None) for min_s, crops in read.PASSES]
                 for min_s, crops, only in passes:
                     read.run(a.tracks, min_track_s=min_s, max_crops=crops, only_ids=only, priority_ids=shooters)
