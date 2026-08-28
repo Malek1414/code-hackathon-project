@@ -4,7 +4,8 @@
         [--calib out/court_calib_dev60.json] [--out-dir out] [--skip numbers,qa] [--force] [--dry-run]
 
 Steps, in order (each is skipped when it already ran on the same inputs and its
-outputs still exist; the stamp lives in <out-dir>/.run_all/<step>.json):
+outputs still exist; the stamp lives in <out-dir>/.run_all/<step>.json; outputs that
+already exist for this clip without a stamp are adopted, --force recomputes):
 
   TRACK     vision/track/run.py            -> tracks.jsonl, tracks_meta.json, overlay.mp4
   NUMBERS   vision.numbers.read + merge    -> identities.json (read.py also writes out/numbers_reads.json)
@@ -182,7 +183,9 @@ class Pipeline:
 
         # TRACK
         cmd = [PY, "vision/track/run.py", "--video", str(self.clip), "--out", str(tracks), "--overlay", str(overlay),
-               "--events", str(events), "--identities", str(identities), "--calib", str(self.calib)]
+               "--events", str(events), "--identities", str(identities), "--calib", str(self.calib), "--publish"]
+        if not self.in_place:  # keep the archive of a side run out of out/<clip>_vN/
+            cmd += ["--work-dir", str(self.od / f"track_work_{self.stem}")]
         if self.weights:
             cmd += ["--weights", str(self.weights)]
         if self.stride:
@@ -243,14 +246,32 @@ class Pipeline:
     def stamp_of(self, step: Step) -> dict:
         return {"clip": rel(self.clip), "cmds": [show(c) for c in step.cmds], "inputs": [sig(p) for p in step.inputs]}
 
+    def clip_mismatch(self, step: Step) -> str | None:
+        """Outputs that carry a clip field must belong to this clip (identities.json of
+        another clip next to game10 events happened today)."""
+        for o in step.outputs:
+            if o.suffix != ".json":
+                continue
+            data = load_json(o)
+            if isinstance(data, dict) and data.get("clip") not in (None, rel(self.clip), str(self.clip)):
+                return f"{rel(o)} gehört zu {data.get('clip')}"
+        return None
+
     def is_current(self, step: Step) -> tuple[bool, str]:
         if self.force:
             return False, "erzwungen"
         missing = [o for o in step.outputs if not o.exists()]
         if missing:
             return False, f"{rel(missing[0])} fehlt"
+        wrong = self.clip_mismatch(step)
+        if wrong:
+            return False, wrong
         old = load_json(self.stamps / f"{step.name}.json")
         if old is None:
+            if step.outputs:  # made by the role by hand: adopt, do not recompute (a clean game10 run costs the GPU 30 min)
+                if not self.dry:
+                    self.write_stamp(step)
+                return True, "vorhanden, übernommen"
             return False, "noch nie gelaufen"
         if old != self.stamp_of(step):
             return False, "Eingaben geändert"
@@ -307,7 +328,7 @@ class Pipeline:
                 continue
             current, why = self.is_current(step)
             if current:
-                self.log(f"{step.name.upper():9s} aktuell, übersprungen")
+                self.log(f"{step.name.upper():9s} {why}, übersprungen")
                 continue
             if step.note:
                 self.log(f"{step.name.upper():9s} Hinweis: {step.note}")
