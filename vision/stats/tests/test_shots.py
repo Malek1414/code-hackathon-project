@@ -196,3 +196,5 @@ def test_shooter_team_never_unknown_when_shooter_is_known():
         fr.players.append(Player(id=8, bbox=(940.0, 600.0, 1020.0, 800.0), foot=(980.0, 800.0), team=0))
     shots = detect_shots(frames, track_possession(frames))
     assert shots[0].player_id == FIXTURE_SHOOTER_ID and shots[0].team == 0  # from the players around him
+    assert shots[0].team_source == "nearby_players"
+    assert detect_shots(synthetic_scenario("made"), track_possession(synthetic_scenario("made")))[0].team_source == "track_majority"

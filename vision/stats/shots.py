@@ -94,6 +94,7 @@ class ShotEvent:
     decided_t: float | None = None  # when the made/miss verdict became final (live latency)
     made_confirmed: bool = True  # False: ball vanished at the rim, result unknown (counted as miss)
     made_hint: bool | None = None  # vanished attempts: did the extrapolated arc aim at the middle of the rim?
+    team_source: str = "unknown"  # identity | track_majority | nearby_players | possession | unknown
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +108,7 @@ class ShotEvent:
             "shooter_confirmed": self.shooter_confirmed,
             "made_confirmed": self.made_confirmed,
             "made_hint": self.made_hint,
+            "team_source": self.team_source,
             "release_frame": self.release_frame,
         }
 
@@ -253,7 +255,7 @@ class ShotDetector:
         rim_k = self._last_above_k if self._last_above_k is not None else self._up_k
         rim_fr = self.frames[self._ball_idx[rim_k]]
         rim_hoop = rim_fr.hoops[0]
-        pid, team, foot, release, confirmed = self._shooter_any(self._up_k)
+        pid, team, foot, release, confirmed, team_source = self._shooter_any(self._up_k)
         event = ShotEvent(
             frame=rim_fr.frame,
             t=rim_fr.t,
@@ -264,6 +266,7 @@ class ShotDetector:
             hoop_bbox=rim_hoop,
             shooter_confirmed=confirmed,
             release_frame=release,
+            team_source=team_source,
         )
         self._last_event_t = fr.t
         self._up_k = self._last_above_k = None
@@ -324,7 +327,7 @@ class ShotDetector:
                 a, b = _rel(prev, prev_hoop), _rel(la, hoop)
                 if b[1] > a[1]:  # descending: extend the segment to the rim line
                     hint = crosses_rim(a, b, local, p, p.rim_inner_frac_extrapolated)
-        pid, team, foot, release, confirmed = self._shooter_any(self._up_k)
+        pid, team, foot, release, confirmed, team_source = self._shooter_any(self._up_k)
         ev = ShotEvent(
             frame=la.frame,
             t=la.t,
@@ -335,6 +338,7 @@ class ShotDetector:
             hoop_bbox=hoop,
             shooter_confirmed=confirmed,
             release_frame=release,
+            team_source=team_source,
             decided_t=t_now,
             made_confirmed=False,
             made_hint=hint,
@@ -386,15 +390,16 @@ class ShotDetector:
             return True  # too little information to judge the rise
         return (max(ys) - min(ys)) >= p.arc_min_rise_hoops * hoop_h
 
-    def _shooter_any(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool]:
-        """Release-point rule first, possession rule as the unconfirmed fallback."""
+    def _shooter_any(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool, str]:
+        """Release-point rule first, possession rule as the unconfirmed fallback.
+        Returns (player id, team, foot, release frame, confirmed, team source)."""
         hit = self._shooter_by_release(up_k)
         if hit is not None:
             return hit
         seg, foot, release, _ = self._shooter(self._ball_idx[up_k])
         if seg is None:
-            return None, -1, None, None, False
-        return seg.player_id, seg.team, foot, release, False
+            return None, -1, None, None, False, "unknown"
+        return seg.player_id, seg.team, foot, release, False, "possession" if seg.team >= 0 else "unknown"
 
     def _flight_chain(self, up_k: int) -> list[int]:
         """Ball-sample positions of the flight, earliest first, ending at `up_k`.
@@ -432,7 +437,7 @@ class ShotDetector:
         chain.reverse()
         return chain
 
-    def _shooter_by_release(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool] | None:
+    def _shooter_by_release(self, up_k: int) -> tuple[int | None, int, Point | None, int | None, bool, str] | None:
         p = self.p
         chain = self._flight_chain(up_k)
         if len(chain) < 2:
@@ -472,10 +477,12 @@ class ShotDetector:
                 best, best_rank = pl, rank
         if best is None:
             return None
-        team = self._team_of(best.id)
+        team, source = self._team_of(best.id), "track_majority"
         if team < 0:
-            team = self._team_around(fr, best)
-        return best.id, team, best.foot, fr.frame, True
+            team, source = self._team_around(fr, best), "nearby_players"
+        if team < 0:
+            source = "unknown"
+        return best.id, team, best.foot, fr.frame, True, source
 
     def _team_of(self, pid: int) -> int:
         """Majority team of a track over everything seen so far (TRACK's

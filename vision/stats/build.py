@@ -57,8 +57,9 @@ def build(
     shots = engine.shots
     ident = identities or {}
     for s in shots:  # NUMBERS knows the team of a track even when TRACK's colour rule said -1
-        if s.team < 0 and s.player_id in ident and ident[s.player_id].team >= 0:
+        if s.player_id in ident and ident[s.player_id].team >= 0:
             s.team = ident[s.player_id].team
+            s.team_source = "identity"
 
     def key_of(pid: int | None, team: int) -> str | None:
         if pid is None:
