@@ -274,7 +274,7 @@ def _ball_section(out: Path) -> str:
 </div>"""
 
 
-def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int) -> Path:
+def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, events_path: Path, tracks_n: int, known_path: Path = KNOWN) -> Path:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     made = sum(1 for s in sheets if s["made"])
     stored = read_json(verdicts_file(out, clip)) or {}
@@ -283,7 +283,7 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
         if stored.get("shots") or stored.get("numbers")
         else "Noch keine gespeicherten Antworten."
     )
-    n_new = mark_new(sheets)
+    n_new = mark_new(sheets, known_path)
     ordered = sorted(sheets, key=lambda m: (not m.get("is_new"), m["t"]))
     if not sheets:
         shots_html = '<div class="empty">Noch keine Wuerfe in events.json.</div>'
@@ -534,7 +534,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--identities", type=Path, default=IDENTITIES)
     ap.add_argument("--clip", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=QA_DIR)
+    ap.add_argument("--known", type=Path, default=None, help="events/sheets json of an earlier round; shots not in it are 'neu' (default out/qa/known_shots.json)")
+    ap.add_argument("--only-new", action="store_true", help="render only the shots flagged new (quick first page)")
+    ap.add_argument("--no-video", action="store_true", help="strips only, no clip cut (videos can be added by a later run)")
+    ap.add_argument("--no-numbers", action="store_true", help="skip the number cards")
     args = ap.parse_args(argv)
+    known_path = args.known or KNOWN
 
     events = read_json(args.events)
     meta = read_json(META) or {}
@@ -554,11 +559,17 @@ def main(argv: list[str] | None = None) -> int:
     sheets = []  # files are replaced per shot; stale ones are pruned only after a complete run (an interrupted run must not empty the page)
     previous = {m.get("sig"): m for m in ((read_json(args.out / "sheets.json") or {}).get("shots") or []) if m.get("sig")}
     reused = 0
+    known_t = [float(m["t"]) for m in ((read_json(known_path) or {}).get("shots") or []) if m.get("t") is not None]
+    skipped = []
     for n, shot in enumerate(shots, 1):
-        sig = shot_signature(n, shot, args.tracks)
+        is_new = bool(known_t) and not any(abs(float(shot["t"]) - t) <= KNOWN_MATCH_S for t in known_t)
+        if args.only_new and not is_new:
+            skipped.append(n)
+            continue
+        sig = shot_signature(n, shot, args.tracks) + ("" if not args.no_video else "|novideo")
         prev = previous.get(sig)
         prev_files = [args.out / prev[k] for k in ("file", "video", "video_half") if prev.get(k)] if prev else []
-        if prev and len(prev_files) == 3 and all(f.exists() for f in prev_files):
+        if prev and len(prev_files) == (1 if args.no_video else 3) and all(f.exists() for f in prev_files):
             sheets.append(prev)  # same shot, same tracks and overlay, files present: nothing to redo
             reused += 1
             continue
@@ -568,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
         m["number_prefill"] = key_number(m.get("player_key"))
         save_jpg(args.out / m["file"], img)
         try:
+            if args.no_video:
+                raise RuntimeError("Video folgt im naechsten Durchlauf")
             m.update(render_clip(n, m["t"], clip, args.out))
         except RuntimeError as exc:
             print(f"  shot {n}: no video ({exc})")
@@ -577,24 +590,27 @@ def main(argv: list[str] | None = None) -> int:
             if m.get("video_source") == "overlay"
             else f"Video aus dem Rohclip ohne Boxen ({m.get('video_reason', 'kein Overlay')}), 2,0 s vor bis 1,5 s nach dem Ereignis"
             if m.get("video_source") == "raw"
-            else f"Kein Video: {m.get('video_caption')}"
+            else f"{m.get('video_caption')}"
         )
         sheets.append(m)
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
-    numbers = build_number_cards(frames, grab, args.out, args.identities, clip)
-    if not numbers:
+    numbers = [] if args.no_numbers else build_number_cards(frames, grab, args.out, args.identities, clip)
+    if not numbers and not args.no_numbers:
         for stale in args.out.glob("num_*.jpg"):
             stale.unlink()
     grab.close()
     if reused:
         print(f"  {reused} of {len(shots)} sheets reused (files newer than events, tracks and overlay)")
-    keep = {m["file"] for m in sheets} | {m.get("video") for m in sheets} | {m.get("video_half") for m in sheets}
-    for stale in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
-        if stale.name not in keep:
-            stale.unlink()
+    if not args.only_new:
+        keep = {m["file"] for m in sheets} | {m.get("video") for m in sheets} | {m.get("video_half") for m in sheets}
+        for stale in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
+            if stale.name not in keep:
+                stale.unlink()
+    if skipped:
+        print(f"  {len(skipped)} known shots skipped (--only-new)")
     clip_label = str(clip.relative_to(ROOT)) if clip.is_relative_to(ROOT) else str(clip)
     (args.out / "sheets.json").write_text(json.dumps({"clip": clip_label, "shots": sheets, "numbers": numbers}, indent=1))
-    page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames))
+    page = write_index(args.out, sheets, numbers, clip_label, args.events, len(frames), known_path)
     print(f"{len(sheets)} sheets, {len(numbers)} number cards -> {args.out}, index {page}")
     return 0
 
