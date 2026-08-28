@@ -32,7 +32,8 @@ The camera that follows the ball is the camera that keeps the stats.
 4. Projected feet onto a 2D court (homography, one click per court landmark) and
    rendered a minimap next to the video.
 5. Shot events from ball and hoop geometry, per-player FGA / FGM / FG% table.
-   {SHOTS_FOUND} = 1 shot attempt found in the 60 s dev clip (game10 number at 14:30).
+   {SHOTS_FOUND} = 24 shot attempts, 10 made, in the 10 minute game10 clip
+   (team 0 5/13, team 1 5/11; 14:00 run, not yet checked against a hand count).
 6. Live mode: same models on the phone stream at about 10 fps, running score bar,
    auto +2 with human veto by hotkey, MJPEG and RTMP push out.
 
@@ -64,7 +65,9 @@ analytics for coaches, and the scoreboard for the volunteer at the table.
 | Ball seen in frames | 41% | `out/track_summary.json` |
 | Tracking speed | 0.56 s per frame at 1080p on MPS (yolo11s + ball model) | `out/track_summary.json` |
 | Live detection rate | about 10 fps | `vision/live/live.py` |
-| Shots found (dev 60 s) | 1 attempt, 0 made | `out/events.json` |
+| Shots found (dev 60 s) | 1 attempt, 0 made | `out/dev60_v2/` |
+| Shots found (game10, 10 min) | 24 attempts, 10 made | `out/game10/events.json` |
+| game10 tracking | 15,001 frames, 7.8 players/frame, ball in 34 % of frames, 2850 ids | `out/game10/track_summary.json` |
 
 ## Proposed change to `pitch/pitch.md` (for ORCH to pass to Malek)
 

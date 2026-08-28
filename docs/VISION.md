@@ -43,6 +43,19 @@ offset to the hoop across 4 or more frames (wall fixtures). Measured: 600
 frames extracted, 300 labeled in 958 s (3.2 s per frame with GPU contention),
 3395 boxes after 72 false balls were removed.
 
+## Ball fine-tune on coach labels (`vision/label/build_ball_dataset.py`, `train_ball.py`, `eval_ball.py`, LABEL)
+
+```
+.venv/bin/python vision/label/build_ball_dataset.py --labels out/qa/ball_labels.json --device cpu
+.venv/bin/python vision/label/train_ball.py --imgsz 1280 --batch 4 --epochs 12 --lr0 0.002 --device mps --time 0.2
+.venv/bin/python vision/label/eval_ball.py --weights models/ball_hoop_v2.pt --conf 0.30 0.35 0.45 --device cpu
+```
+In: Sami's 120 hand-labeled game10 frames (90 ball, 30 none). Out:
+`data/dataset_ball/` (train 122 / val 40, split by frame index),
+`models/ball_hoop_v2.pt`. Measured on the 40 held-out frames at conf 0.35:
+recall 53 percent vs 43 (avishah), false positives 8 vs 36 in 40 frames;
+12 epochs in 12.1 min. Details in `docs/RESULTS.md`.
+
 ## Training (`vision/label/train.py`, LABEL)
 
 ```
@@ -69,7 +82,10 @@ rules|kmeans`). Measured: 0.08 s per frame alone on the M3, 0.26 to 0.45 with
 other model jobs (`out/track_dev60.log`); on 526 dev60 frames `best.pt`
 persons give 9.3 players per frame and 101 track ids against 12.5 and 134
 with COCO yolo11s (25 percent fewer id switches); ball in 33 percent of
-frames at conf 0.45, 43 percent at 0.30.
+frames at conf 0.45, 43 percent at 0.30. Full `game10.mp4` (10 min, stride
+2, best.pt persons + avishah ball, published 13:34): 15,001 frames in 2088 s
+= 0.139 s per frame next to other jobs, 7.8 players per frame, ball in 34
+percent of frames, hoop in 80 percent, 2850 track ids (`out/game10/track_summary.json`).
 
 ## Jersey numbers (`vision/numbers/`, NUMBERS)
 
@@ -98,9 +114,11 @@ keyframe), `out/court_H_<clip>.npz` (one homography per frame from sparse
 optical flow chained between keyframes, players masked out; camera code from
 Courtside), `out/minimap.mp4` (28 x 15 m court, 40 px per m, team colors,
 ball trail), `out/cuts_<clip>.json`. Measured: 76 cuts or dissolves detected
-in game10 (`out/court_chain_game10.log`). No `out/court_calib.json` existed
-at 13:00, so the minimap renders the court without projected players and
-the dashboard has no shot positions in metres.
+in game10 (`out/court_chain_game10.log`). A calibration for game10 exists
+since ~13:50 (`out/game10/court_calib_game10.json`, minimap in
+`out/game10/minimap.mp4`); `out/pitch/court_lines_10s.mp4` shows the
+projected court staying on the floor markings through a zoom and pan
+(game10 160 to 170 s).
 
 ## Stats (`vision/stats/`, STATS)
 
@@ -114,7 +132,9 @@ In: tracks, optional calibration, identities, cut list. Out: `out/events.json`
 Possession = nearest foot to the ball, shot = ball enters the hoop zone from
 above, made = ball seen below the rim within 0.5 s; bench players and
 spectators filtered unless `--no-court-filter`. Measured: 52 unit tests pass (3.6 s); 1
-shot attempt, 0 made, on the 60 s dev clip.
+shot attempt, 0 made, on the 60 s dev clip; on the full game10 (10 min) 24
+shot attempts, 10 made, team 0 5/13 and team 1 5/11 (`out/game10/events.json`,
+`out/game10/stats.json`, 14:00, not yet checked against a hand count).
 
 ## Dashboard (`vision/dashboard/build.py`, FRONTEND)
 
@@ -155,6 +175,6 @@ the laptop camera did.
 .venv/bin/python vision/privacy/retention.py --hours 24 [--apply]
 ```
 Heads blurred from the tracking boxes alone (no model, CPU); off-court boxes
-in full once a calibration exists. Measured: 11,579 heads in 125 s on the 60 s
+in full once a calibration exists (`--calib out/game10/court_calib_game10.json`). Measured: 11,579 heads in 125 s on the 60 s
 overlay. Referees and bench are only blurred once TRACK writes them into the
 optional `others` list. See `docs/PRIVACY.md`.
