@@ -10,6 +10,7 @@ been stable for STABLE_S (TRACK streams tracks.jsonl line by line).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -48,9 +49,28 @@ def log(msg: str) -> None:
 
 
 ARCHIVE_GLOB = "*_v[0-9]*/tracks.jsonl"  # out/dev60_v4/tracks.jsonl -> out/qa/dev60_v4/
-ARCHIVE_JOBS = ("vision.qa.ball_check", "vision.qa.ball_recall")
+ARCHIVE_JOBS = ("vision.qa.ball_eval", "vision.qa.ball_recall", "vision.qa.ball_check")  # ORCH 13:59: eval decides the publish, the render comes last
+STATE = QA_DIR / "watch_state.json"  # signatures already processed, so a restart does not redo unchanged files
 archive_done: dict[Path, tuple[float, int] | None] = {}
 archive_seen: dict[Path, tuple[tuple[float, int] | None, float]] = {}
+
+
+def load_state() -> dict[str, list]:
+    try:
+        return json.loads(STATE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_state(done: dict[Path, tuple[float, int] | None]) -> None:
+    state = load_state()
+    state.update({str(k.relative_to(ROOT)): list(v) for k, v in done.items() if v})
+    STATE.write_text(json.dumps(state, indent=1))
+
+
+def stored_sig(path: Path) -> tuple[float, int] | None:
+    v = load_state().get(str(path.relative_to(ROOT)))
+    return (float(v[0]), int(v[1])) if v else None
 
 
 def run_archives() -> None:
@@ -62,9 +82,12 @@ def run_archives() -> None:
         if cur != last:
             archive_seen[tracks] = (cur, now)
             continue
+        if tracks not in archive_done:
+            archive_done[tracks] = stored_sig(tracks)
         if cur is None or cur == archive_done.get(tracks) or now - since < STABLE_S:
             continue
         archive_done[tracks] = cur
+        save_state({tracks: cur})
         out = QA_DIR / tracks.parent.name
         log(f"archive {tracks.parent.name}: {tracks.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
         for m in ARCHIVE_JOBS:
@@ -93,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             run(m)
         run_archives()
         return 0
-    done: dict[Path, tuple[float, int] | None] = {p: None for p in (TRACKS, EVENTS, OVERLAY, IDENTITIES, *DEFAULT_REJECTS)}  # signature last processed
+    done: dict[Path, tuple[float, int] | None] = {p: stored_sig(p) for p in (TRACKS, EVENTS, OVERLAY, IDENTITIES, *DEFAULT_REJECTS)}  # signature last processed (persisted)
     seen: dict[Path, tuple[tuple[float, int] | None, float]] = {p: (sig(p), 0.0) for p in done}  # (sig, since)
     log(f"watching {TRACKS.relative_to(ROOT)}, {EVENTS.relative_to(ROOT)} and {OVERLAY.relative_to(ROOT)} (+identities.json) every {POLL_S:g}s, pid {os.getpid()}")
     while True:
@@ -111,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             log("changed: " + ", ".join(p.name for p in sorted(changed)))
             for p in changed:
                 done[p] = seen[p][0]
+            save_state({p: done[p] for p in changed})
             for m, deps in JOBS.items():
                 if changed & set(deps):
                     run(m)
