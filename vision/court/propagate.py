@@ -155,12 +155,13 @@ def chain_camera(clip: Path, *, scale: float, boxes: dict[int, np.ndarray], keyf
 
 THUMB_EVERY = 5
 CUT_LAG = 50  # frames, 1 s at 50 fps
-CUT_THRESHOLD = 22.0
+CUT_THRESHOLD = 25.0
 """Mean grey difference (0..255) between a frame and the frame one second earlier
 AFTER aligning the earlier one with the tracked camera motion. A pan aligns
 away, moving players cost a few units, a cut or a dissolve to another view
 does not align at all and scores far higher. Measured on dev60: game segments
-sit around 6 to 10, the dissolves at 30+."""
+sit at 10 to 20, jump cuts at 28 to 34, the dissolve at 47, hard cuts at 60 to 88;
+the pre-game close-ups sit at 25 to 47 throughout and become one junk segment."""
 
 
 def detect_cuts(frames: np.ndarray, C: np.ndarray, thumbs: dict[int, np.ndarray], full_size: tuple[float, float]) -> tuple[list[int], dict[int, float]]:
@@ -205,7 +206,8 @@ def cuts_from_signal(aligned: dict[int, float], first_frame: int = 0, threshold:
             while j < len(ts) and aligned[ts[j]] > threshold:
                 j += 1
             if j - i >= min_run:
-                cuts.append(max(first_frame, ts[i] - CUT_LAG // 2))
+                # first high sample t means the change happened in (t - THUMB_EVERY, t]
+                cuts.append(max(first_frame, ts[i] - THUMB_EVERY // 2))
             i = j
         else:
             i += 1
