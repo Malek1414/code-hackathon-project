@@ -19,3 +19,11 @@ Auto calls: a confirmed basket with a known team adds +2 and flashes green; an u
 Panel on the right: 2D court from `out/court_calib_<clip>.json`; "uncalibrated" when missing.
 Score bar shows "Kamera: kein Bild" while the source is silent; the app keeps running and reopens the device.
 At exit: `out/live_events.json` (shots, score, frames).
+
+## Servo pan (rig)
+Find the Arduino port: `ls /dev/cu.usb*` (e.g. `/dev/cu.usbserial-1420` or `/dev/cu.usbmodem14201`), then
+`.venv/bin/python -m vision.live.live --source 1 --serial /dev/cu.usbserial-XXXX` (add `--invert-pan` if the camera
+runs away from the ball). Protocol `A<angle>\n` at 115200, 40-140 deg, centre 90 (software/servo_pan/servo_pan.ino);
+law KP 0.06 deg/px, deadband 25 px, EMA 0.35 (software/ball_tracker.py); <= 20 commands/s, only on >= 1 deg change;
+ball lost -> hold, after 3 s drift back to 90. Score bar shows `pan 97 deg`. Test without hardware: `--dry-serial`
+prints the commands.

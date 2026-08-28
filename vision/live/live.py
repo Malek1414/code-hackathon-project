@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `python vision/l
 from vision.live.env import load_dotenv, rtmp_url
 from vision.live.minimap import MiniMap, compose_side_by_side, load_numbers, try_load_calibration
 from vision.live.overlay import draw_flash, draw_score_bar, draw_tracks
+from vision.live.pan import PanController
 
 try:  # COURT's court overlay (vision/court/draw.py); optional so live never depends on it
     from vision.court.draw import court_lines
@@ -82,6 +83,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="default: out/court_calib_<source stem>.json, else out/court_calib.json")
     ap.add_argument("--identities", default="out/identities.json")
     ap.add_argument("--no-court-lines", action="store_true", help="do not draw the court on the video")
+    ap.add_argument("--serial", default=None, help="pan servo port, e.g. /dev/cu.usbserial-XXXX (ls /dev/cu.usb*)")
+    ap.add_argument("--dry-serial", action="store_true", help="print the servo commands instead of sending them")
+    ap.add_argument("--invert-pan", action="store_true", help="flip the pan direction if the camera runs away from the ball")
     ap.add_argument("--panel-every", type=int, default=3,
                     help="render the court panel every Nth frame and reuse it in between (render rate)")
     return ap.parse_args(argv)
@@ -357,6 +361,9 @@ def main(argv: list[str] | None = None) -> int:
 
     status = ""  # shown in the score bar when the source misbehaves
     panel = None
+    pan = PanController(args.serial, dry=args.dry_serial, invert=args.invert_pan, frame_width=w) \
+        if (args.serial or args.dry_serial) else None
+    pan_deg = None
     stop_flag = {"stop": False}
 
     def _on_signal(signum, _frame):  # SIGINT/SIGTERM end the loop cleanly so the exit file gets written
@@ -378,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
             "frames_processed": worker.processed,
             "rtmp_frames": pusher.frames if pusher else 0,
             "source_reopens": cap.reopens,
+            "pan_commands": pan.commands if pan else 0,
             "final": final,
         }
         Path(args.events_out).parent.mkdir(parents=True, exist_ok=True)
@@ -438,18 +446,25 @@ def main(argv: list[str] | None = None) -> int:
                 shots_log.append(ev.to_dict())
                 log.info("shot %s at %.1fs: %s", "MADE" if ev.made else "miss", ev.t, act.label)
 
+            if pan is not None:
+                rec = worker.latest
+                ball = rec.get("ball") if rec else None
+                pan_deg = pan.update(ball["center"][0] if ball and ball.get("center") else None)
             view = frame.copy()
             if court_lines is not None and minimap is not None and minimap.cal is not None and not args.no_court_lines:
                 court_lines(view, None if is_cam else idx, minimap.cal)
             draw_tracks(view, worker.latest, worker.holder)
             info = f"det {1 / max(worker.proc_dt, 1e-3):.1f} fps   1/2 +2  3/4 +3  z undo  q quit"
+            if pan_deg is not None:
+                info = f"pan {pan_deg:.0f} deg   |   {info}"
             if status:
                 info = f"{status}   |   {info}"
             draw_score_bar(view, board, t, info, warning=bool(status))
             if flash:
                 draw_flash(view, flash[0], flash[1], t - flash[2], FLASH_S)
             if minimap and (panel is None or frames_rendered % max(args.panel_every, 1) == 0):
-                panel = minimap.render(worker.latest, worker.holder)
+                pan_note = None if pan_deg is None else (pan_deg - 90.0)  # calibration holds only at the centre
+                panel = minimap.render(worker.latest, worker.holder, pan_deg=pan_note if pan_note and abs(pan_note) >= 1 else None)
             if args.minimap == "panel":
                 small = compose_side_by_side(view, panel, out_w, out_h)
             else:
@@ -490,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
             pusher.close()
         if mjpeg:
             mjpeg.stop()
+        if pan is not None:
+            pan.close()
         dump(final=True)
         log.info("done: rendered %d, processed %d, shots %d, score %s -> %s", frames_rendered,
                  worker.processed, len(shots_log), board.line(), args.events_out)
