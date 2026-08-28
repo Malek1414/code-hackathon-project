@@ -541,7 +541,7 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     header = f"""
 <header>
   <h1 class="sr">{html.escape(T0['name'])} vs {html.escape(T1['name'])}, FollowCam coach report</h1>
-  <div class="kicker"><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span></div>
+  <div class="kicker"><span>Landesliga Berlin, {html.escape(clip or "clip pending")}{f", {fmt_clock(duration_s)} min" if duration_s else ""}{f", {fps:g} fps" if fps else ""}</span>{'<span>shots human-checked</span>' if (events or {}).get("note") else ''}</div>
   <div class="team"><div class="name"><span class="swatch" style="background:{T0['color']}"></span>{T0['name']}</div><div class="line">{team_line(teams[0])}</div></div>
   <div class="scoreboard{'' if has_events else ' empty'}" aria-label="Final score"><span class="pts" style="color:{T0['color'] if has_events else 'inherit'}">{sc[0]}</span><span class="colon">:</span><span class="pts" style="color:{T1['color'] if has_events else 'inherit'}">{sc[1]}</span></div>
   <div class="team right"><div class="name"><span class="swatch" style="background:{T1['color']}"></span>{T1['name']}</div><div class="line">{team_line(teams[1])}</div></div>
@@ -575,6 +575,8 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
         notes.append(f"{uncertain} of {len(shots)} shot positions uncertain (dashed ring): the camera tracking drifted around that moment.")
     if estimated:
         notes.append(f"{estimated} of {len(shots)} shot positions estimated from the image (dashed ring): distance from the basket is roughly right, side is not. Team A is drawn at the left basket, Team B at the right one.")
+    if (events or {}).get("note"):
+        notes.append(str(events["note"]).rstrip(".") + ".")
     if not has_events:
         notes.append("Shot events not available yet.")
     elif not shots:
