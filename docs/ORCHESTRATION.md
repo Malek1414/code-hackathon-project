@@ -4,7 +4,7 @@ Sami's track at the hackathon: **video → labeled players/ball/hoop → 2D cour
 model → per-player stats (shots, FG%)**. This is the "analytics platform" half
 of the pitch; the servo rig is the capture half (Malek).
 
-Five Claude Code sessions work in parallel on this directory. Each session
+Eight Claude Code sessions work in parallel on this directory. Each session
 owns ONE role below, works only inside its owned paths, and reports to the
 orchestrator session (`samimagdouli-61`) via SendMessage when a milestone is
 done or it is blocked. Sami can talk to any session directly in its terminal.
@@ -17,6 +17,9 @@ done or it is blocked. Sami can talk to any session directly in its terminal.
 | **STATS** | `vision/stats/`, `out/events.json`, `out/stats.json` | ball possession, shot events (made/miss), per-player FG stats from `tracks.jsonl` |
 | **COURT** | `vision/court/`, `vision/dashboard/`, `out/court_calib.json`, `out/minimap.mp4`, `out/dashboard.html` | homography → 2D minimap + coach dashboard |
 | **LIVE** (added 11:50, owned by the STATS session) | `vision/live/` | live pipeline: camera/phone → detect+track → running score + stats overlay → local preview + optional RTMP push (Twitch/YouTube) with ~5 s delay |
+| **MONITOR** (added 11:57) | `vision/monitor/` | local status board at 127.0.0.1:8600: labeling progress + latest labeled frame, training curve, tracking progress, shots, calibration state, log tails |
+| **FRONTEND** (added 11:57, takes `vision/dashboard/` from COURT) | `vision/dashboard/`, `out/dashboard.html` | coach-facing analytics page for the judges: score, timeline, shot chart, player table, overlay + minimap side by side |
+| **QA** (added 11:57) | `vision/qa/`, `out/qa/` | human verification sheets: per-shot frame strips with verdict checkboxes, ball recall sample, team assignment sample |
 
 Hard rules:
 1. Python env: `.venv/bin/python` in this repo (torch 2.13 + MPS, ultralytics
