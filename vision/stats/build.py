@@ -335,7 +335,8 @@ def main(argv: list[str] | None = None) -> int:
             distances = court_distances(calib_path, Path(args.tracks))
 
     out = Path(args.out_dir)
-    cuts = load_cuts(Path(args.cuts)) if args.cuts else (find_cuts(clip, out) if not args.fixture else [])
+    tracks_dir = Path(args.tracks).parent  # cuts/identities live next to the tracks, not in --out-dir
+    cuts = load_cuts(Path(args.cuts)) if args.cuts else (find_cuts(clip, tracks_dir) if not args.fixture else [])
     identities = None
     ident_path = Path(args.identities)
     if ident_path.exists() and not args.fixture:
