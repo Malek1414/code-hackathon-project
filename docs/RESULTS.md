@@ -117,8 +117,12 @@ player's hands.
 Inside TRACK on the full game10 (game10_v2, ball v2 as `--ball-weights`,
 measured by QA against Sami's 120 hand labels, 14:50): ball recall 31 to 53
 percent, precision 62 to 96 percent, frames with a false ball 17 to 2. The
-shot detector then finds 31 attempts instead of 24; the 7 new ones await
-Sami's check, so the pitch keeps "24 attempts, 10 made" until confirmed.
+shot detector then finds 31 attempts instead of 24 (ball in 38 % of frames
+instead of 34 %), but on the human-verified set the verdicts are not better
+(made/miss 14 of 20 = 70 % vs 16 of 22 = 73 %, shooter team 70 % vs 77 %,
+STATS 14:57) and 10 of the 31 attempts are unverified, so the frozen,
+human-verified v1 list (24 attempts, 10 made, Team A 4 of 12, Team B 6 of 12)
+stays the reference for the pitch.
 
 ### 14:15 comparison (measured by TRACK, `best.pt` vs COCO weights)
 Setup (TRACK): `data/clips/dev60.mp4`, frames 900 to 3121, stride 4, 526
