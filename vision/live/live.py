@@ -60,6 +60,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--list-sources", action="store_true",
                     help="probe camera indices 0-4 (one frame each, 2 s timeout), print ok/no-frame, exit")
     ap.add_argument("--realtime", action="store_true", help="pace a video file like a live camera")
+    ap.add_argument("--loop", action="store_true", help="video file: start over at the end (stage demo loop)")
     ap.add_argument("--device", default="mps")
     ap.add_argument("--process-fps", type=float, default=10.0, help="target detection rate")
     ap.add_argument("--out-width", type=int, default=1280, help="MJPEG / RTMP frame width")
@@ -370,6 +371,15 @@ def main(argv: list[str] | None = None) -> int:
                     if lag < 0:
                         time.sleep(-lag)
                 nxt = None if cap.eof else cap.read()
+                if nxt is None and cap.eof and args.loop and not is_cam:
+                    cap.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    cap.eof = False
+                    idx = 0
+                    t_start = time.monotonic()
+                    engine.reset()
+                    worker.latest, worker.holder = None, None
+                    nxt = cap.read()
+                    log.info("loop: file restarted")
                 if nxt is None:
                     fresh = False  # keep showing the last frame; never leave the stage dark
                     if cap.eof:
