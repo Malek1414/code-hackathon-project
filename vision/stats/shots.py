@@ -70,8 +70,9 @@ class ShotParams:
     cooldown_s: float = 1.5  # one attempt per ... (rim rattles)
     shooter_lookback_s: float = 4.0
     release_width_scale: float = 1.0
-    release_chain_gap_s: float = 0.5  # flight samples further apart than this do not chain
-    release_back_samples: float = 2.0  # extrapolate the flight this many sample gaps back to the hands
+    release_chain_gap_s: float = 0.8  # flight samples further apart than this do not chain (best.pt run: 0.52 s hole)
+    release_back_samples: float = 2.0  # extrapolate the flight this many sample gaps back to the hands ...
+    release_back_max_s: float = 0.12  # ... but never further back than this (gappy tracks)
     release_box_top_frac: float = 0.6  # the release point must lie in the upper part of the shooter's box ...
     release_box_widen: float = 0.3  # ... widened by this share on each side (arms)
     release_max_skips: int = 4  # stray samples tolerated inside the flight chain
@@ -449,7 +450,7 @@ class ShotDetector:
             return None
         vx = (b.ball.center[0] - a.ball.center[0]) / dt
         vy = (b.ball.center[1] - a.ball.center[1]) / dt
-        back = p.release_back_samples * dt
+        back = min(p.release_back_samples * dt, p.release_back_max_s)
         release = (a.ball.center[0] - vx * back, a.ball.center[1] - vy * back)
         a_index = self._ball_idx[chain[0]]
         fr = None

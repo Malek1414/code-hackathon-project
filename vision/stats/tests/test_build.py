@@ -1,6 +1,6 @@
 import json
 
-from vision.stats.build import build, load_cuts, load_identities, main
+from vision.stats.build import Identity, build, identities_match_tracks, load_cuts, load_identities, main
 from vision.stats.court import distances_m, on_court
 from vision.stats.io import Player
 from vision.stats.io import synthetic_scenario, write_tracks
@@ -137,3 +137,13 @@ def test_on_court_filter_with_calibration():
     events, stats = build(frames, fps=50, clip="x", calib=calib)
     assert events["off_court_track_ids"] == [77]
     assert {p["id"] for p in stats["players"]} == {1, 2, 3}
+
+
+def test_stale_identities_are_detected():
+    frames = synthetic_scenario("made")  # ids 1, 2 (team 0), 3 (team 1)
+    good = {1: Identity("A12", 0, 12), 3: Identity("B7", 1, 7)}
+    assert identities_match_tracks(good, frames)
+    renumbered = {41: Identity("A12", 0, 12), 43: Identity("B7", 1, 7)}  # ids from another run
+    assert not identities_match_tracks(renumbered, frames)
+    swapped = {1: Identity("B12", 1, 12), 3: Identity("A7", 0, 7)}  # same ids, other players
+    assert not identities_match_tracks(swapped, frames)

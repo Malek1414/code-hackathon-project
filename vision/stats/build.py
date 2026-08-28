@@ -124,6 +124,25 @@ def load_identities(path: Path) -> dict[int, Identity]:
     return out
 
 
+def identities_match_tracks(ident: dict[int, Identity], frames: list[Frame], min_agree: float = 0.7) -> bool:
+    """identities.json belongs to a previous tracker run if its track ids do
+    not exist in these tracks or their teams disagree with the tracks'
+    majority colours (ids are re-numbered on every run)."""
+    votes: dict[int, Counter] = defaultdict(Counter)
+    for fr in frames:
+        for p in fr.players:
+            if p.team >= 0:
+                votes[p.id][p.team] += 1
+    known = [tid for tid, it in ident.items() if it.team >= 0]
+    if not known:
+        return True
+    present = [tid for tid in known if tid in votes]
+    if len(present) < 0.5 * len(known):
+        return False
+    agree = sum(1 for tid in present if votes[tid].most_common(1)[0][0] == ident[tid].team)
+    return agree >= min_agree * len(present)
+
+
 def find_cuts(clip: str, out_dir: Path) -> list[int]:
     """COURT's cut list for this clip, if any: out/cuts_<stem>.json (list of
     frames, or {"cuts": [...]} / {"frames": [...]} with ints or {"frame": n}),
@@ -341,11 +360,15 @@ def main(argv: list[str] | None = None) -> int:
     ident_path = Path(args.identities)
     if ident_path.exists() and not args.fixture:
         meta_path = Path(args.tracks).parent / "tracks_meta.json"
+        candidate = load_identities(ident_path)
         if meta_path.exists() and ident_path.stat().st_mtime < meta_path.stat().st_mtime:
             print(f"{ident_path} is older than {meta_path}: track ids belong to a previous run, ignoring it",
                   file=sys.stderr)
+        elif not identities_match_tracks(candidate, frames):
+            print(f"{ident_path}: track ids/teams do not match these tracks (previous run?), ignoring it",
+                  file=sys.stderr)
         else:
-            identities = load_identities(ident_path)
+            identities = candidate
 
     events, stats = build(
         frames,
