@@ -195,13 +195,14 @@ JS = """
 """
 
 
-def build(events, stats, cal, minimap: str | None, overlay: str | None, clip: str, calib_note: str) -> str:
+def build(events, stats, cal, minimap: str | None, overlay: str | None, clip: str, calib_note: str,
+          distances: dict[int, float] | None = None) -> str:
     shots = place_shots(events, cal)
     svg, placed = court_svg(shots, cal)
     fga = len(shots)
     fgm = sum(1 for s in shots if s.get("made"))
     unconfirmed = sum(1 for s in shots if s.get("unconfirmed"))
-    distances: dict[int, float] = {}
+    distances = distances or {}
     n_players = len((stats or {}).get("players") or [])
     fps = (events or {}).get("fps")
 
@@ -266,6 +267,7 @@ def main(argv=None) -> int:
     ap.add_argument("--events", type=Path, default=ROOT / "out" / "events.json")
     ap.add_argument("--stats", type=Path, default=ROOT / "out" / "stats.json")
     ap.add_argument("--calib", type=Path, default=ROOT / "out" / "court_calib.json")
+    ap.add_argument("--tracks", type=Path, default=ROOT / "out" / "tracks.jsonl", help="für distance_m, falls stats.json es nicht füllt")
     ap.add_argument("--minimap", default="minimap.mp4", help="relative to the html, empty to omit")
     ap.add_argument("--overlay", default="overlay.mp4", help="relative to the html, empty to omit")
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "dashboard.html")
@@ -281,7 +283,11 @@ def main(argv=None) -> int:
     minimap = args.minimap if args.minimap and (args.out.parent / args.minimap).exists() else None
     overlay = args.overlay if args.overlay and (args.out.parent / args.overlay).exists() else None
     clip = (events or {}).get("clip") or (cal.meta.get("clip") if cal else "") or ""
-    page = build(events, stats, cal, minimap, overlay, clip, calib_note)
+    distances: dict[int, float] = {}
+    needs_distance = any(p.get("distance_m") is None for p in (stats or {}).get("players") or [])
+    if cal is not None and needs_distance and args.tracks.exists():
+        distances = cal.player_distances(args.tracks)
+    page = build(events, stats, cal, minimap, overlay, clip, calib_note, distances)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page)
     print(f"gespeichert: {args.out} ({len(page) // 1024} kB, events={'ja' if events else 'nein'}, stats={'ja' if stats else 'nein'}, "
