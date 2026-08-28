@@ -24,6 +24,7 @@ from .common import EVENTS, QA_DIR, ROOT, TRACKS
 POLL_S, STABLE_S = 2.0, 4.0
 PY = sys.executable
 JOBS = {  # module -> files it depends on; order = priority (shot videos first, ball_check last)
+    "vision.qa.ball_eval": (TRACKS,),  # cheap: reads 12 jpgs, exits at once on non-game10 tracks
     "vision.qa.shot_sheets": (TRACKS, EVENTS, OVERLAY, IDENTITIES),
     "vision.qa.ball_recall": (TRACKS,),
     "vision.qa.team_check": (TRACKS,),
