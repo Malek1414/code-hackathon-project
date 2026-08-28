@@ -85,6 +85,7 @@ class OverlayWriter:
         self.path = path
         self.raw_path = path.with_name(path.stem + "_raw.mp4")
         self.latest_path = latest_path or path.with_name("overlay_latest.jpg")
+        self.latest_path.parent.mkdir(parents=True, exist_ok=True)
         self.latest_every = 100
         self.writer = cv2.VideoWriter(
             str(self.raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))

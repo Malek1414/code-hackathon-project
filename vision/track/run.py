@@ -145,6 +145,7 @@ def main() -> None:
     work.mkdir(parents=True, exist_ok=True)
     w_tracks, w_meta = work / "tracks.jsonl", work / "tracks_meta.json"
     w_summary, w_overlay = work / "track_summary.json", work / "overlay.mp4"
+    w_rejects = work / "ball_rejects.jsonl"
     cap, fps, n_frames, width, height = open_video(a.video)
     first = a.start_frame
     last = n_frames if a.max_frames == 0 else min(n_frames, first + a.max_frames * a.stride)
@@ -181,7 +182,7 @@ def main() -> None:
     done = 0
     if first:
         cap.set(cv2.CAP_PROP_POS_FRAMES, first)
-    with w_tracks.open("w") as out:
+    with w_tracks.open("w") as out, w_rejects.open("w") as rej:
         idx = first
         while idx < last:
             ok, frame = cap.read()
@@ -194,6 +195,8 @@ def main() -> None:
                     tr.reset()
                 record = tr.step(frame, idx, idx / fps)
                 out.write(json.dumps(record) + "\n")
+                for x in tr.last_rejects:
+                    rej.write(json.dumps({"frame": idx, "t": record["t"], **x}) + "\n")
                 if writer:
                     writer.write(frame, record)
                 done += 1

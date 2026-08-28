@@ -68,7 +68,7 @@ class Tracker:
                  person_imgsz: int = 960, ball_imgsz: int = 1280, imgsz: int = 1280,
                  conf_player: float = 0.3, conf_ball: float = 0.45, conf_hoop: float = 0.5,
                  ball_max_px: int = 80, hoop_hold: int = 50, hoop_max_y: float = 0.55,
-                 hoop_min_streak: int = 3,
+                 hoop_min_streak: int = 3, crop_px: int = 640, crop_after_gap: int = 2,
                  tracker: str = "bytetrack", team_mode: str = "rules", fps: float = 50.0) -> None:
         from ultralytics import YOLO
 
@@ -77,6 +77,8 @@ class Tracker:
         self.conf_player, self.conf_ball, self.conf_hoop = conf_player, conf_ball, conf_hoop
         self.ball_max_px, self.hoop_hold, self.hoop_max_y = ball_max_px, hoop_hold, hoop_max_y
         self.hoop_min_streak = hoop_min_streak
+        self.crop_px, self.crop_after_gap = crop_px, crop_after_gap
+        self.crop_calls = self.crop_hits = 0
         self.hoop_streak = 0
         self.hoop_pending: list[float] | None = None
         self.tracker_yaml = str(TRACKERS[tracker])
@@ -111,6 +113,7 @@ class Tracker:
         self.last_hoop: list[float] | None = None
         self.last_hoop_frame = -10**9
         self._auto_index = 0
+        self.last_rejects: list[dict] = []
         self.id_offset = 0
         self.max_raw_id = 0
         self.max_emitted_id = 0
@@ -131,7 +134,7 @@ class Tracker:
             if pred is not None and getattr(pred, "trackers", None):
                 for t in pred.trackers:
                     t.reset()
-        self.gate = BallGate(blacklist_rel=self.gate.blacklist_rel)
+        self.gate = BallGate()  # blacklists are per camera segment
         self.last_hoop, self.last_hoop_frame = None, -10**9
         self.hoop_streak, self.hoop_pending = 0, None
         self.teams.reset_votes()
@@ -186,6 +189,41 @@ class Tracker:
             elif cls == self.hoop_cls and conf >= self.conf_hoop:
                 hoops.append((conf, box.tolist()))
         return persons, balls, hoops
+
+    def _crop_center(self, boxes) -> tuple[float, float] | None:
+        pred = self.gate.predict(self.gate.gap)
+        if pred is not None:
+            return float(pred[0]), float(pred[1])
+        lk = self.gate.last_known
+        if lk is None or not boxes:
+            return None
+        # Ball lost for good: look at the upper body of the player nearest to
+        # where it was last seen (the likely possession holder).
+        def d(b):
+            return (((b[0] + b[2]) / 2 - lk[0]) ** 2 + ((b[1] + b[3]) / 2 - lk[1]) ** 2) ** 0.5
+        b = min(boxes, key=d)
+        if d(b) > 400:
+            return None
+        return (b[0] + b[2]) / 2, b[1] + 0.3 * (b[3] - b[1])
+
+    def _crop_redetect(self, frame: np.ndarray, boxes) -> list[tuple[float, list[float]]]:
+        c = self._crop_center(boxes)
+        if c is None:
+            return []
+        H, W = frame.shape[:2]
+        s = min(self.crop_px, W, H)
+        x0 = int(min(max(c[0] - s / 2, 0), W - s))
+        y0 = int(min(max(c[1] - s / 2, 0), H - s))
+        crop = frame[y0:y0 + s, x0:x0 + s]
+        self.crop_calls += 1
+        r = self.ball_model.predict(crop, imgsz=s, conf=self.conf_ball, classes=[self.ball_cls],
+                                    device=self.device, verbose=False)[0]
+        out = []
+        for box, conf, _cls, _tid in _iter_boxes(r):
+            b = [float(box[0]) + x0, float(box[1]) + y0, float(box[2]) + x0, float(box[3]) + y0]
+            if b[2] - b[0] <= self.ball_max_px and b[3] - b[1] <= self.ball_max_px:
+                out.append((conf, b))
+        return out
 
     # ----- one frame → one tracks.jsonl line --------------------------------
     def step(self, frame: np.ndarray, frame_index: int | None = None,
@@ -257,7 +295,17 @@ class Tracker:
         ball = None
         balls = [(c, b) for c, b in balls
                  if b[2] - b[0] <= self.ball_max_px and b[3] - b[1] <= self.ball_max_px]
-        picked = self.gate.pick(balls, self.last_hoop, [p["bbox"] for p in players])
+        boxes = [p["bbox"] for p in players]
+        self.gate.begin_step(self.last_hoop)
+        picked = self.gate.pick(balls, self.last_hoop, boxes)
+        if picked is None and not self.single and self.gate.gap >= self.crop_after_gap:
+            # Small-object trick: the ball model again on a native-resolution crop
+            # around where the ball should be, or around the nearest player's chest.
+            extra = self._crop_redetect(frame, boxes)
+            if extra:
+                picked = self.gate.pick(extra, self.last_hoop, boxes)
+                self.crop_hits += picked is not None
+        self.last_rejects = self.gate.rejects
         if picked:
             bconf, b = picked
             b = _round(b)
@@ -282,5 +330,6 @@ class Tracker:
                 "hoop_detected_share": round(st["hoop_fresh"] / n, 4),
                 "hoop_rejected": st["hoop_rejected"], "resets": self.resets,
                 "id_switches": self.switches,
+                "ball_crop_calls": self.crop_calls, "ball_crop_hits": self.crop_hits,
                 "track_ids": len(st["ids"]), "team_mode": self.teams.mode,
                 "team_centroids_lab": self.teams.centroids_lab, **self.gate.summary()}
