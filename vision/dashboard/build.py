@@ -560,12 +560,16 @@ def build(*, events, stats, cal, shots, players, teams, poss, cuts, duration_s, 
     # videos ------------------------------------------------------------------
     ov = (f'<video id="overlay" src="{html.escape(overlay)}" controls muted playsinline preload="metadata"></video>'
           if overlay else '<div class="placeholder">Tracking overlay arrives with overlay.mp4</div>')
+    meta_clip = Path(str((source_meta or {}).get("clip") or "")).name
+    ov_note = "ids, teams and ball trail on the broadcast frame"
+    if overlay and meta_clip and clip and meta_clip != clip:
+        ov_note = f"{html.escape(meta_clip)}, the stats above are from {html.escape(clip)}"
     mm = (f'<video id="minimap" src="{html.escape(minimap)}" controls muted playsinline preload="metadata"></video>'
           if minimap else '<div class="placeholder">2D minimap arrives with the court calibration</div>')
     videos = f"""
 <section><h2>Video</h2>
 <div class="videos">
-  <div>{ov}<div class="vcap"><span>Tracking overlay</span><span>ids, teams and ball trail on the broadcast frame</span></div></div>
+  <div>{ov}<div class="vcap"><span>Tracking overlay</span><span>{ov_note}</span></div></div>
   <div>{mm}<div class="vcap"><span>Minimap</span><span>the same seconds on the 2D court</span></div></div>
 </div></section>"""
 
