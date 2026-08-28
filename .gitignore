@@ -1,0 +1,16 @@
+# macOS / python junk
+.DS_Store
+__pycache__/
+*.pyc
+
+# regenerable render/proxy/QC intermediates (recipes live in viz/EDIT_PLAN.md)
+viz/work/
+viz/fx/task-001/frames/
+viz/proxy/
+viz/qc/
+viz/clips/
+
+# transient bridge task logs from annotation runs
+bridge-annotate*.md
+bridge-annotate*-result.log
+bridge-annotate-result.log

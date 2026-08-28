@@ -1,0 +1,63 @@
+{
+  "session": "/Users/malekhassan/Desktop/code hackathon project/viz",
+  "sources": [
+    {
+      "path": "/Users/malekhassan/Desktop/code hackathon project/viz/source/rig_sweep.mp4",
+      "duration": 8.0,
+      "size_bytes": 530642,
+      "width": 960,
+      "height": 1080,
+      "fps": 30.0,
+      "pix_fmt": "yuv420p",
+      "has_alpha": false,
+      "has_audio": false
+    }
+  ],
+  "proxies": {
+    "rig_sweep.mp4": "proxy/rig_sweep_proxy.mp4"
+  },
+  "toolchains": {
+    "codex": true,
+    "ffmpeg": true,
+    "ffprobe": true,
+    "node": true,
+    "python3": true
+  },
+  "warnings": [],
+  "config": {
+    "codex": {
+      "model": null,
+      "sandbox": "workspace-write",
+      "timeout_seconds": 900,
+      "extra_args": [],
+      "remotion_extra_args": [
+        "-c",
+        "sandbox_workspace_write.network_access=true"
+      ]
+    },
+    "retries": {
+      "max_per_task": 2
+    },
+    "proxy": {
+      "height": 720,
+      "crf": 28,
+      "preset": "veryfast"
+    },
+    "qc": {
+      "frame_positions": [
+        0.1,
+        0.5,
+        0.9
+      ],
+      "duration_tolerance": 0.2,
+      "fps_tolerance": 0.1
+    },
+    "video_extensions": [
+      ".mov",
+      ".mp4",
+      ".m4v",
+      ".mkv",
+      ".avi"
+    ]
+  }
+}
