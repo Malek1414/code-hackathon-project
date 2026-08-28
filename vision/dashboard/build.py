@@ -19,6 +19,7 @@ import argparse
 import datetime as dt
 import html
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -66,6 +67,17 @@ def load_json(path: Path | None) -> dict | None:
 # --- identities ---------------------------------------------------------------
 
 
+KEY_RE = re.compile(r"^([AB?])(\?|\d+)(?:~(\d+))?$")  # A12, A?7, A5~7 (variant of A5 built from track 7)
+
+
+def parse_key(key) -> tuple[int | None, str | None]:
+    """'A12' -> (12, None), 'A5~7' -> (5, '7'), 'A?7' -> (None, None)."""
+    m = KEY_RE.match(str(key or ""))
+    if not m or m.group(2) == "?":
+        return None, None
+    return int(m.group(2)), m.group(3)
+
+
 class Identities:
     """Track id -> jersey number, from out/identities.json (NUMBERS). Rows that
     already carry `key`/`number` (STATS) win; this only fills the gaps."""
@@ -79,17 +91,47 @@ class Identities:
             if int(tid) not in self.by_track and info.get("number") is not None:
                 self.by_track[int(tid)] = (f"{TEAM_LETTER.get(int(info.get('team', -1)), '?')}{info['number']}", info["number"])
 
-    def resolve(self, track_id, key=None, number=None) -> tuple[str, int | None]:
-        """Returns (label, number). Label is '#12' for a known number, else 'track 7'."""
-        if number is None and key and "?" not in str(key):
-            digits = "".join(ch for ch in str(key) if ch.isdigit())
-            number = int(digits) if digits else None
+    def resolve(self, track_id, key=None, number=None) -> tuple[str, int | None, str | None]:
+        """Returns (label, number, identity key). Label is '#12' for a known number,
+        '#12 (track 7)' for a variant key, else 'track 7'."""
+        variant = None
+        if key:
+            n, variant = parse_key(key)
+            number = number if number is not None else n
         if number is None and track_id is not None and int(track_id) in self.by_track:
-            k, n = self.by_track[int(track_id)]
-            number = n if n is not None else (int("".join(ch for ch in k if ch.isdigit())) if "?" not in k and any(ch.isdigit() for ch in k) else None)
+            key, n = self.by_track[int(track_id)]
+            pn, variant = parse_key(key)
+            number = n if n is not None else pn
         if number is not None:
-            return f"#{int(number)}", int(number)
-        return (f"track {track_id}" if track_id is not None else "unknown"), None
+            return f"#{int(number)}" + (f" (track {variant})" if variant else ""), int(number), (str(key) if key else None)
+        return (f"track {track_id}" if track_id is not None else "unknown"), None, (str(key) if key else None)
+
+
+def merge_by_identity(rows: list[dict]) -> list[dict]:
+    """stats.json rows are per track id until STATS aggregates by key; fold rows
+    that resolve to the same identity key into one player row."""
+    merged: dict[str, dict] = {}
+    out = []
+    for r in rows:
+        k = r.get("ident")
+        if not k or "?" in k:
+            out.append(r)
+            continue
+        if k not in merged:
+            merged[k] = dict(r, track_ids=[r["id"]])
+            out.append(merged[k])
+            continue
+        m = merged[k]
+        m["track_ids"].append(r["id"])
+        m["fga"] += r["fga"]
+        m["fgm"] += r["fgm"]
+        for f in ("possession_s", "distance_m"):
+            if r[f] is not None:
+                m[f] = round((m[f] or 0) + r[f], 1)
+    for m in merged.values():
+        m["fg_pct"] = round(m["fgm"] / m["fga"], 3) if m["fga"] else None
+        m["active"] = bool(m["fga"] or (m["possession_s"] or 0) >= 0.5 or (m["distance_m"] or 0) >= 20)
+    return out
 
 
 # --- data ---------------------------------------------------------------------
@@ -116,7 +158,7 @@ def place_shots(events: dict | None, cal: Calibration | None, ids: Identities) -
             "flags": [f for f, ok in (("shooter unconfirmed", raw.get("shooter_confirmed")), ("basket unconfirmed", raw.get("made_confirmed"))) if ok is False],
             "court_m": raw.get("court_m"),
         }
-        s["label"], s["number"] = ids.resolve(raw.get("player_id"), raw.get("player_key"))
+        s["label"], s["number"], _ = ids.resolve(raw.get("player_id"), raw.get("player_key"))
         foot = raw.get("shooter_foot")
         if s["court_m"] is None and foot and cal is not None:
             frame = int(raw["frame"]) if raw.get("frame") is not None else None
@@ -154,17 +196,19 @@ def player_rows(stats: dict | None, distances: dict[int, float], ids: Identities
     for p in (stats or {}).get("players") or []:
         fga, fgm = int(p.get("fga") or 0), int(p.get("fgm") or 0)
         track_id = p.get("id") if isinstance(p.get("id"), int) or str(p.get("id")).isdigit() else None
-        label, number = ids.resolve(track_id, p.get("key"), p.get("number"))
+        label, number, ident = ids.resolve(track_id, p.get("key"), p.get("number"))
         fg = (fgm / fga) if fga else None
         dist = p.get("distance_m") if p.get("distance_m") is not None else (distances.get(int(track_id)) if track_id is not None else None)
         rows.append({
-            "id": p.get("id"), "label": label, "number": number, "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
+            "id": p.get("id"), "label": label, "number": number, "ident": ident, "team": int(p.get("team", -1)), "fga": fga, "fgm": fgm,
             "fg_pct": None if fg is None else round(float(fg), 3),
             "possession_s": None if p.get("possession_s") is None else round(float(p["possession_s"]), 1),
             "distance_m": None if dist is None else round(float(dist), 1),
         })
         r = rows[-1]
         r["active"] = bool(r["fga"] or (r["possession_s"] or 0) >= 0.5 or (r["distance_m"] or 0) >= 20)
+    if not any(p.get("key") for p in (stats or {}).get("players") or []) or not any(p.get("number") is not None for p in (stats or {}).get("players") or []):
+        rows = merge_by_identity(rows)
     rows.sort(key=lambda r: (r["team"] if r["team"] >= 0 else 9, -r["fga"], -(r["possession_s"] or 0), r["number"] is None, r["number"] or 0, str(r["id"])))
     return rows
 
