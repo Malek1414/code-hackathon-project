@@ -73,9 +73,16 @@ def safe_name(key: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
 
 
-def build_number_cards(frames: list[dict], grab: FrameGrabber, out: Path, identities_path: Path = IDENTITIES) -> list[dict]:
+def build_number_cards(
+    frames: list[dict], grab: FrameGrabber, out: Path, identities_path: Path = IDENTITIES, clip: Path | None = None
+) -> list[dict]:
+    """Cards for the players in identities.json. Empty when the file is missing or was
+    built for another clip than the tracks (track ids would collide with foreign players)."""
     identities = read_json(identities_path)
     if not identities:
+        return []
+    if clip is not None and identities.get("clip") and Path(identities["clip"]).name != clip.name:
+        print(f"{identities_path.name} is for {identities['clip']}, tracks are {clip.name}: no number cards")
         return []
     players = select_players(identities)
     switch_t = {

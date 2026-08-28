@@ -21,7 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .clips import render_clip
+from .clips import OVERLAY, render_clip
 from .numbers_sheet import IDENTITIES, build_number_cards
 from .common import (
     ROOT,
@@ -262,7 +262,13 @@ def write_index(out: Path, sheets: list[dict], numbers: list[dict], clip: str, e
         else "Noch keine gespeicherten Antworten."
     )
     shots_html = "".join(_shot_block(s) for s in sheets) if sheets else '<div class="empty">Noch keine Wuerfe in events.json.</div>'
-    cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers)) if numbers else '<div class="empty">Noch keine identities.json.</div>'
+    ident = read_json(IDENTITIES) or {}
+    if numbers:
+        cards_html = "".join(_number_card(i, c) for i, c in enumerate(numbers))
+    elif ident.get("clip") and Path(ident["clip"]).name != Path(clip).name:
+        cards_html = f'<div class="empty">identities.json gehoert noch zu {html.escape(Path(ident["clip"]).name)}, der Nummern-Check fuer {html.escape(Path(clip).name)} kommt, sobald NUMBERS nachzieht.</div>'
+    else:
+        cards_html = '<div class="empty">Noch keine identities.json.</div>'
     chk = read_json(out / "ball_check.json") or {}
     ball_video = {k: chk.get(k) for k in ("video", "generated", "ball_frames", "frames", "rejects", "rejects_file")}
     manifest = json.dumps({"clip": clip, "events": str(events_path), "generated": stamp, "tracks_frames": tracks_n, "shots": sheets, "numbers": numbers, "ball_video": ball_video})
@@ -508,7 +514,20 @@ def main(argv: list[str] | None = None) -> int:
     grab = FrameGrabber(clip)
     args.out.mkdir(parents=True, exist_ok=True)
     sheets = []  # files are replaced per shot; stale ones are pruned only after a complete run (an interrupted run must not empty the page)
+    previous = {round(m["t"], 2): m for m in ((read_json(args.out / "sheets.json") or {}).get("shots") or [])}
+    deps = [pth for pth in (args.events, args.tracks, OVERLAY) if pth.exists()]
+    deps_mtime = max(pth.stat().st_mtime for pth in deps) if deps else 0.0
+    reused = 0
     for n, shot in enumerate(shots, 1):
+        prev = previous.get(round(float(shot["t"]), 2))
+        prev_files = [args.out / prev[k] for k in ("file", "video", "video_half") if prev and prev.get(k)] if prev else []
+        if (
+            prev and prev.get("n") == n and prev.get("made") == bool(shot.get("made")) and prev.get("player_id") == shot.get("player_id")
+            and len(prev_files) == 3 and all(f.exists() and f.stat().st_mtime > deps_mtime for f in prev_files)
+        ):
+            sheets.append(prev)  # strip and videos are newer than events, tracks and overlay: nothing to redo
+            reused += 1
+            continue
         img, m = render_shot(n, shot, grab, index)
         m["file"] = f"shot_{n}_{'made' if m['made'] else 'miss'}.jpg"
         m["number_prefill"] = key_number(m.get("player_key"))
@@ -527,8 +546,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         sheets.append(m)
         print(f"  {m['file']}  t={m['t_label']}  team {m['team']}  shooter {m['player_id']}  ball tiles {m['ball_tiles']}/{N_FRAMES}  video {m['video_source']}")
-    numbers = build_number_cards(frames, grab, args.out, args.identities)
+    numbers = build_number_cards(frames, grab, args.out, args.identities, clip)
     grab.close()
+    if reused:
+        print(f"  {reused} of {len(shots)} sheets reused (files newer than events, tracks and overlay)")
     keep = {m["file"] for m in sheets} | {m.get("video") for m in sheets} | {m.get("video_half") for m in sheets}
     for stale in list(args.out.glob("shot_*.jpg")) + list(args.out.glob("shot_*.mp4")):
         if stale.name not in keep:
