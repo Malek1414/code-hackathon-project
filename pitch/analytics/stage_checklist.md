@@ -1,28 +1,45 @@
 # Stage run sheet, analytics side (live demo after the rig demo)
 
-1. 15:50 Rig on the table, phone in the mount, phone unlocked, Continuity Camera
-   allowed, laptop on power, screen mirrored to the projector at 1920x1080.
-2. Terminal in the repo, venv active, probe the camera:
-   `.venv/bin/python -m vision.live.live --list-sources` and note the index of the phone.
-3. Start live mode 60 s before we go on, window focused on the projector screen:
+Facts checked in docs/RISKS.md (12:50): only `.venv/bin/python -m vision.live.live`
+works (the `vision/live/live.py` form dies with ModuleNotFoundError); camera 0 is
+the FaceTime camera and works, the iPhone appears as index 1 only while
+Continuity Camera delivers frames; camera permission is granted to Terminal.app
+only; two processes may share camera 0.
+
+1. 15:45 Phone unlocked, landscape on the rig, Do Not Disturb on, same Wi-Fi and
+   Bluetooth as the Mac. Laptop on power, screen mirrored at 1920x1080.
+2. 15:50 Kill every model job so the GPU is free for the demo:
+   `ps -axo pid,command | grep .venv/bin/python`, then `kill` each vision/track,
+   vision/label, run_all or smoke_test process (monitor, numbers.watch and
+   qa.watch are CPU only and may stay). The rig tracker runs on HSV
+   (`software/ball_tracker.py`) or `--device cpu` during the live demo, never a
+   second MPS model.
+3. 15:55 In Terminal.app (not another terminal, camera permission), repo root:
+   `.venv/bin/python -m vision.live.live --list-sources` and pick the index
+   that reports frames. Expect 0 = laptop camera; the phone is 1 only if listed.
+4. 15:59 Start live mode, window on the projector screen:
    `.venv/bin/python -m vision.live.live --source <index> --minimap panel`
-   (fallback if the camera fails: `--source data/clips/dev60.mp4 --realtime --replay out/tracks.jsonl`).
-4. Optional stream: `FOLLOWCAM_RTMP_URL` in `.env` (never on screen); MJPEG preview
-   at http://127.0.0.1:8501/stream on a second device if the projector cable dies.
-5. Hotkeys, window focused: 1 = +2 team A, 2 = +2 team B, 3 = +3 team A, 4 = +3 team B,
-   z = undo the last score, q = quit. Whoever holds the laptop presses, not the speaker.
-6. Choreography: after the rig follows the ball (Malek), one player takes a shot
-   at the mini hoop; the score bar flashes. If the flash is right, the speaker says
-   "the camera just kept the score". If it is wrong, press z and say "and a human
-   vetoes with one key; auto with veto is the product".
-7. Then one line on the numbers, no more: "300 frames auto-labeled, players found
-   at 0.96, 10 players tracked per frame, all on this laptop today."
-8. Kill switch: if detection stalls for more than 5 s, press q, switch to the
-   video `out/pitch/analytics_block.mp4` already open in QuickTime, full screen.
-9. Before leaving the stage: q in the live window, stop the RTMP push (it stops
-   with the process), lock the phone.
-10. Files to have open before we start: live window, QuickTime with the analytics
-    block, browser with `out/dashboard.html`, the deck.
+   Camera dead: `--source 0` (laptop camera, verified). No camera at all:
+   `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60/tracks.jsonl --minimap panel`
+   (out/dev60/tracks.jsonl matches dev60; out/tracks.jsonl is whatever TRACK ran last).
+5. Optional stream: `FOLLOWCAM_RTMP_URL` in `.env` (never on screen); MJPEG at
+   http://127.0.0.1:8501/stream is loopback only, it does not reach a phone.
+6. Hotkeys work only with the OpenCV window focused (click it once): 1 = +2 team A,
+   2 = +2 team B, 3 = +3 team A, 4 = +3 team B, z = undo, q = quit. The laptop
+   holder presses, not the speaker.
+7. Choreography: after the rig follows the ball (Malek), one player shoots at the
+   mini hoop; the score bar flashes. Right: "the camera just kept the score".
+   Wrong or nothing (the ball is 20 to 40 px at 5 m, expect misses): press the key
+   and say "the system calls, a human corrects with one key; auto with veto is
+   the product".
+8. One line on the numbers, no more: "300 frames auto-labeled, players found at
+   0.96, 25 percent fewer id switches after the fine-tune, all on this laptop today."
+9. Kill switch: detection stalls for more than 5 s or `det x fps` on the bar drops
+   below 5: q, then the video `out/pitch/analytics_side_by_side.mp4` already open in
+   QuickTime, full screen. Dashboard only from this laptop (`open out/dashboard.html`,
+   it needs overlay.mp4 and minimap.mp4 next to it), click play once before going on.
+10. Leaving the stage: q in the live window (the RTMP push stops with the process),
+    lock the phone.
 
 ## Anticipated Q&A, analytics side
 
