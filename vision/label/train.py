@@ -6,8 +6,11 @@ Usage:
 
 Defaults agreed with ORCH (Aug 28): batch 4, workers 0, cache off, because
 16 GB RAM are shared with TRACK inference.
-Timebox: `--time` is in hours (default 25 min); ultralytics stops training when
-it is hit and still writes best.pt. imgsz 960 rather than 640 because the
+Timebox: `--time` is in hours (default 25 min). Note that ultralytics treats
+`time` as an override for `epochs`: it measures the first epoch and then
+schedules as many epochs as fit into the timebox (the Aug 28 run did 16 in
+25.4 min instead of the nominal 10), and still writes best.pt. Pass
+`--time 0` to train exactly `--epochs`. imgsz 960 rather than 640 because the
 ball is ~7 px at 1080p and disappears when downscaled further
 (courtside/engine/detect/players.py). Prints val mAP at the end.
 """
@@ -55,7 +58,7 @@ def main() -> int:
     try:
         results = model.train(
             data=str(args.data), epochs=args.epochs, imgsz=args.imgsz, batch=args.batch,
-            device=device, time=args.time, project=str(RUNS), name=args.name, exist_ok=True,
+            device=device, time=args.time or None, project=str(RUNS), name=args.name, exist_ok=True,
             workers=args.workers, cache=False, patience=8, plots=True, verbose=True,
         )
     except RuntimeError as e:
@@ -65,7 +68,7 @@ def main() -> int:
             model = YOLO(args.weights)
             results = model.train(
                 data=str(args.data), epochs=args.epochs, imgsz=args.imgsz, batch=args.batch,
-                device=device, time=args.time, project=str(RUNS), name=args.name, exist_ok=True,
+                device=device, time=args.time or None, project=str(RUNS), name=args.name, exist_ok=True,
                 workers=args.workers, cache=False, patience=8, plots=True, verbose=True,
             )
         else:
