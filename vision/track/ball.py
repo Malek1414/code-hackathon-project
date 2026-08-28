@@ -26,6 +26,11 @@ them. What separates them is time and motion:
   pixel position, so it cannot win even in frames without a hoop. Cleared
   when the hoop box jumps > 10 px (pan) or at cuts. An accepted ball that has
   not moved > `static_px` in `static_frames` frames is blacklisted too.
+* wall rule (hard): a candidate whose center is at or above the rim line
+  (hoop box top), more than 2.5 hoop widths from the rim horizontally, with
+  no player box within 150 px, is a wall object. Exempt when the candidate
+  continues the predicted trajectory, otherwise the rule would reject a
+  shot at its apex (high, far from the rim, nobody near).
 * radius plausibility, perspective-aware: a ball is ~24 cm next to ~190 cm
   players, so its radius must be 3-14 % of the height of the nearest player
   box (no check without a player within 500 px). A rolling-median rule was
@@ -70,7 +75,7 @@ class BallGate:
                  static_px: float = 6.0, static_frames: int = 30, blacklist_px: float = 25.0,
                  rel_tol: float = 0.12, rel_min: int = 4, rel_window: int = 150, rel_span: int = 15,
                  radius_frac: tuple[float, float] = (0.03, 0.14), head_frac: float = 0.2,
-                 head_conf: float = 0.75,
+                 head_conf: float = 0.75, wall_hoop_widths: float = 2.5, wall_player_px: float = 150.0,
                  pan_px: float = 10.0, still_px: float = 4.0, takeover_frames: int = 8,
                  takeover_px: float = 8.0, counts: dict | None = None,
                  blacklist_rel: list[np.ndarray] | None = None) -> None:
@@ -80,6 +85,7 @@ class BallGate:
         self.rel_tol, self.rel_min, self.rel_window, self.rel_span = rel_tol, rel_min, rel_window, rel_span
         self.takeover_frames, self.takeover_px = takeover_frames, takeover_px
         self.radius_frac, self.head_frac, self.head_conf = radius_frac, head_frac, head_conf
+        self.wall_hoop_widths, self.wall_player_px = wall_hoop_widths, wall_player_px
         self.pan_px, self.still_px = pan_px, still_px
 
         self.step_no = 0
@@ -98,7 +104,7 @@ class BallGate:
         self.rejects: list[dict] = []
         self.counts = counts if counts is not None else {  # shared across cut resets
             "gate": 0, "static_rel": 0, "blacklist_abs": 0, "blacklist_rel": 0,
-            "radius": 0, "head": 0, "static_abs": 0, "accepted_near_blacklist": 0}
+            "radius": 0, "head": 0, "wall": 0, "static_abs": 0, "accepted_near_blacklist": 0}
         self.accepted_near_blacklist = 0
 
     # ----- helpers -------------------------------------------------------------
@@ -137,6 +143,20 @@ class BallGate:
                     and b[1] <= c[1] <= b[1] + self.head_frac * (b[3] - b[1]):
                 return True
         return False
+
+    def _is_wall(self, c: np.ndarray, hoop, players) -> bool:
+        if hoop is None:
+            return False
+        hoop_w = max(float(hoop[2] - hoop[0]), 1.0)
+        rim_y, rim_cx = float(hoop[1]), (hoop[0] + hoop[2]) / 2
+        if c[1] > rim_y or abs(c[0] - rim_cx) <= self.wall_hoop_widths * hoop_w:
+            return False
+        for b in players:
+            dx = max(b[0] - c[0], 0, c[0] - b[2])
+            dy = max(b[1] - c[1], 0, c[1] - b[3])
+            if float(np.hypot(dx, dy)) <= self.wall_player_px:
+                return False
+        return True
 
     def _static_rel(self, off: np.ndarray) -> str | None:
         if any(np.linalg.norm(off - b) < self.rel_tol * 2 for b in self.blacklist_rel):
@@ -228,6 +248,10 @@ class BallGate:
                 continue
             if self._is_head(c, conf, players):
                 self._reject(box, conf, "head")
+                continue
+            on_track = pred is not None and float(np.linalg.norm(c - pred)) <= near
+            if not on_track and self._is_wall(c, hoop, players):
+                self._reject(box, conf, "wall")
                 continue
             if pred is None:
                 tier2.append((conf, conf, box, c))
