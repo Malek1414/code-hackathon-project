@@ -16,9 +16,13 @@ only; two processes may share camera 0.
    second MPS model.
 3. 15:55 In Terminal.app (not another terminal, camera permission), repo root:
    `.venv/bin/python -m vision.live.live --list-sources` and pick the index
-   that reports frames. Expect 0 = laptop camera; the phone is 1 only if listed.
+   that reports frames. On this Mac the phone is `--source 1` (measured in the
+   14:10 live test: 1920x1080 at 30 fps in, 13 fps rendered under heavy load);
+   0 is the laptop camera, and an automatic choice would take the Mac camera.
 4. 15:59 Start live mode, window on the projector screen:
-   `.venv/bin/python -m vision.live.live --source <index> --minimap panel`
+   `.venv/bin/python -m vision.live.live --source 1 --minimap panel`
+   First action once the window is up, before the demo: press 1 once and see
+   "Team A +2" on the bar, then z to undo it. That proves focus and hotkeys.
    Camera dead: `--source 0` (laptop camera, verified). No camera at all:
    `.venv/bin/python -m vision.live.live --source data/clips/dev60.mp4 --realtime --replay out/dev60_v2/tracks.jsonl --minimap panel`
    (out/dev60_v2/tracks.jsonl matches dev60; out/tracks.jsonl is whatever TRACK ran last).

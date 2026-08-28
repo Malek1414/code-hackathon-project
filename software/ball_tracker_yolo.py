@@ -117,6 +117,7 @@ def main():
     ap.add_argument("--device", default="cpu", help="cpu (default, keeps the GPU free) or mps")
     ap.add_argument("--headless", action="store_true", help="no windows (tests, ssh)")
     ap.add_argument("--max-frames", type=int, default=0, help="stop after N frames (tests)")
+    ap.add_argument("--max-seconds", type=float, default=0, help="stop after N seconds (tests)")
     ap.add_argument("--no-loop", action="store_true", help="do not loop a video file")
     ap.add_argument("--save-frames", type=int, default=0, help="save N frames with a detection to --out-dir")
     ap.add_argument("--out-dir", default=str(ROOT / "out" / "rig"))
@@ -144,7 +145,7 @@ def main():
     while True:
         ok, frame = cap.read()
         if not ok:
-            if args.video and not args.no_loop and not args.max_frames:
+            if args.video and not args.no_loop and not args.max_frames and not args.max_seconds:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
             break
@@ -202,6 +203,8 @@ def main():
         elif n % 100 == 0:
             print(f"{n} frames  {fps:4.1f} fps  ball yolo {hits_model / n:.0%}  hsv {hits_hsv / n:.0%}", flush=True)
         if args.max_frames and n >= args.max_frames:
+            break
+        if args.max_seconds and time.time() - t0 >= args.max_seconds:
             break
 
     cap.release()
