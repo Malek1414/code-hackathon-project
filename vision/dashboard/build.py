@@ -686,6 +686,30 @@ def main(argv=None) -> int:
     set_team_names(args.team_a, args.team_b)
 
     events, stats, meta = load_json(args.events), load_json(args.stats), load_json(args.tracks_meta)
+    clip_stem = Path(str((events or {}).get("clip") or "")).stem
+    clip_dir = args.out.parent / clip_stem if clip_stem else None
+
+    def other_clip(m: dict | None) -> bool:
+        return bool(m and clip_stem and Path(str(m.get("clip") or "")).stem != clip_stem)
+
+    # TRACK keeps one folder per clip (out/<clip>/); when the contract copies belong
+    # to another clip, fall back to that folder so the page never mixes clips.
+    if other_clip(meta) and clip_dir and (clip_dir / "tracks_meta.json").exists():
+        alt = load_json(clip_dir / "tracks_meta.json")
+        if not other_clip(alt):
+            print(f"tracks_meta.json is for {Path(str(meta.get('clip'))).stem}, using {clip_stem}/tracks_meta.json", file=sys.stderr)
+            meta = alt
+            if args.overlay and (clip_dir / "overlay.mp4").exists():
+                args.overlay = f"{clip_stem}/overlay.mp4"
+            if args.minimap and (clip_dir / "minimap.mp4").exists():
+                args.minimap = f"{clip_stem}/minimap.mp4"
+            elif args.minimap:
+                args.minimap = ""
+            if args.tracks == ROOT / "out" / "tracks.jsonl" and (clip_dir / "tracks.jsonl").exists():
+                args.tracks = clip_dir / "tracks.jsonl"
+    elif other_clip(meta):
+        print(f"tracks_meta.json is for another clip and no {clip_stem}/ folder exists, videos left out", file=sys.stderr)
+        meta, args.overlay, args.minimap = None, "", ""
     ids = Identities(load_json(args.identities), (events or {}).get("clip"))
     cal, calib_path = pick_calibration(args.calib, events)
     calib_note = ""
