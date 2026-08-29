@@ -3,156 +3,292 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FollowCam, the 20 euro robot cameraman</title>
+<title>Big Ball Baller, the 20 euro robot cameraman</title>
 <style>
-:root{--bg:#0B0D12;--panel:#12151C;--line:#232936;--text:#EEF0F4;--muted:#98A0B3;--faint:#7C8598;--accent:#F0761E;--blue:#4C8DFF}
+:root{--bg:#0B0D12;--panel:#12151C;--line:#232936;--text:#EEF0F4;--muted:#A3AABB;--faint:#7C8598;--accent:#F0761E;--blue:#2F6FDB;--red:#C8102E}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
 .deck{position:relative;width:100vw;height:100vh}
-.slide{position:absolute;inset:0;display:none;padding:6vh 7vw;flex-direction:column;justify-content:center}
+.slide{position:absolute;inset:0;display:none;padding:6vh 7vw 12vh;flex-direction:column;justify-content:center}
 .slide.on{display:flex}
-.kicker{color:var(--accent);font-size:clamp(14px,1.5vw,22px);letter-spacing:.14em;text-transform:uppercase;font-weight:650;margin-bottom:2.2vh}
-h1{font-size:clamp(36px,5.6vw,92px);line-height:1.05;margin:0 0 3vh;font-weight:750;letter-spacing:-.02em;max-width:22ch}
+h1{font-size:clamp(36px,5.4vw,90px);line-height:1.05;margin:0 0 3vh;font-weight:750;letter-spacing:-.02em;max-width:22ch}
 h1 .a{color:var(--accent)}
-.big{font-size:clamp(22px,2.4vw,40px);line-height:1.35;color:var(--muted);max-width:32ch;margin:0}
+h1.mid{font-size:clamp(30px,4.2vw,70px)}
+.big{font-size:clamp(22px,2.4vw,40px);line-height:1.35;color:var(--muted);max-width:34ch;margin:0}
 .big b{color:var(--text);font-weight:650}
-.lines{display:grid;gap:1.6vh;margin:0;padding:0;list-style:none;font-size:clamp(17px,1.55vw,27px);line-height:1.35}
-.lines li{display:grid;grid-template-columns:2.6em 1fr;gap:.6em;align-items:baseline;color:var(--text)}
-.lines li .n{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.08em;font-size:.85em}
+.lines{display:grid;gap:1.8vh;margin:0;padding:0;list-style:none;font-size:clamp(17px,1.6vw,28px);line-height:1.35}
+.lines li{display:grid;grid-template-columns:2.4em 1fr;gap:.5em;align-items:baseline;color:var(--text)}
+.lines li .n{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.06em;font-size:.8em}
 .lines li .m{color:var(--muted)}
+.lines.small{font-size:clamp(14px,1.25vw,21px);gap:1.3vh}
 .two{display:grid;grid-template-columns:1.05fr 1fr;gap:5vw;align-items:center}
 .two.wide{grid-template-columns:1.25fr 1fr}
-.figure{border-radius:16px;overflow:hidden;background:#F5F5F7;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.figure{border-radius:16px;overflow:hidden;background:#000;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.5)}
 .figure img{display:block;width:100%;height:auto}
-.video{aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:#000;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.5)}
-.video video{display:block;width:100%;height:100%;object-fit:cover}
-.cap{color:var(--faint);font-size:clamp(13px,1.1vw,18px);margin-top:1.2vh}
+.figure.light{background:#F5F5F7}
+.photos{display:grid;grid-template-columns:1fr 1fr;gap:1.4vw}
+.photos .figure img{aspect-ratio:1/1;object-fit:cover}
+.two.sol{grid-template-columns:.95fr 1.05fr}
+.two.res{grid-template-columns:1fr 1.15fr}
 .price{display:grid;grid-template-columns:repeat(3,auto);gap:4vw;margin-top:6vh;justify-content:start}
 .price .v{font-size:clamp(34px,4.4vw,76px);font-weight:750;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
 .price .l{color:var(--muted);font-size:clamp(14px,1.3vw,22px);margin-top:1vh}
 .price .v.a{color:var(--accent)}.price .v.x{color:var(--faint);text-decoration:line-through;text-decoration-thickness:.08em}
-.surfaces{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6vw;margin-top:3.5vh}
-.surface{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.6vh 1.4vw}
-.surface .t{font-weight:650;font-size:clamp(15px,1.4vw,24px)}.surface .d{color:var(--muted);font-size:clamp(13px,1.1vw,19px);margin-top:.6vh;line-height:1.35}
-.foot{position:absolute;left:7vw;right:7vw;bottom:4vh;display:flex;justify-content:space-between;align-items:center;color:var(--faint);font-size:clamp(12px,1vw,16px);font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(2,auto);gap:3vh 5vw;justify-content:start;margin:1vh 0 3vh}
+.stats .v{font-size:clamp(40px,5.6vw,96px);font-weight:750;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.stats .v.a{color:var(--accent)}
+.stats .l{color:var(--muted);font-size:clamp(14px,1.35vw,23px);margin-top:1vh;max-width:18ch;line-height:1.3}
+.surfaces{display:grid;grid-template-columns:repeat(3,1fr);gap:1.8vw;margin-top:4vh}
+.surface{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:3vh 1.8vw;min-height:26vh}
+.surface .t{font-weight:700;font-size:clamp(20px,2.1vw,36px);letter-spacing:-.01em}
+.surface .d{color:var(--muted);font-size:clamp(15px,1.35vw,23px);margin-top:1.4vh;line-height:1.4}
+.surface .w{color:var(--text);font-size:clamp(14px,1.2vw,20px);margin-top:2vh}
+.wordmark{font-size:clamp(16px,1.6vw,26px);font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--text);margin-bottom:3vh}
+.wordmark i{display:inline-block;width:.55em;height:1em;background:var(--blue);vertical-align:-.15em;margin-right:.35em;border-radius:2px}
+.wordmark i.r{background:var(--red)}
+.cap{color:var(--faint);font-size:clamp(13px,1.1vw,18px);margin-top:1.2vh}
+
+/* problem slide, red, 14 s clip underneath */
+.slide.red{background:#7A0A1A}
+.slide.red .bgv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.32;filter:saturate(.4) contrast(1.05)}
+.slide.red .tint{position:absolute;inset:0;background:linear-gradient(100deg,rgba(122,10,26,.92) 0%,rgba(122,10,26,.78) 45%,rgba(122,10,26,.45) 100%)}
+.slide.red .c{position:relative}
+.slide.red h1{max-width:18ch}
+.slide.red .lines li .n{color:#FFB3BD}
+.slide.red .lines li .m{color:#F3C9CF}
+
+/* full-bleed video slide */
+.slide.film{padding:0;background:#000}
+.slide.film video{width:100%;height:100%;object-fit:contain;display:block}
+.slide.film.on ~ .foot,.slide.film.on ~ .hint{display:none}
+
+/* broadcast slide */
+.bc{display:grid;grid-template-columns:1.45fr 1fr;gap:2.5vw;align-items:start}
+.bc .stack{display:grid;gap:2.5vh}
+.bc .widgets{display:grid;grid-template-columns:1.1fr 1fr;gap:1.2vw;align-items:center}
+.bc .widgets img{display:block;width:100%;height:auto}
+.bc h1{margin-bottom:2vh}
+
+.foot{position:absolute;left:7vw;right:7vw;bottom:4vh;display:flex;justify-content:space-between;align-items:center;color:var(--faint);font-size:clamp(12px,1vw,16px);font-variant-numeric:tabular-nums;z-index:5}
 .foot .bar{flex:1;height:2px;background:var(--line);margin:0 2vw;position:relative;border-radius:1px}
 .foot .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:1px;transition:width .25s}
-.hint{position:absolute;right:7vw;top:4vh;color:var(--faint);font-size:clamp(12px,1vw,16px);opacity:1;transition:opacity .4s}
+.foot .clock{margin-left:2vw;min-width:14ch;text-align:right}
+.foot .clock.over{color:#FF6B6B}
+.slide.red ~ .foot{color:#F3C9CF}
+.hint{position:absolute;right:7vw;top:4vh;color:var(--faint);font-size:clamp(12px,1vw,16px);opacity:1;transition:opacity .4s;z-index:5}
 .hint.off{opacity:0}
 .ph{color:var(--accent);font-weight:650}
-@media(max-aspect-ratio:4/3){.two,.two.wide{grid-template-columns:1fr;gap:3vh}h1{max-width:none}}
+
+/* speaker notes, toggle with n */
+.notes{position:absolute;left:0;right:0;bottom:0;background:rgba(6,8,12,.94);border-top:1px solid var(--line);color:var(--text);padding:2.2vh 7vw 3vh;font-size:clamp(14px,1.25vw,21px);line-height:1.45;display:none;z-index:6;max-height:38vh;overflow:auto}
+.notes.on{display:block}
+.notes .t{color:var(--accent);font-weight:700;margin-bottom:.6vh;font-size:.85em;letter-spacing:.06em;text-transform:uppercase}
+.slide .sn{display:none}
+@media(max-aspect-ratio:4/3){.two,.two.wide,.bc{grid-template-columns:1fr;gap:3vh}h1{max-width:none}}
 </style>
 </head>
 <body>
 <div class="deck" id="deck">
 
-<section class="slide on" data-title="Demo">
-  <div class="kicker">FollowCam</div>
+<section class="slide on" data-title="Big Ball Baller" data-time="30">
+  <div class="wordmark"><i></i><i class="r"></i>Big Ball Baller</div>
   <h1>The <span class="a">20 euro</span> robot cameraman.</h1>
-  <p class="big">Live demo. A ball crosses the room, the camera follows it.</p>
+  <p class="big">A printed hand on any tripod. It follows the ball, and it keeps the stats.</p>
   <div class="price">
     <div><div class="v">30 €</div><div class="l">the tripod</div></div>
     <div><div class="v a">20 €</div><div class="l">the printed robot on it</div></div>
     <div><div class="v x">2000 €</div><div class="l">the camera it replaces</div></div>
   </div>
+  <div class="sn">You just saw it move. That tripod cost 30 euros. The robot on it cost 20 euros to print. The thing it replaces, a Veo or a Pixellot, costs 2000. Say the three numbers, nothing else.</div>
 </section>
 
-<section class="slide" data-title="Problem">
-  <div class="kicker">Problem</div>
-  <h1>Millions of games are never filmed, never analysed, never scored properly.</h1>
-  <ul class="lines">
-    <li><span class="n">01</span><span>Auto-tracking cameras like Veo or Pixellot <span class="m">cost thousands of euros.</span></span></li>
-    <li><span class="n">02</span><span>A human camera operator <span class="m">costs even more, every single game.</span></span></li>
-    <li><span class="n">03</span><span>The games with the least support are the ones <span class="m">kids and volunteers run.</span></span></li>
-  </ul>
+<section class="slide red" data-title="Problem" data-time="60">
+  <video class="bgv" src="../video/05_problem_14s.mp4" muted loop playsinline preload="auto"></video>
+  <div class="tint"></div>
+  <div class="c">
+    <h1>Millions of games are never filmed, never analysed, never scored.</h1>
+    <ul class="lines">
+      <li><span class="n">01</span><span>An auto-tracking camera <span class="m">costs 2000 euros and more.</span></span></li>
+      <li><span class="n">02</span><span>A human behind the camera <span class="m">costs more, every single game.</span></span></li>
+      <li><span class="n">03</span><span>The games with the least support are the ones <span class="m">kids and volunteers run.</span></span></li>
+    </ul>
+  </div>
+  <div class="sn">Behind you: 14 seconds of a Landesliga game in Berlin. This one was filmed. Almost none of them are. Not because nobody wants the footage, but because an auto-tracking camera costs 2000 euros, and a person behind a camera costs more, every single game. So youth teams, Landesliga, volunteer leagues: no film, no stats, and the score lives on a paper sheet at the table.</div>
 </section>
 
-<section class="slide" data-title="Solution">
-  <div class="kicker">Solution</div>
-  <div class="two">
+<section class="slide" data-title="Solution" data-time="60">
+  <div class="two sol">
     <div>
       <h1>Retrofit the tripod they already own.</h1>
       <ul class="lines">
-        <li><span class="n">01</span><span>A printed clamp on the pan handle <span class="m">and one hobby servo.</span></span></li>
-        <li><span class="n">02</span><span>Their own phone as the camera, <span class="m">our tracking software behind it.</span></span></li>
-        <li><span class="n">03</span><span>Ball detection today. <span class="m">Stick-on player tags for any ball and any team next.</span></span></li>
+        <li><span class="n">01</span><span>Two printed parts grip the pan handle, <span class="m">one hobby servo, one Arduino.</span></span></li>
+        <li><span class="n">02</span><span>Their own phone <span class="m">is the camera.</span></span></li>
+        <li><span class="n">03</span><span>Our tracking software behind it. <span class="m">Ball, players, jersey numbers.</span></span></li>
       </ul>
     </div>
-    <div>
-      <div class="figure"><img src="../../viz/followcam_assembled_poster.png" alt="FollowCam printed clamp and servo assembled on a tripod"></div>
-      <div class="cap">Printed, assembled, on the tripod. Servo pans 40 to 140 degrees.</div>
+    <div class="photos">
+      <div class="figure"><img src="../../assembly/IMG_6614.jpg" alt="Tripod head, servo, Arduino and the two printed parts on a table"></div>
+      <div class="figure"><img src="../../assembly/IMG_6618.jpg" alt="The printed fork arm held in a hand"></div>
     </div>
   </div>
+  <div class="sn">We do not sell a camera. Every club already owns a tripod and every coach owns a phone. We add a printed clamp and a printed fork arm, an SG90 servo and an Arduino, 20 euros of parts, and the phone becomes an auto-tracking camera. The software behind it is ours.</div>
 </section>
 
-<section class="slide" data-title="Platform">
-  <div class="kicker">Platform</div>
+<section class="slide" data-title="How it works" data-time="45">
   <div class="two wide">
     <div>
-      <h1 style="font-size:clamp(26px,3vw,50px);margin-bottom:2vh">The camera that follows the ball is the camera that keeps the stats.</h1>
-      <ul class="lines" style="font-size:clamp(13px,1.12vw,19px);gap:1.1vh">
-        <li><span class="n">01</span><span><span class="ph">300 frames</span> of a real Landesliga game auto-labeled with Grounding DINO, 3395 boxes, no human drew a box. <span class="m">Plus 120 ball frames the coach labeled on the laptop.</span></span></li>
-        <li><span class="n">02</span><span>YOLO11n fine-tuned in 25 minutes on a laptop: players 0.96, hoop 0.97 mAP50. Ball fine-tune on the coach's labels: <span class="ph">false balls 36 to 8</span> in 40 held-out frames, recall 43 to 53 percent. <span class="m">Every filmed game adds data.</span></span></li>
-        <li><span class="n">03</span><span>ByteTrack keeps ids, teams by jersey colour, <span class="m">jersey numbers merged into player identities.</span></span></li>
-        <li><span class="n">04</span><span>Feet projected onto a 2D court, <span class="m">minimap next to the video.</span></span></li>
-        <li><span class="n">05</span><span>Shot events from ball and hoop geometry, FGA, FGM, FG% per player. <span class="ph">24 attempts, 10 made</span> in 10 minutes. Checked by a human: 96 percent of detected attempts are real shots, made or missed right in 73 percent, shooter's team right in 77 percent. <span class="m">The coach confirms or corrects with one tap.</span></span></li>
-        <li><span class="n">06</span><span>Live mode at about 10 fps from the phone: running score, <span class="m">auto plus two with human veto, RTMP out.</span></span></li>
+      <h1 class="mid">The phone sees the ball. The servo pushes the handle.</h1>
+      <ul class="lines">
+        <li><span class="n">01</span><span>The phone on the tripod <span class="m">streams to the laptop.</span></span></li>
+        <li><span class="n">02</span><span>The laptop finds the ball <span class="m">and turns it into a pan angle.</span></span></li>
+        <li><span class="n">03</span><span>The Arduino drives the servo, <span class="m">40 to 140 degrees.</span></span></li>
+        <li><span class="n">04</span><span>The fork arm pushes the pan handle. <span class="m">Horizontal only, that covers a whole court from the scorer's table.</span></span></li>
       </ul>
     </div>
+    <div class="figure light"><img src="../../viz/followcam_assembled_poster.png" alt="CAD poster of the printed clamp, fork arm and servo on the tripod"></div>
+  </div>
+  <div class="sn">Four steps, one loop. The phone streams to the laptop, the laptop finds the ball and turns its position into an angle, the Arduino drives the servo, the fork arm pushes the handle. The servo sits right next to the pan axis, so servo angle is pan angle. Horizontal only: from the scorer's table plus minus 43 degrees covers both corners of the court. Tilt is the same mechanism turned by 90 degrees, version two.</div>
+</section>
+
+<section class="slide film" data-title="Video" data-time="60">
+  <video src="../video/06_combined_60s.mp4" muted playsinline preload="auto"></video>
+  <div class="sn">60 seconds, let it run, no talking over the first ten. 0 to 10: the rig. 10 to 16: the three from the phone this afternoon. 16 to 22: the dunk, slowed down, with the animation the live mode draws. 22 to 60: the Landesliga game through the pipeline: overlay next to the 2D court, the court model following the camera pan, the dashboard with score, shot chart and player table, then live mode with the score bar.</div>
+</section>
+
+<section class="slide" data-title="What we built today" data-time="75">
+  <div class="two wide">
     <div>
-      <div class="video"><video src="../../out/pitch/analytics_side_by_side.mp4" muted loop playsinline preload="metadata"></video></div>
-      <div class="cap">Tracking overlay and 2D minimap, same seconds, one MacBook.</div>
-      <div class="surfaces">
-        <div class="surface"><div class="t">Broadcast</div><div class="d">Names, numbers and live score on the video.</div></div>
-        <div class="surface"><div class="t">Coaches</div><div class="d">Shot charts, movement, possession.</div></div>
-        <div class="surface"><div class="t">Scorekeeping</div><div class="d">Auto with veto for volunteer leagues.</div></div>
+      <h1 class="mid">The camera that follows the ball is the camera that keeps the stats.</h1>
+      <ul class="lines small">
+        <li><span class="n">01</span><span><span class="ph">300 frames</span> of a real Landesliga game auto-labeled, 3395 boxes. <span class="m">No human drew a box.</span></span></li>
+        <li><span class="n">02</span><span>YOLO11n fine-tuned in 25 minutes on a laptop: players 0.96, hoop 0.97 mAP50. Ball detector fine-tuned on 120 frames the coach labeled: <span class="ph">precision 62 to 96 percent.</span></span></li>
+        <li><span class="n">03</span><span>ByteTrack keeps identities, teams by jersey colour, <span class="m">jersey numbers read by OCR and merged into players.</span></span></li>
+        <li><span class="n">04</span><span>Feet projected onto a 2D court through camera pans and 48 cuts, <span class="m">minimap next to the video.</span></span></li>
+        <li><span class="n">05</span><span>Shot events from ball and hoop geometry. <span class="m">FGA, FGM, FG%, possession per player.</span></span></li>
+        <li><span class="n">06</span><span>Live mode from the phone at about 10 fps: running score, <span class="m">auto plus two with human veto, RTMP out.</span></span></li>
+      </ul>
+    </div>
+    <div class="figure"><img src="assets/shot_chart.png" alt="Shot chart on the court and the per-player table from the coach dashboard"></div>
+  </div>
+  <div class="sn">Everything on this slide ran on one MacBook today, on footage of a Berlin Landesliga game nobody films professionally. The point is the loop: film with the rig, label automatically, fine-tune, track, and the stats fall out. Six stages, read the numbers, do not read the sentences. The ball is the hard part: 25 pixels, and the coach labeled 120 frames on the laptop to get precision from 62 to 96 percent. Every game the rig films adds labeled frames.</div>
+</section>
+
+<section class="slide" data-title="Results" data-time="60">
+  <div class="two res">
+    <div>
+      <h1 class="mid">Ten minutes of Landesliga Berlin, checked shot by shot.</h1>
+      <div class="stats">
+        <div><div class="v a">24</div><div class="l">shot attempts found</div></div>
+        <div><div class="v">10</div><div class="l">made</div></div>
+        <div><div class="v a">96 %</div><div class="l">of called attempts were real shots</div></div>
+        <div><div class="v">73 %</div><div class="l">made or missed called right</div></div>
       </div>
     </div>
+    <div class="figure"><img src="../../broadcast/assets/end_summary.png" alt="End summary: Team A 6, Team B 15, per player points, attempts, makes, field goal percentage and possession"></div>
   </div>
+  <div class="sn">These are human-checked numbers, not model numbers. Ten minutes of the game, 24 attempts found, 10 made, Team A 6 points, Team B 15. A human went through every call: 96 percent of the attempts were real shots, made or miss right three times out of four, the shooter's team right in 77 percent. The honest number: the shooter as a person is right in 40 percent, that is the next thing to fix, and it is a data problem, not a logic problem.</div>
 </section>
 
-<section class="slide" data-title="Why us">
-  <div class="kicker">Why us</div>
+<section class="slide" data-title="Broadcast" data-time="45">
+  <h1 class="mid">Score, player cards and heat maps on the stream.</h1>
+  <div class="bc">
+    <div class="figure"><img src="../../broadcast/assets/heat_map.png" alt="Heat map per team on a top-down court with the shot positions"></div>
+    <div class="stack">
+      <div class="widgets">
+        <img src="assets/score_bug.png" alt="Score bug: Team A 10, Team B 10, first period 05:12">
+        <img src="assets/player_card.png" alt="Player card: number 5, Team A, 4 points, 2 of 3 field goals">
+      </div>
+      <ul class="lines small">
+        <li><span class="n">01</span><span>Live score bug <span class="m">and running clock.</span></span></li>
+        <li><span class="n">02</span><span>Player card <span class="m">on every made basket.</span></span></li>
+        <li><span class="n">03</span><span>Heat map and end summary <span class="m">per team.</span></span></li>
+        <li><span class="n">04</span><span>One key confirms or corrects <span class="m">any call. The system never overrules a person.</span></span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="sn">The same data drawn on the stream: a score bug with the clock, a player card when a basket goes in, a heat map of where each team played and shot from, and an end summary. Streams to YouTube or Twitch through RTMP. And the rule for all of it: auto with veto. The system calls, the human at the table presses one key to confirm or correct.</div>
+</section>
+
+<section class="slide" data-title="Platform" data-time="45">
+  <h1 class="mid">One position layer, three products.</h1>
+  <div class="surfaces">
+    <div class="surface"><div class="t">Broadcast</div><div class="d">Names, numbers and live score on the video. Easier to follow for kids and for viewers with disabilities.</div><div class="w">Fans, parents, players</div></div>
+    <div class="surface"><div class="t">Coaches</div><div class="d">Shot charts, movement, possession, opponent tendencies from every filmed game.</div><div class="w">Clubs, B2B</div></div>
+    <div class="surface"><div class="t">Scorekeeping</div><div class="d">The camera that follows the ball keeps the score. Auto with veto for the volunteer at the table.</div><div class="w">Leagues, federations</div></div>
+  </div>
+  <div class="sn">The rig is the cheapest entry into a position data layer. Once every player and the ball are on a 2D court, three products sit on the same data: the broadcast overlays for the people watching, analytics for the coach, and the scoreboard for the volunteer league that runs on one person with a pen. The rig is also the data machine: every game it films is training data.</div>
+</section>
+
+<section class="slide" data-title="Why us" data-time="30">
   <h1>Designed, printed, wired and demoed <span class="a">in one day</span> at CODE.</h1>
-  <p class="big"><b>Next:</b> film a real game this semester. Every game the rig films adds labeled frames.</p>
-  <p class="big" style="margin-top:4vh"><b>FollowCam</b>, CODE Hackathon Berlin 2026</p>
+  <p class="big"><b>Malek</b> built the rig. <b>Sami</b> built the analytics.</p>
+  <p class="big" style="margin-top:4vh"><b>Next:</b> a real game this semester. The rig on the sideline, the stats on the coach's phone.</p>
+  <div class="sn">Two people, one day. Malek designed and printed the rig and wrote the firmware. Sami built the vision pipeline, the dashboard and the live mode. Next step is one concrete game this semester with the rig on the sideline and the stats on the coach's phone.</div>
 </section>
 
-<div class="hint" id="hint">arrow keys to navigate</div>
-<div class="foot"><span id="ftitle"></span><div class="bar"><i id="fbar"></i></div><span id="fcount"></span></div>
+<section class="slide" data-title="Thanks" data-time="0">
+  <div class="wordmark"><i></i><i class="r"></i>Big Ball Baller</div>
+  <h1>The 20 euro robot cameraman.</h1>
+  <p class="big">Malek and Sami, CODE Hackathon Berlin, 28 August 2026.</p>
+  <p class="big" style="margin-top:3vh">github.com/Malek1414/code-hackathon-project</p>
+  <div class="sn">Questions. Tilt: same mechanism rotated, version two. Digital crop instead of a servo: we do that too, but a physical pan keeps full sensor resolution on the action, which the analytics needs. Privacy with minors: everything runs on the laptop that films, nothing is uploaded unless a stream URL is set on purpose, no model uses faces, identity comes from jersey number and colour, and export blurs heads.</div>
+</section>
+
+<div class="hint" id="hint">arrows to navigate, n for notes, f for fullscreen, t resets the clock</div>
+<div class="foot"><span id="ftitle"></span><div class="bar"><i id="fbar"></i></div><span id="fcount"></span><span class="clock" id="clock"></span></div>
+<div class="notes" id="notes"><div class="t" id="ntitle"></div><div id="ntext"></div></div>
 </div>
 <script>
 (function(){
   var slides=[].slice.call(document.querySelectorAll('.slide')),i=0,hint=document.getElementById('hint');
+  var notes=document.getElementById('notes'),clock=document.getElementById('clock');
+  var t0=null,slideStart=null;
+  function fmt(s){s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
+  function tick(){
+    var now=Date.now();
+    if(t0===null){clock.textContent='';return;}
+    var budget=+slides[i].getAttribute('data-time')||0;
+    var onSlide=(now-slideStart)/1000,total=(now-t0)/1000;
+    clock.textContent=(budget?fmt(onSlide)+' / '+fmt(budget)+'   ':'')+fmt(total);
+    clock.classList.toggle('over',budget>0&&onSlide>budget);
+  }
   function show(n){
     n=Math.max(0,Math.min(slides.length-1,n));
     slides.forEach(function(s,k){s.classList.toggle('on',k===n);
       var v=s.querySelector('video');if(!v)return;
       if(k===n){try{v.currentTime=0;v.play();}catch(e){}}else{v.pause();}
     });
-    i=n;
+    i=n;slideStart=Date.now();
     document.getElementById('ftitle').textContent=slides[n].getAttribute('data-title');
     document.getElementById('fcount').textContent=(n+1)+' / '+slides.length;
     document.getElementById('fbar').style.width=(100*(n+1)/slides.length)+'%';
+    document.getElementById('ntitle').textContent=slides[n].getAttribute('data-title');
+    var sn=slides[n].querySelector('.sn');document.getElementById('ntext').textContent=sn?sn.textContent:'';
     if(history.replaceState)history.replaceState(null,'','#'+(n+1));
+    tick();
   }
+  function startClock(){if(t0===null){t0=Date.now();slideStart=t0;}}
   document.addEventListener('keydown',function(e){
     if(e.metaKey||e.ctrlKey||e.altKey)return;
     var k=e.key;
-    if(k==='ArrowRight'||k==='ArrowDown'||k===' '||k==='PageDown'||k==='Enter'){show(i+1);e.preventDefault();hint.classList.add('off');}
-    else if(k==='ArrowLeft'||k==='ArrowUp'||k==='PageUp'||k==='Backspace'){show(i-1);e.preventDefault();hint.classList.add('off');}
+    if(k==='ArrowRight'||k==='ArrowDown'||k===' '||k==='PageDown'||k==='Enter'){startClock();show(i+1);e.preventDefault();hint.classList.add('off');}
+    else if(k==='ArrowLeft'||k==='ArrowUp'||k==='PageUp'||k==='Backspace'){startClock();show(i-1);e.preventDefault();hint.classList.add('off');}
     else if(k==='Home'){show(0);e.preventDefault();}
     else if(k==='End'){show(slides.length-1);e.preventDefault();}
     else if(/^[1-9]$/.test(k)){show(+k-1);}
+    else if(k==='0'){show(9);}
+    else if(k==='n'){notes.classList.toggle('on');}
+    else if(k==='t'){t0=Date.now();slideStart=t0;tick();}
     else if(k==='f'){var d=document.documentElement;if(!document.fullscreenElement&&d.requestFullscreen)d.requestFullscreen();else if(document.exitFullscreen)document.exitFullscreen();}
   });
   document.getElementById('deck').addEventListener('click',function(e){
-    if(e.target.closest('video'))return;
-    var x=e.clientX/window.innerWidth;show(x<0.25?i-1:i+1);hint.classList.add('off');
+    if(e.target.closest('video')||e.target.closest('.notes'))return;
+    startClock();var x=e.clientX/window.innerWidth;show(x<0.25?i-1:i+1);hint.classList.add('off');
   });
   var h=parseInt(location.hash.replace('#',''),10);
   show(isNaN(h)?0:h-1);
-  setTimeout(function(){hint.classList.add('off')},6000);
+  setInterval(tick,500);
+  setTimeout(function(){hint.classList.add('off')},8000);
 })();
 </script>
 </body>

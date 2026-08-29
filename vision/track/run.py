@@ -180,7 +180,7 @@ def main() -> None:
     if a.ball_blacklist and a.ball_blacklist.exists():
         seed = json.loads(a.ball_blacklist.read_text()).get("ball_blacklist_rel_hoopwidths", [])
     tr = Tracker(a.person_weights, a.ball_weights, a.device, weights=a.weights,
-                 ball_blacklist_rel=seed,
+                 ball_blacklist_rel=seed, proc_fps=fps / a.stride,
                  person_imgsz=a.person_imgsz, ball_imgsz=a.ball_imgsz, imgsz=a.imgsz,
                  conf_player=a.conf_player, conf_ball=a.conf_ball, conf_hoop=a.conf_hoop,
                  ball_max_px=a.ball_max_px, hoop_hold=a.hoop_hold, tracker=a.tracker,
