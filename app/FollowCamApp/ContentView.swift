@@ -20,7 +20,8 @@ struct ContentView: View {
     @State private var tracker = SubjectTracker()
     @State private var subjectBox: CGRect?
     @State private var players: [CGRect] = []   // detected people, Vision-normalized
-    @State private var bridgeHost = "192.168.1.10"
+    // Remembered between launches: the laptop does not move between court tests.
+    @AppStorage("bridgeHost") private var bridgeHost = "192.168.1.10"
     @State private var showSettings = false
     @State private var recordingStarted: Date?
     @State private var lostFlashUntil: Date?
@@ -98,7 +99,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showSettings) { settingsSheet }
-        .sheet(item: $summary) { s in SummaryCard(summary: s) }
+        .sheet(item: $summary) { s in SummaryCard(summary: s, camera: camera) }
         .overlay {
             if showGuide {
                 SetupGuide(rigLinked: pan.connected,
@@ -134,7 +135,8 @@ struct ContentView: View {
             if let bpm = heart.bpm {
                 recHRRange = recHRRange.map { min($0.lowerBound, bpm)...max($0.upperBound, bpm) } ?? bpm...bpm
             }
-            recSwept = min(recSwept.lowerBound, pan.angle)...max(recSwept.upperBound, pan.angle)
+            let swept = min(recSwept.lowerBound, pan.angle)...max(recSwept.upperBound, pan.angle)
+            if swept != recSwept { recSwept = swept }
         }
         guard let box = box else {
             if subjectBox != nil {   // just lost the target
@@ -166,7 +168,10 @@ struct ContentView: View {
         }
         subjectBox = box
         pan.update(centerX: box.midX)
-        sweptRange = min(sweptRange.lowerBound, pan.angle)...max(sweptRange.upperBound, pan.angle)
+        // Written only when it grows: a state write per frame re-renders the
+        // wedge thirty times a second for a range that has not moved.
+        let swept = min(sweptRange.lowerBound, pan.angle)...max(sweptRange.upperBound, pan.angle)
+        if swept != sweptRange { sweptRange = swept }
     }
 
     // MARK: top status strip — tally lamps + timecode
@@ -176,9 +181,11 @@ struct ContentView: View {
             tally("RIG", on: pan.connected, color: .servo) {
                 pan.connect(host: bridgeHost)
             }
-            tally("HR", on: heart.bpm != nil, color: .red,
-                  detail: heart.bpm.map { "\($0)" }) {
-                heart.startScan()
+            // Tap starts the strap search; tap again to stop it. A strap that
+            // is searching shows a pulsing lamp rather than a dead one.
+            tally("HR", on: heart.bpm != nil || heart.scanning, color: .red,
+                  detail: heart.bpm.map { "\($0)" } ?? (heart.scanning ? "HR…" : nil)) {
+                if heart.isActive { heart.stop() } else { heart.startScan() }
             }
             if tracker.isTracking {
                 Button {
@@ -261,13 +268,27 @@ struct ContentView: View {
         NavigationStack {
             Form {
                 Section("Rig link") {
-                    TextField("Laptop IP", text: $bridgeHost)
+                    // .URL, not .decimalPad: a hostname ("malek-mbp.local")
+                    // could not be typed at all before.
+                    TextField("Laptop IP or hostname", text: $bridgeHost)
                         .font(.system(.body, design: .monospaced))
-                        .keyboardType(.decimalPad)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     Toggle("Invert pan direction", isOn: $pan.invert)
                     Button(pan.connected ? "Reconnect" : "Connect") {
                         pan.connect(host: bridgeHost)
                     }
+                    if pan.connected {
+                        Button("Disconnect", role: .destructive) { pan.disconnect() }
+                    }
+                }
+                Section("Recording") {
+                    Text(camera.hasAudio
+                         ? "Sound is recorded with the video."
+                         : "Sound is added on the first recording, if the microphone is allowed.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
                 }
                 Section("WHOOP") {
                     TextField("Client ID", text: $whoopClientID)
@@ -369,6 +390,17 @@ struct SessionSummary: Identifiable {
 
 struct SummaryCard: View {
     let summary: SessionSummary
+    @ObservedObject var camera: CameraManager
+
+    /// The headline tells the truth about the save, which finishes a moment
+    /// after the sheet appears: saving, saved, or why not.
+    private var headline: (String, Color) {
+        switch camera.saveState {
+        case .idle, .saving: return ("SAVING TO PHOTOS…", .chrome)
+        case .saved: return ("SESSION SAVED TO PHOTOS", .white)
+        case .failed(let reason): return ("NOT SAVED — \(reason.uppercased())", .red)
+        }
+    }
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 4) {
@@ -384,9 +416,11 @@ struct SummaryCard: View {
 
     var body: some View {
         VStack(spacing: 26) {
-            Text("SESSION SAVED TO PHOTOS")
+            Text(headline.0)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(headline.1)
+                .multilineTextAlignment(.center)
+                .animation(.default, value: camera.saveState)
             HStack {
                 stat(String(format: "%d:%02d", Int(summary.duration) / 60,
                             Int(summary.duration) % 60), "RECORDED")

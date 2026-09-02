@@ -11,6 +11,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSCameraUsageDescription: Films the game and tracks the ball.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Records the game's sound with the video.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Saves recordings.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Steers the FollowCam rig.
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Reads your heart rate strap's live broadcast.
@@ -18,3 +19,26 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  # Pure logic only: the pan control law and the heart-rate packet parser.
+  # Runs on a simulator; nothing in here needs a camera, a strap or a rig.
+  FollowCamTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [FollowCamTests]
+    dependencies:
+      - target: FollowCam
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  FollowCam:
+    build:
+      targets:
+        FollowCam: all
+        FollowCamTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [FollowCamTests]

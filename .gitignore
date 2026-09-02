@@ -49,3 +49,7 @@ viz/bridge/logs/
 viz/bridge/results/
 viz/fx/task-002/assembly_manual.mov
 viz/fx/task-002/contact_sheet.png
+
+# Xcode build intermediates (app/build was committed by accident: 3,212 files)
+app/build/
+DerivedData/

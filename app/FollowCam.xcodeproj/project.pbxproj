@@ -11,20 +11,35 @@
 		31060A37FB973E1996461024 /* WhoopSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632C5AA127A15B6E1A51E3FC /* WhoopSync.swift */; };
 		3C460C1250B13AD3561A4FD4 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2479A6A0DD2BA09BED009DD3 /* CameraManager.swift */; };
 		4688E63E58AAB22B8645D923 /* SubjectTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27AF71E7F3F13A47A666EAE /* SubjectTracker.swift */; };
+		4AE28DC32ECBB84519DC77CA /* HeartRateParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFA566AC1A7E568CE80348D5 /* HeartRateParsingTests.swift */; };
 		4CBB1126A1B5D1648FC5D3A7 /* FollowCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */; };
 		823722707F1FD7AEABF6B588 /* MotionLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30232EE2CBCA59A33067643 /* MotionLevel.swift */; };
+		9B4687AE6CBB45C15C5B65F2 /* PanControlLawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0563E490BA6CDBEA0135CF56 /* PanControlLawTests.swift */; };
 		9E4BA78F2467D3487193885A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C980E0C1BBE497EE5CEF2 /* ContentView.swift */; };
 		BDCA9733E84E270680CB54AD /* HeartRateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */; };
 		C554DB2A79D4E20A2C10C7DB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 492E3E4506A5789A0926E146 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		CF840B93B4B616640BA1C846 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 15A740EF5E1E367C8B73AE0E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A25D4D605BD4943B96C90C09;
+			remoteInfo = FollowCam;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		0563E490BA6CDBEA0135CF56 /* PanControlLawTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanControlLawTests.swift; sourceTree = "<group>"; };
+		1D8CA07A19A2A49C4C6D605F /* FollowCamTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FollowCamTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2479A6A0DD2BA09BED009DD3 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		2C360BF264F92282F9111E41 /* HeartRateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateMonitor.swift; sourceTree = "<group>"; };
 		492E3E4506A5789A0926E146 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		49DD7F31670DA6C2822E32AA /* FollowCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowCamApp.swift; sourceTree = "<group>"; };
 		512C980E0C1BBE497EE5CEF2 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		632C5AA127A15B6E1A51E3FC /* WhoopSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopSync.swift; sourceTree = "<group>"; };
+		AFA566AC1A7E568CE80348D5 /* HeartRateParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateParsingTests.swift; sourceTree = "<group>"; };
 		B30232EE2CBCA59A33067643 /* MotionLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionLevel.swift; sourceTree = "<group>"; };
 		CBAD033B44B0D81E19DEF423 /* PanController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanController.swift; sourceTree = "<group>"; };
 		D27AF71E7F3F13A47A666EAE /* SubjectTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectTracker.swift; sourceTree = "<group>"; };
@@ -36,8 +51,18 @@
 			isa = PBXGroup;
 			children = (
 				ED27DB56697DF2DCFAE1D0E2 /* FollowCam.app */,
+				1D8CA07A19A2A49C4C6D605F /* FollowCamTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9596D8D7ADE21585C30352FD /* FollowCamTests */ = {
+			isa = PBXGroup;
+			children = (
+				AFA566AC1A7E568CE80348D5 /* HeartRateParsingTests.swift */,
+				0563E490BA6CDBEA0135CF56 /* PanControlLawTests.swift */,
+			);
+			path = FollowCamTests;
 			sourceTree = "<group>";
 		};
 		C96C61BDA689E040CDE67790 /* FollowCamApp */ = {
@@ -60,6 +85,7 @@
 			isa = PBXGroup;
 			children = (
 				C96C61BDA689E040CDE67790 /* FollowCamApp */,
+				9596D8D7ADE21585C30352FD /* FollowCamTests */,
 				472FB90AA50E3EB22D1AE930 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +93,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		3CACA9EDDCC6FE3A5DA86E9C /* FollowCamTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 771AAE4DE2E5AC2D9C1C3D36 /* Build configuration list for PBXNativeTarget "FollowCamTests" */;
+			buildPhases = (
+				FB37FF975F92DA0A240F496E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5914D860F413FA93E65B67BF /* PBXTargetDependency */,
+			);
+			name = FollowCamTests;
+			packageProductDependencies = (
+			);
+			productName = FollowCamTests;
+			productReference = 1D8CA07A19A2A49C4C6D605F /* FollowCamTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		A25D4D605BD4943B96C90C09 /* FollowCam */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A56AC09E36F42078403D4934 /* Build configuration list for PBXNativeTarget "FollowCam" */;
@@ -114,6 +158,7 @@
 			projectRoot = "";
 			targets = (
 				A25D4D605BD4943B96C90C09 /* FollowCam */,
+				3CACA9EDDCC6FE3A5DA86E9C /* FollowCamTests */,
 			);
 		};
 /* End PBXProject section */
@@ -145,7 +190,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FB37FF975F92DA0A240F496E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4AE28DC32ECBB84519DC77CA /* HeartRateParsingTests.swift in Sources */,
+				9B4687AE6CBB45C15C5B65F2 /* PanControlLawTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5914D860F413FA93E65B67BF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A25D4D605BD4943B96C90C09 /* FollowCam */;
+			targetProxy = CF840B93B4B616640BA1C846 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		23CC51B9D5420D6A07B625F1 /* Debug */ = {
@@ -275,6 +337,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Reads your heart rate strap's live broadcast.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Films the game and tracks the ball.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Steers the FollowCam rig.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records the game's sound with the video.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Saves recordings.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -298,6 +361,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Reads your heart rate strap's live broadcast.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Films the game and tracks the ball.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Steers the FollowCam rig.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records the game's sound with the video.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Saves recordings.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -311,6 +375,42 @@
 			};
 			name = Debug;
 		};
+		AE132C35083362AC84DD2FB8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.followcam.FollowCamTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FollowCam.app/FollowCam";
+			};
+			name = Debug;
+		};
+		B6EB3DAB1B575C7B1D26D622 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.followcam.FollowCamTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FollowCam.app/FollowCam";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -319,6 +419,15 @@
 			buildConfigurations = (
 				23CC51B9D5420D6A07B625F1 /* Debug */,
 				4F00C7D0FE46D4466E456F18 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		771AAE4DE2E5AC2D9C1C3D36 /* Build configuration list for PBXNativeTarget "FollowCamTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE132C35083362AC84DD2FB8 /* Debug */,
+				B6EB3DAB1B575C7B1D26D622 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

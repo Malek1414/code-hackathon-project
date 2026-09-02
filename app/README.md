@@ -17,7 +17,18 @@ phone (this app) --ws://laptop:8765--> software/pan_bridge.py --serial--> Arduin
    already configured.
 
 (To regenerate the project after adding files: `brew install xcodegen`,
-then `xcodegen generate` in `app/`.)
+then `xcodegen generate` in `app/`. The generated `.xcodeproj` is committed;
+`app/build/` is not — it is Xcode's scratch space and is gitignored.)
+
+Verify without a phone or a signing identity:
+
+```bash
+cd app
+xcodebuild -scheme FollowCam -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO build                              # compiles the app
+xcodebuild test -scheme FollowCam \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # pan control law + HR packet parser
+```
 
 ## Use it (court test flow)
 
@@ -28,8 +39,16 @@ then `xcodegen generate` in `app/`.)
 3. Mount the phone in the rig, **tap the subject** on screen (ball or the
    person carrying it) — orange box appears, servo starts following.
 4. Big red button records; clips land in Photos (these are tier-3 training
-   data — see `docs/ML_DATA_PLAN.md`).
-5. If the rig pans the wrong way, flip the **inv** toggle.
+   data — see `docs/ML_DATA_PLAN.md`). The first recording asks for the
+   microphone; allow it and the clip has sound, deny it and the clip is
+   silent. The summary card says whether the save to Photos succeeded.
+5. If the rig pans the wrong way, flip the **inv** toggle. The laptop
+   address and the toggle are remembered between launches.
+
+The RIG lamp turns green only once the socket to the bridge is actually
+open, and the link reconnects by itself (backoff up to 8 s) until you tap
+Disconnect. HR: tap to search for a strap, tap again to stop; a strap that
+drops out clears the reading instead of freezing on its last value.
 
 Angles are clamped to 40–140° in both the app and the firmware; the
 firmware's slew limiter smooths whatever the app sends.
