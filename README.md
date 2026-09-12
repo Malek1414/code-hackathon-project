@@ -48,6 +48,14 @@ An 8-second demo of the motion, synced to a top-down court-coverage diagram:
   power from external 5–6 V, common ground)
 - Arduino Uno/Nano, phone, two printed parts (25–35% infill, no supports)
 
+## Blender product redesign
+
+The tripod-handle prototype now has a direct-drive, tripod-top product concept:
+an Uno R3 and MG996R inside a serviceable pod, a thrust-bearing-supported rotating
+platter, and separate full-wrap portrait and landscape phone cases. The editable
+Blender assembly, print STLs, renders, sourced MACTREM PT55 interface dimensions,
+and build notes are in [`cad/blender/`](cad/blender/README.md).
+
 ## Workflow (read this, Sammy 👋)
 
 - `main` is protected: **all changes go through a PR reviewed by Malek**.

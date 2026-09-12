@@ -53,3 +53,12 @@ viz/fx/task-002/contact_sheet.png
 # Xcode build intermediates (app/build was committed by accident: 3,212 files)
 app/build/
 DerivedData/
+
+# --- FollowCam Pod v4 (cad/blender/pod_v4) ---
+# 745 PNG frame sequences (677 MB) and the intermediate clips ffmpeg concatenates.
+# Both regenerate from build_v4.py; the finished FollowCam_Pod_v4.mov IS committed.
+cad/blender/pod_v4/renders/
+cad/blender/pod_v4/mov/
+# handoff zip is just STL/*.stl + README.md bundled - regenerate with zip -j
+cad/blender/pod_v4/*.zip
+*.blend1
