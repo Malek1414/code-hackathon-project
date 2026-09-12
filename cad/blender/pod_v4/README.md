@@ -11,7 +11,15 @@ blender --background --python cad/blender/pod_v4/build_v4.py
 FOLLOWCAM_SKIP_RENDER=1 blender --background --python cad/blender/pod_v4/build_v4.py   # STLs only, ~20 s
 ```
 
-Video walkthrough: `FollowCam_Pod_v4.mov`
+Video walkthroughs:
+
+| File | Spline offset | Matches `STL/`? |
+|---|---|---|
+| `FollowCam_Pod_v4.mov` | **9.85 mm** (measured) | **yes — use this one** |
+| `FollowCam_Pod_v4_rev1.mov` | 10.25 mm (assumed) | no — 0.4 mm stale, kept for reference |
+
+Both are 27.8 s / 1280×720. The 0.4 mm difference is not visible; rev1 is retained
+only so the earlier review can be reproduced.
 
 ---
 
