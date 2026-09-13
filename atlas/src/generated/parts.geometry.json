@@ -1,0 +1,1068 @@
+[
+  {
+    "id": "01-stator-shell",
+    "object": "01_stator_shell",
+    "node": "01_stator_shell",
+    "system": "stator",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.0560000017285347,
+      -0.0560000017285347,
+      0.0
+    ],
+    "bboxMax": [
+      0.0560000017285347,
+      0.0560000017285347,
+      0.03500000387430191
+    ],
+    "sizeMm": [
+      112.0000034570694,
+      112.0000034570694,
+      35.00000387430191
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.017500001937150955
+    ],
+    "triangles": 4850,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": false,
+    "material": "PETG | slate"
+  },
+  {
+    "id": "02-nut-retainer",
+    "object": "02_nut_retainer",
+    "node": "02_nut_retainer",
+    "system": "stator",
+    "explode": [
+      0.0,
+      0.0,
+      -0.03
+    ],
+    "explodeGl": [
+      0.0,
+      -0.03,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.005630000494420528,
+      -0.006500964518636465,
+      0.0
+    ],
+    "bboxMax": [
+      0.005630000494420528,
+      0.006500964518636465,
+      0.001500000013038516
+    ],
+    "sizeMm": [
+      11.260000988841057,
+      13.00192903727293,
+      1.500000013038516
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.000750000006519258
+    ],
+    "triangles": 216,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": false,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "03-servo-carrier-mg996r",
+    "object": "03_servo_carrier_MG996R",
+    "node": "03_servo_carrier_MG996R",
+    "system": "stator",
+    "explode": [
+      0.0,
+      0.0,
+      0.034
+    ],
+    "explodeGl": [
+      0.0,
+      0.034,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.04800000041723251,
+      -0.04800000041723251,
+      0.03500000014901161
+    ],
+    "bboxMax": [
+      0.04800000041723251,
+      0.04800000041723251,
+      0.04000000283122063
+    ],
+    "sizeMm": [
+      96.00000083446503,
+      96.00000083446503,
+      5.000002682209015
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.03750000149011612
+    ],
+    "triangles": 2570,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": false,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "04-rotor",
+    "object": "04_rotor",
+    "node": "04_rotor",
+    "system": "rotor",
+    "explode": [
+      0.0,
+      0.0,
+      0.07
+    ],
+    "explodeGl": [
+      0.0,
+      0.07,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.055000003427267075,
+      -0.055000003427267075,
+      0.01600000075995922
+    ],
+    "bboxMax": [
+      0.055000003427267075,
+      0.055000003427267075,
+      0.07100000232458115
+    ],
+    "sizeMm": [
+      110.00000685453415,
+      110.00000685453415,
+      55.000001564621925
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.043500001542270184
+    ],
+    "triangles": 2864,
+    "printed": true,
+    "printOrientation": "INVERTED - deck on the bed, bore opens up",
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "05-drive-dog-42.9-47.6",
+    "object": "05_drive_dog_42.9-47.6",
+    "node": "05_drive_dog_42-9-47-6",
+    "system": "rotor",
+    "explode": [
+      0.0,
+      0.0,
+      0.052000000000000005
+    ],
+    "explodeGl": [
+      0.0,
+      0.052000000000000005,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.017000000923871994,
+      -0.006750000175088644,
+      0.06100000441074371
+    ],
+    "bboxMax": [
+      0.020000001415610313,
+      0.006750000175088644,
+      0.0690000057220459
+    ],
+    "sizeMm": [
+      37.00000233948231,
+      13.500000350177288,
+      8.000001311302185
+    ],
+    "centerM": [
+      0.0015000002458691597,
+      0.0,
+      0.0650000050663948
+    ],
+    "triangles": 1010,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": false,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "05b-drive-dog-short-42.9",
+    "object": "05b_drive_dog_SHORT_42.9",
+    "node": "05b_drive_dog_SHORT_42-9",
+    "system": "rotor",
+    "explode": [
+      0.0,
+      0.0,
+      0.052000000000000005
+    ],
+    "explodeGl": [
+      0.0,
+      0.052000000000000005,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.017000000923871994,
+      -0.006750000175088644,
+      0.056300003081560135
+    ],
+    "bboxMax": [
+      0.020000001415610313,
+      0.006750000175088644,
+      0.0690000057220459
+    ],
+    "sizeMm": [
+      37.00000233948231,
+      13.500000350177288,
+      12.700002640485764
+    ],
+    "centerM": [
+      0.0015000002458691597,
+      0.0,
+      0.06265000440180302
+    ],
+    "triangles": 1010,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": true,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "06-cradle-portrait",
+    "object": "06_cradle_portrait",
+    "node": "06_cradle_portrait",
+    "system": "portrait",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.01250000111758709,
+      -0.04375000298023224,
+      0.06269999593496323
+    ],
+    "bboxMax": [
+      0.009499999694526196,
+      0.04375000298023224,
+      0.2355000078678131
+    ],
+    "sizeMm": [
+      22.000000812113285,
+      87.50000596046448,
+      172.80001193284988
+    ],
+    "centerM": [
+      -0.001500000711530447,
+      0.0,
+      0.14910000190138817
+    ],
+    "triangles": 652,
+    "printed": true,
+    "printOrientation": "BACK DOWN on the bed",
+    "defaultHidden": false,
+    "material": "PETG | porcelain"
+  },
+  {
+    "id": "07-cradle-landscape",
+    "object": "07_cradle_landscape",
+    "node": "07_cradle_landscape",
+    "system": "landscape",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.01250000111758709,
+      -0.0832500010728836,
+      0.06270000338554382
+    ],
+    "bboxMax": [
+      0.009499999694526196,
+      0.0832500010728836,
+      0.15650001168251038
+    ],
+    "sizeMm": [
+      22.000000812113285,
+      166.5000021457672,
+      93.80000829696655
+    ],
+    "centerM": [
+      -0.001500000711530447,
+      0.0,
+      0.1096000075340271
+    ],
+    "triangles": 654,
+    "printed": true,
+    "printOrientation": "BACK DOWN on the bed",
+    "defaultHidden": false,
+    "material": "PETG | porcelain"
+  },
+  {
+    "id": "08-uno-tray",
+    "object": "08_uno_tray",
+    "node": "08_uno_tray",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.15365321934223175,
+      -0.1114775612950325,
+      -0.20437422394752502
+    ],
+    "bboxMax": [
+      -0.05996131896972656,
+      -0.011852851137518883,
+      -0.10447175800800323
+    ],
+    "sizeMm": [
+      93.69190037250519,
+      99.62471015751362,
+      99.90246593952179
+    ],
+    "centerM": [
+      -0.10680726915597916,
+      -0.06166520621627569,
+      -0.15442299097776413
+    ],
+    "triangles": 3228,
+    "printed": true,
+    "printOrientation": "as modelled - cavity opens up",
+    "defaultHidden": false,
+    "material": "PETG | slate"
+  },
+  {
+    "id": "09-uno-lid",
+    "object": "09_uno_lid",
+    "node": "09_uno_lid",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.15840013325214386,
+      -0.11421819031238556,
+      -0.19176538288593292
+    ],
+    "bboxMax": [
+      -0.08448708057403564,
+      -0.026012800633907318,
+      -0.10203133523464203
+    ],
+    "sizeMm": [
+      73.91305267810822,
+      88.20538967847824,
+      89.7340476512909
+    ],
+    "centerM": [
+      -0.12144360691308975,
+      -0.07011549547314644,
+      -0.14689835906028748
+    ],
+    "triangles": 696,
+    "printed": true,
+    "printOrientation": "as modelled",
+    "defaultHidden": false,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "1-4-20",
+    "object": "1/4-20",
+    "node": "1-4-20",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.003150000236928463,
+      -0.003150000236928463,
+      -0.004000000189989805
+    ],
+    "bboxMax": [
+      0.003150000236928463,
+      0.003150000236928463,
+      0.012000000104308128
+    ],
+    "sizeMm": [
+      6.300000473856926,
+      6.300000473856926,
+      16.000000294297934
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.003999999957159162
+    ],
+    "triangles": 380,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Steel / aluminium"
+  },
+  {
+    "id": "10-leg-saddle",
+    "object": "10_leg_saddle",
+    "node": "10_leg_saddle",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.1264186054468155,
+      -0.09171219915151596,
+      -0.21901674568653107
+    ],
+    "bboxMax": [
+      -0.034979790449142456,
+      -0.0014712177217006683,
+      -0.11667385697364807
+    ],
+    "sizeMm": [
+      91.43881499767303,
+      90.24098142981529,
+      102.342888712883
+    ],
+    "centerM": [
+      -0.08069919794797897,
+      -0.046591708436608315,
+      -0.16784530133008957
+    ],
+    "triangles": 634,
+    "printed": true,
+    "printOrientation": "INVERTED - flat face down, V opens up",
+    "defaultHidden": false,
+    "material": "PETG | slate"
+  },
+  {
+    "id": "11-aa-bay",
+    "object": "11_aa_bay",
+    "node": "11_aa_bay",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.16357479989528656,
+      -0.03447909653186798,
+      -0.19158458709716797
+    ],
+    "bboxMax": [
+      -0.10491932183504105,
+      0.02264680340886116,
+      -0.1209220215678215
+    ],
+    "sizeMm": [
+      58.655478060245514,
+      57.12589994072914,
+      70.66256552934647
+    ],
+    "centerM": [
+      -0.1342470608651638,
+      -0.00591614656150341,
+      -0.15625330433249474
+    ],
+    "triangles": 544,
+    "printed": true,
+    "printOrientation": "as modelled - cavity opens up",
+    "defaultHidden": false,
+    "material": "PETG | vermilion"
+  },
+  {
+    "id": "mactrem-qr-plate",
+    "object": "MACTREM QR plate",
+    "node": "MACTREM-QR-plate",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.0325000025331974,
+      -0.02250000089406967,
+      -0.009000000543892384
+    ],
+    "bboxMax": [
+      0.0325000025331974,
+      0.02250000089406967,
+      -0.003000000026077032
+    ],
+    "sizeMm": [
+      65.0000050663948,
+      45.00000178813934,
+      6.0000005178153515
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      -0.006000000284984708
+    ],
+    "triangles": 204,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Steel / aluminium"
+  },
+  {
+    "id": "mg996r-body",
+    "object": "MG996R body",
+    "node": "MG996R-body",
+    "system": "hardware",
+    "explode": [
+      0.0,
+      0.098,
+      0.018000000000000002
+    ],
+    "explodeGl": [
+      0.0,
+      0.018000000000000002,
+      -0.098
+    ],
+    "bboxMin": [
+      -0.016950000077486038,
+      -0.010000000707805157,
+      0.01340000331401825
+    ],
+    "bboxMax": [
+      0.036650002002716064,
+      0.010000000707805157,
+      0.06100000441074371
+    ],
+    "sizeMm": [
+      53.6000020802021,
+      20.000001415610313,
+      47.600001096725464
+    ],
+    "centerM": [
+      0.009850000962615013,
+      0.0,
+      0.03720000386238098
+    ],
+    "triangles": 252,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Electronics polymer"
+  },
+  {
+    "id": "uno-r3",
+    "object": "Uno R3",
+    "node": "Uno-R3",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.13034047186374664,
+      -0.09066736698150635,
+      -0.18738454580307007
+    ],
+    "bboxMax": [
+      -0.07821067422628403,
+      -0.029739700257778168,
+      -0.12406454235315323
+    ],
+    "sizeMm": [
+      52.129797637462616,
+      60.92766672372818,
+      63.32000344991684
+    ],
+    "centerM": [
+      -0.10427557304501534,
+      -0.06020353361964226,
+      -0.15572454407811165
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Uno R3 PCB"
+  },
+  {
+    "id": "crown",
+    "object": "crown",
+    "node": "crown",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.023000001907348633,
+      -0.023000001907348633,
+      -0.03400000184774399
+    ],
+    "bboxMax": [
+      0.023000001907348633,
+      0.023000001907348633,
+      -0.009000000543892384
+    ],
+    "sizeMm": [
+      46.000003814697266,
+      46.000003814697266,
+      25.000001303851604
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      -0.021500001195818186
+    ],
+    "triangles": 380,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "leg",
+    "object": "leg",
+    "node": "leg",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.01100000087171793,
+      0.028061948716640472,
+      -0.4163329005241394
+    ],
+    "bboxMax": [
+      0.01100000087171793,
+      0.2107674479484558,
+      -0.02735622227191925
+    ],
+    "sizeMm": [
+      22.00000174343586,
+      182.70549923181534,
+      388.97667825222015
+    ],
+    "centerM": [
+      0.0,
+      0.11941469833254814,
+      -0.22184456139802933
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "leg.001",
+    "object": "leg.001",
+    "node": "leg-001",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.1880299299955368,
+      -0.11491002887487411,
+      -0.4163329005241394
+    ],
+    "bboxMax": [
+      -0.01880238950252533,
+      -0.004504673182964325,
+      -0.027356207370758057
+    ],
+    "sizeMm": [
+      169.22754049301147,
+      110.40535569190979,
+      388.97669315338135
+    ],
+    "centerM": [
+      -0.10341615974903107,
+      -0.05970735102891922,
+      -0.22184455394744873
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "leg.002",
+    "object": "leg.002",
+    "node": "leg-002",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      0.01880238950252533,
+      -0.11491002887487411,
+      -0.4163329005241394
+    ],
+    "bboxMax": [
+      0.1880299299955368,
+      -0.004504673182964325,
+      -0.027356207370758057
+    ],
+    "sizeMm": [
+      169.22754049301147,
+      110.40535569190979,
+      388.97669315338135
+    ],
+    "centerM": [
+      0.10341615974903107,
+      -0.05970735102891922,
+      -0.22184455394744873
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "phone",
+    "object": "phone",
+    "node": "phone",
+    "system": "portrait",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.006500000134110451,
+      -0.03825000301003456,
+      0.07700000703334808
+    ],
+    "bboxMax": [
+      0.006500000134110451,
+      0.03825000301003456,
+      0.23250001668930054
+    ],
+    "sizeMm": [
+      13.000000268220901,
+      76.50000602006912,
+      155.50000965595245
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.1547500118613243
+    ],
+    "triangles": 204,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "phone.001",
+    "object": "phone.001",
+    "node": "phone-001",
+    "system": "landscape",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.006500000134110451,
+      -0.07775000482797623,
+      0.07700000703334808
+    ],
+    "bboxMax": [
+      0.006500000134110451,
+      0.07775000482797623,
+      0.1535000056028366
+    ],
+    "sizeMm": [
+      13.000000268220901,
+      155.50000965595245,
+      76.49999856948853
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.11525000631809235
+    ],
+    "triangles": 204,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PETG | midnight graphite"
+  },
+  {
+    "id": "screen",
+    "object": "screen",
+    "node": "screen",
+    "system": "portrait",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      0.006400000303983688,
+      -0.035750001668930054,
+      0.07999999821186066
+    ],
+    "bboxMax": [
+      0.007000000216066837,
+      0.035750001668930054,
+      0.22950001060962677
+    ],
+    "sizeMm": [
+      0.599999912083149,
+      71.50000333786011,
+      149.5000123977661
+    ],
+    "centerM": [
+      0.006700000260025263,
+      0.0,
+      0.1547500044107437
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Optical glass"
+  },
+  {
+    "id": "screen.001",
+    "object": "screen.001",
+    "node": "screen-001",
+    "system": "landscape",
+    "explode": [
+      0.0,
+      0.0,
+      0.11
+    ],
+    "explodeGl": [
+      0.0,
+      0.11,
+      -0.0
+    ],
+    "bboxMin": [
+      0.006400000303983688,
+      -0.07525000721216202,
+      0.08000000566244125
+    ],
+    "bboxMax": [
+      0.007000000216066837,
+      0.07525000721216202,
+      0.15049999952316284
+    ],
+    "sizeMm": [
+      0.599999912083149,
+      150.50001442432404,
+      70.49999386072159
+    ],
+    "centerM": [
+      0.006700000260025263,
+      0.0,
+      0.11525000259280205
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Optical glass"
+  },
+  {
+    "id": "spline",
+    "object": "spline",
+    "node": "spline",
+    "system": "hardware",
+    "explode": [
+      0.0,
+      0.098,
+      0.018000000000000002
+    ],
+    "explodeGl": [
+      0.0,
+      0.018000000000000002,
+      -0.098
+    ],
+    "bboxMin": [
+      -0.0029000001959502697,
+      -0.0029000001959502697,
+      0.06000000238418579
+    ],
+    "bboxMax": [
+      0.0029000001959502697,
+      0.0029000001959502697,
+      0.06419999897480011
+    ],
+    "sizeMm": [
+      5.800000391900539,
+      5.800000391900539,
+      4.199996590614319
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.06210000067949295
+    ],
+    "triangles": 380,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Steel / aluminium"
+  },
+  {
+    "id": "usb",
+    "object": "usb",
+    "node": "usb",
+    "system": "external",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.09772596508264542,
+      -0.08644433319568634,
+      -0.13260118663311005
+    ],
+    "bboxMax": [
+      -0.07679634541273117,
+      -0.06512300670146942,
+      -0.11716453731060028
+    ],
+    "sizeMm": [
+      20.929619669914246,
+      21.32132649421692,
+      15.436649322509766
+    ],
+    "centerM": [
+      -0.0872611552476883,
+      -0.07578366994857788,
+      -0.12488286197185516
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Electronics polymer"
+  }
+]

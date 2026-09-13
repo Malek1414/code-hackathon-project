@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Generated geometry IS committed: the app must run without Blender installed.
+# Regenerate with `npm run geometry` or scripts/build_glasses.py.

@@ -1,0 +1,800 @@
+[
+  {
+    "id": "speaker-l",
+    "object": "speaker L",
+    "node": "speaker-L",
+    "system": "audio",
+    "explode": [
+      -0.0315,
+      -0.08,
+      -0.014
+    ],
+    "explodeGl": [
+      -0.0315,
+      -0.014,
+      0.08
+    ],
+    "bboxMin": [
+      -0.06650000065565109,
+      -0.12200000882148743,
+      0.00800000037997961
+    ],
+    "bboxMax": [
+      -0.05950000137090683,
+      -0.11000000685453415,
+      0.01600000075995922
+    ],
+    "sizeMm": [
+      6.999999284744263,
+      12.000001966953278,
+      8.00000037997961
+    ],
+    "centerM": [
+      -0.06300000101327896,
+      -0.11600000783801079,
+      0.012000000569969416
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  },
+  {
+    "id": "speaker-r",
+    "object": "speaker R",
+    "node": "speaker-R",
+    "system": "audio",
+    "explode": [
+      0.0315,
+      -0.08,
+      -0.014
+    ],
+    "explodeGl": [
+      0.0315,
+      -0.014,
+      0.08
+    ],
+    "bboxMin": [
+      0.05950000137090683,
+      -0.12200000882148743,
+      0.00800000037997961
+    ],
+    "bboxMax": [
+      0.06650000065565109,
+      -0.11000000685453415,
+      0.01600000075995922
+    ],
+    "sizeMm": [
+      6.999999284744263,
+      12.000001966953278,
+      8.00000037997961
+    ],
+    "centerM": [
+      0.06300000101327896,
+      -0.11600000783801079,
+      0.012000000569969416
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  },
+  {
+    "id": "bridge",
+    "object": "bridge",
+    "node": "bridge",
+    "system": "chassis",
+    "explode": [
+      0.0,
+      0.0,
+      0.022
+    ],
+    "explodeGl": [
+      0.0,
+      0.022,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.009000000543892384,
+      -0.004000000189989805,
+      0.009000000543892384
+    ],
+    "bboxMax": [
+      0.009000000543892384,
+      0.004000000189989805,
+      0.01900000125169754
+    ],
+    "sizeMm": [
+      18.000001087784767,
+      8.00000037997961,
+      10.000000707805157
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.014000000897794962
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Titanium frame",
+    "schematic": true
+  },
+  {
+    "id": "frame-front",
+    "object": "frame front",
+    "node": "frame-front",
+    "system": "chassis",
+    "explode": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "explodeGl": [
+      0.0,
+      0.0,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.07300000637769699,
+      -0.004500000271946192,
+      0.014000000432133675
+    ],
+    "bboxMax": [
+      0.07300000637769699,
+      0.004500000271946192,
+      0.030000001192092896
+    ],
+    "sizeMm": [
+      146.00001275539398,
+      9.000000543892384,
+      16.00000075995922
+    ],
+    "centerM": [
+      0.0,
+      0.0,
+      0.022000000812113285
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Titanium frame",
+    "schematic": true
+  },
+  {
+    "id": "temple-l",
+    "object": "temple L",
+    "node": "temple-L",
+    "system": "chassis",
+    "explode": [
+      -0.037799999237060546,
+      -0.04,
+      0.026000000000000002
+    ],
+    "explodeGl": [
+      -0.037799999237060546,
+      0.026000000000000002,
+      0.04
+    ],
+    "bboxMin": [
+      -0.06800000369548798,
+      -0.1300000101327896,
+      0.014000000432133675
+    ],
+    "bboxMax": [
+      -0.058000002056360245,
+      -0.0020000000949949026,
+      0.026000000536441803
+    ],
+    "sizeMm": [
+      10.000001639127731,
+      128.0000100377947,
+      12.000000104308128
+    ],
+    "centerM": [
+      -0.06300000287592411,
+      -0.06600000511389226,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  },
+  {
+    "id": "temple-r",
+    "object": "temple R",
+    "node": "temple-R",
+    "system": "chassis",
+    "explode": [
+      0.037799999237060546,
+      -0.04,
+      0.026000000000000002
+    ],
+    "explodeGl": [
+      0.037799999237060546,
+      0.026000000000000002,
+      0.04
+    ],
+    "bboxMin": [
+      0.058000002056360245,
+      -0.1300000101327896,
+      0.014000000432133675
+    ],
+    "bboxMax": [
+      0.06800000369548798,
+      -0.0020000000949949026,
+      0.026000000536441803
+    ],
+    "sizeMm": [
+      10.000001639127731,
+      128.0000100377947,
+      12.000000104308128
+    ],
+    "centerM": [
+      0.06300000287592411,
+      -0.06600000511389226,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  },
+  {
+    "id": "snapdragon-ar1-gen-1",
+    "object": "Snapdragon AR1 Gen 1",
+    "node": "Snapdragon-AR1-Gen-1",
+    "system": "compute",
+    "explode": [
+      0.04,
+      -0.01,
+      0.034
+    ],
+    "explodeGl": [
+      0.04,
+      0.034,
+      0.01
+    ],
+    "bboxMin": [
+      0.057500001043081284,
+      -0.039500001817941666,
+      0.01600000075995922
+    ],
+    "bboxMax": [
+      0.06850000470876694,
+      -0.02850000187754631,
+      0.024000000208616257
+    ],
+    "sizeMm": [
+      11.000003665685654,
+      10.999999940395355,
+      7.999999448657036
+    ],
+    "centerM": [
+      0.06300000287592411,
+      -0.03400000184774399,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Silicon",
+    "schematic": true
+  },
+  {
+    "id": "mainboard",
+    "object": "mainboard",
+    "node": "mainboard",
+    "system": "compute",
+    "explode": [
+      0.044,
+      -0.02,
+      0.026000000000000002
+    ],
+    "explodeGl": [
+      0.044,
+      0.026000000000000002,
+      0.02
+    ],
+    "bboxMin": [
+      0.05900000408291817,
+      -0.07200000435113907,
+      0.015000000596046448
+    ],
+    "bboxMax": [
+      0.06700000166893005,
+      -0.01600000075995922,
+      0.02500000037252903
+    ],
+    "sizeMm": [
+      7.999997586011887,
+      56.00000359117985,
+      9.999999776482582
+    ],
+    "centerM": [
+      0.06300000287592411,
+      -0.044000002555549145,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "PCB",
+    "schematic": true
+  },
+  {
+    "id": "microled-engine-l",
+    "object": "microLED engine L",
+    "node": "microLED-engine-L",
+    "system": "display",
+    "explode": [
+      -0.0598499984741211,
+      0.0,
+      0.034
+    ],
+    "explodeGl": [
+      -0.0598499984741211,
+      0.034,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.060680001974105835,
+      -0.00950000062584877,
+      0.01600000075995922
+    ],
+    "bboxMax": [
+      -0.047680001705884933,
+      0.0035000001080334187,
+      0.02800000086426735
+    ],
+    "sizeMm": [
+      13.000000268220901,
+      13.000000733882189,
+      12.000000104308128
+    ],
+    "centerM": [
+      -0.054180001839995384,
+      -0.0030000002589076757,
+      0.022000000812113285
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Firefly optical engine",
+    "schematic": true
+  },
+  {
+    "id": "microled-engine-r",
+    "object": "microLED engine R",
+    "node": "microLED-engine-R",
+    "system": "display",
+    "explode": [
+      0.0598499984741211,
+      0.0,
+      0.034
+    ],
+    "explodeGl": [
+      0.0598499984741211,
+      0.034,
+      -0.0
+    ],
+    "bboxMin": [
+      0.047680001705884933,
+      -0.00950000062584877,
+      0.01600000075995922
+    ],
+    "bboxMax": [
+      0.060680001974105835,
+      0.0035000001080334187,
+      0.02800000086426735
+    ],
+    "sizeMm": [
+      13.000000268220901,
+      13.000000733882189,
+      12.000000104308128
+    ],
+    "centerM": [
+      0.054180001839995384,
+      -0.0030000002589076757,
+      0.022000000812113285
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Firefly optical engine",
+    "schematic": true
+  },
+  {
+    "id": "waveguide-l",
+    "object": "waveguide L",
+    "node": "waveguide-L",
+    "system": "optics",
+    "explode": [
+      -0.06930000305175782,
+      0.0,
+      -0.016
+    ],
+    "explodeGl": [
+      -0.06930000305175782,
+      -0.016,
+      -0.0
+    ],
+    "bboxMin": [
+      -0.05765000358223915,
+      -0.0011000001104548573,
+      -0.009000000543892384
+    ],
+    "bboxMax": [
+      -0.011650001630187035,
+      0.0011000001104548573,
+      0.021000001579523087
+    ],
+    "sizeMm": [
+      46.000001952052116,
+      2.2000002209097147,
+      30.00000212341547
+    ],
+    "centerM": [
+      -0.03465000260621309,
+      0.0,
+      0.0060000005178153515
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Waveguide",
+    "schematic": true
+  },
+  {
+    "id": "waveguide-r",
+    "object": "waveguide R",
+    "node": "waveguide-R",
+    "system": "optics",
+    "explode": [
+      0.06930000305175782,
+      0.0,
+      -0.016
+    ],
+    "explodeGl": [
+      0.06930000305175782,
+      -0.016,
+      -0.0
+    ],
+    "bboxMin": [
+      0.011650001630187035,
+      -0.0011000001104548573,
+      -0.009000000543892384
+    ],
+    "bboxMax": [
+      0.05765000358223915,
+      0.0011000001104548573,
+      0.021000001579523087
+    ],
+    "sizeMm": [
+      46.000001952052116,
+      2.2000002209097147,
+      30.00000212341547
+    ],
+    "centerM": [
+      0.03465000260621309,
+      0.0,
+      0.0060000005178153515
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Waveguide",
+    "schematic": true
+  },
+  {
+    "id": "battery-l",
+    "object": "battery L",
+    "node": "battery-L",
+    "system": "power",
+    "explode": [
+      -0.0315,
+      -0.07,
+      0.03
+    ],
+    "explodeGl": [
+      -0.0315,
+      0.03,
+      0.07
+    ],
+    "bboxMin": [
+      -0.06700000166893005,
+      -0.12600000202655792,
+      0.015000000596046448
+    ],
+    "bboxMax": [
+      -0.05900000408291817,
+      -0.0820000022649765,
+      0.02500000037252903
+    ],
+    "sizeMm": [
+      7.999997586011887,
+      43.99999976158142,
+      9.999999776482582
+    ],
+    "centerM": [
+      -0.06300000287592411,
+      -0.10400000214576721,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Li-ion cell",
+    "schematic": true
+  },
+  {
+    "id": "battery-r",
+    "object": "battery R",
+    "node": "battery-R",
+    "system": "power",
+    "explode": [
+      0.0315,
+      -0.07,
+      0.03
+    ],
+    "explodeGl": [
+      0.0315,
+      0.03,
+      0.07
+    ],
+    "bboxMin": [
+      0.05900000408291817,
+      -0.12600000202655792,
+      0.015000000596046448
+    ],
+    "bboxMax": [
+      0.06700000166893005,
+      -0.0820000022649765,
+      0.02500000037252903
+    ],
+    "sizeMm": [
+      7.999997586011887,
+      43.99999976158142,
+      9.999999776482582
+    ],
+    "centerM": [
+      0.06300000287592411,
+      -0.10400000214576721,
+      0.02000000048428774
+    ],
+    "triangles": 12,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Li-ion cell",
+    "schematic": true
+  },
+  {
+    "id": "rgb-camera-12-mp",
+    "object": "RGB camera 12 MP",
+    "node": "RGB-camera-12-MP",
+    "system": "sensing",
+    "explode": [
+      -0.03,
+      0.034,
+      0.03
+    ],
+    "explodeGl": [
+      -0.03,
+      0.03,
+      -0.034
+    ],
+    "bboxMin": [
+      -0.05650000274181366,
+      0.0009999998146668077,
+      0.017500000074505806
+    ],
+    "bboxMax": [
+      -0.04750000312924385,
+      0.007000000216066837,
+      0.026500001549720764
+    ],
+    "sizeMm": [
+      8.999999612569809,
+      6.00000040140003,
+      9.000001475214958
+    ],
+    "centerM": [
+      -0.052000002935528755,
+      0.0040000000153668225,
+      0.022000000812113285
+    ],
+    "triangles": 188,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Optical stack",
+    "schematic": true
+  },
+  {
+    "id": "slam-camera-l",
+    "object": "SLAM camera L",
+    "node": "SLAM-camera-L",
+    "system": "sensing",
+    "explode": [
+      -0.063,
+      0.03,
+      0.026000000000000002
+    ],
+    "explodeGl": [
+      -0.063,
+      0.026000000000000002,
+      -0.03
+    ],
+    "bboxMin": [
+      -0.05466000363230705,
+      0.0014999997802078724,
+      0.01900000125169754
+    ],
+    "bboxMax": [
+      -0.048660002648830414,
+      0.006500000134110451,
+      0.02500000037252903
+    ],
+    "sizeMm": [
+      6.000000983476639,
+      5.000000353902578,
+      5.99999912083149
+    ],
+    "centerM": [
+      -0.05166000314056873,
+      0.003999999957159162,
+      0.022000000812113285
+    ],
+    "triangles": 188,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Optical stack",
+    "schematic": true
+  },
+  {
+    "id": "slam-camera-r",
+    "object": "SLAM camera R",
+    "node": "SLAM-camera-R",
+    "system": "sensing",
+    "explode": [
+      0.063,
+      0.03,
+      0.026000000000000002
+    ],
+    "explodeGl": [
+      0.063,
+      0.026000000000000002,
+      -0.03
+    ],
+    "bboxMin": [
+      0.048660002648830414,
+      0.0014999997802078724,
+      0.01900000125169754
+    ],
+    "bboxMax": [
+      0.05466000363230705,
+      0.006500000134110451,
+      0.02500000037252903
+    ],
+    "sizeMm": [
+      6.000000983476639,
+      5.000000353902578,
+      5.99999912083149
+    ],
+    "centerM": [
+      0.05166000314056873,
+      0.003999999957159162,
+      0.022000000812113285
+    ],
+    "triangles": 188,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Optical stack",
+    "schematic": true
+  },
+  {
+    "id": "microphone-1",
+    "object": "microphone 1",
+    "node": "microphone-1",
+    "system": "sensing",
+    "explode": [
+      -0.03,
+      0.026000000000000002,
+      0.034
+    ],
+    "explodeGl": [
+      -0.03,
+      0.034,
+      -0.026000000000000002
+    ],
+    "bboxMin": [
+      -0.03175000101327896,
+      0.0014999998966231942,
+      0.024250000715255737
+    ],
+    "bboxMax": [
+      -0.02825000137090683,
+      0.004500000271946192,
+      0.027750002220273018
+    ],
+    "sizeMm": [
+      3.4999996423721313,
+      3.0000003753229976,
+      3.5000015050172806
+    ],
+    "centerM": [
+      -0.030000001192092896,
+      0.003000000084284693,
+      0.026000001467764378
+    ],
+    "triangles": 188,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  },
+  {
+    "id": "microphone-2",
+    "object": "microphone 2",
+    "node": "microphone-2",
+    "system": "sensing",
+    "explode": [
+      0.03,
+      0.026000000000000002,
+      0.034
+    ],
+    "explodeGl": [
+      0.03,
+      0.034,
+      -0.026000000000000002
+    ],
+    "bboxMin": [
+      0.02825000137090683,
+      0.0014999998966231942,
+      0.024250000715255737
+    ],
+    "bboxMax": [
+      0.03175000101327896,
+      0.004500000271946192,
+      0.027750002220273018
+    ],
+    "sizeMm": [
+      3.4999996423721313,
+      3.0000003753229976,
+      3.5000015050172806
+    ],
+    "centerM": [
+      0.030000001192092896,
+      0.003000000084284693,
+      0.026000001467764378
+    ],
+    "triangles": 188,
+    "printed": false,
+    "printOrientation": null,
+    "defaultHidden": false,
+    "material": "Temple shell",
+    "schematic": true
+  }
+]
