@@ -69,8 +69,48 @@ saddle printed groove-down starts as two thin islands.
 
 Only 06 and 07 need supports, and only under the four front retention lips.
 
-Suggested: PLA or PETG, 0.2 mm layers, 4 perimeters, 30–40 % infill. Part 01 carries
-the whole load into the tripod — do not drop its perimeter count.
+### Filament
+
+Baseline: **0.2 mm layers, 4 perimeters, 30–40 % infill.** Part 01 carries the whole
+load into the tripod — do not drop its perimeter count.
+
+Everything below is a recommendation, not a constraint: all twelve parts print in
+plain PLA if that is what is on the shelf. It is what makes the pod read as a product
+rather than as a print.
+
+**Print it in PETG, in two colours.** PETG's ~80 °C glass transition survives a car
+boot in summer, where PLA creeps at 55–60 °C — and 01 is under constant load from the
+phone and cradle. Matching the atlas colours makes the printed pod match the renders:
+
+| Parts | Filament |
+|---|---|
+| 01 stator, 04 rotor, 08 tray, 09 lid, 10 saddle | matte PETG, porcelain / bone |
+| 03 carrier, 05 drive dog, 11 AA bay | matte PETG, vermilion |
+| 06 / 07 cradles | either, but match the shells — these are what a hand touches |
+
+Buy the **matte** grades. Gloss PETG highlights every layer line; matte diffuses them
+and reads moulded. Cheapest upgrade on this list.
+
+**If the pod lives outdoors, print ASA instead.** Tg ~100 °C, UV-stable so it will not
+chalk on an outdoor court, and it leaves the bed with an eggshell finish. It needs the
+CORE One's enclosure, and 01 is a Ø112 mm flat part — give it a brim.
+
+Four settings carry most of the perceived quality:
+
+- **0.15 mm layers on 01, 04, 06 and 07 only.** Everything else stays at 0.2 mm.
+- **Fuzzy skin on 01's outer wall.** The shell is already ribbed; fuzzy skin turns that
+  into a soft-touch texture and hides the layer lines entirely.
+- **Seam set to rear or aligned**, never random — random speckles a curved shell.
+- **Dry the PETG.** Wet PETG strings and blooms, and no other setting rescues it.
+
+**On the slew ring, material is mechanical rather than cosmetic.** 04 turns directly
+against the 01 journal and the 03 rim on the Ø88 ring, and PETG on PETG is the worst
+same-material pairing for stick-slip — it squeaks and can gall under load. Either print
+**04 in PLA** against PETG shells, or keep it all PETG and work **PTFE dry lubricant**
+into the ring before first assembly. Silicone grease also works but collects court dust.
+
+Avoid silk PLA (weak layer adhesion, cheap up close), gloss black (shows every defect),
+and wood or marble fills (abrasive, and they read novelty).
 
 ### Verification
 
