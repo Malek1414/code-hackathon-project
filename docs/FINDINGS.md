@@ -83,7 +83,7 @@ supports needed.
 
 ## 9. Visual assets (Aug 28 morning)
 
-- `viz/followcam_assembled_poster.png` — labeled 3-view render of the
+- `viz/followcam_pod_v4_poster.png` — labeled 3-view render of the
   assembled rig, generated from `cad/assembly.scad` with the measured dims.
 - `viz/final/final.mov` — 1920×1080 8 s loop: CAD rig panning 40°→140°→40°
   side-by-side with the synced top-down court-coverage wedge

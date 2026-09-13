@@ -7,7 +7,7 @@ already own into an auto-tracking sports camera for ~€20, instead of a
 
 Built at the CODE University Berlin one-day hackathon (Aug 28, 2026).
 
-![Assembled rig](viz/followcam_assembled_poster.png)
+![FollowCam Pod v4 — assembled on the tripod, exploded stack, landscape cradle and leg case](viz/followcam_pod_v4_poster.png)
 
 ## How it works
 
