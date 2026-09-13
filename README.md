@@ -1,28 +1,41 @@
 # FollowCam — the €20 robot cameraman
 
-A 3D-printed robotic actuator that grips the pan handle of an ordinary tripod
-and steers a phone to automatically follow the ball — turning a tripod you
-already own into an auto-tracking sports camera for ~€20, instead of a
-€2,000+ Veo/Pixellot unit.
+A 3D-printed pan pod that **replaces the head of an ordinary tripod** and steers
+a phone to automatically follow the ball — turning a tripod you already own into
+an auto-tracking sports camera, instead of a €2,000+ Veo/Pixellot unit.
 
-Built at the CODE University Berlin one-day hackathon (Aug 28, 2026).
+Built at the CODE University Berlin one-day hackathon (Aug 28, 2026). The pod is
+the second-generation design; it replaced the original rig, which clamped a servo
+to the tripod's centre column and pushed the pan handle with a printed fork arm.
 
 ![FollowCam Pod v4 — assembled on the tripod, exploded stack, landscape cradle and leg case](viz/followcam_pod_v4_poster.png)
 
 ## How it works
 
-Phone on the tripod head streams to a laptop → OpenCV tracks the ball (HSV) →
-laptop sends `A<angle>\n` over USB serial → Arduino drives an SG90 servo →
-the servo, clamped to the tripod's center column just below the head, turns a
-printed **fork arm** whose U-slot captures the pan handle's chrome shaft and
-pushes it left/right → the camera pans to keep the ball centered.
+Phone in the pod's cradle streams to a laptop → OpenCV tracks the ball (HSV) →
+laptop sends `A<angle>\n` over USB serial → the Arduino drives the servo → the
+servo turns the **rotor** directly, on a Ø88 mm printed slew ring wrapped around
+it, and the phone turns with the rotor.
 
-Because the servo shaft sits right next to the pan axis, servo angle ≈ pan
-angle (near 1:1). Sweep is software-limited to 40°–140° (±50°); from the
-scorer's-table spot a court needs only ±43° to cover both baseline corners.
+The drive is direct and 1:1. There is no linkage: nothing rides a handle shaft,
+so there is no lost motion between the servo horn and the camera. The firmware
+keeps the original `A40`–`A140` command range and remaps it across the pod's full
+180° of pan (×1.8), slew-rate limited to 30°/s with 60°/s² of acceleration, so the
+camera tracks rather than snaps.
 
-An 8-second demo of the motion, synced to a top-down court-coverage diagram:
-`viz/final/final.mov`.
+Portrait and landscape are two different cradles on the same keyed rotor socket —
+one thumbscrew swaps them, no reprint. The tongue is offset forward so the pan
+axis bisects the phone's thickness in both orientations, which is what keeps the
+two orientations equally balanced.
+
+The Arduino and its battery live in a separate case that clips onto a tripod leg,
+so nothing rotates with the phone and no cable wraps the pan axis.
+
+Walkthroughs: `cad/blender/pod_v4/FollowCam_Pod_v4.mov` (27.8 s, the pod itself)
+and `viz/final/final.mov` (8 s, the motion synced to a court-coverage diagram).
+
+Every part, what it does and what it bolts to, in an interactive 3D explorer:
+[`atlas/`](atlas/README.md) — orbit, click any part, scrub the exploded view.
 
 ## Repo map
 
@@ -31,30 +44,38 @@ An 8-second demo of the motion, synced to a top-down court-coverage diagram:
 | `IDEA.md` | Pitch, market story, demo plan, fallback ladder |
 | `PLAN.md` | Minute-by-minute hackathon execution plan |
 | `docs/FINDINGS.md` | **All findings + decisions to date, summarized** |
-| `cad/` | OpenSCAD sources (`followcam-rig.scad` = printed parts, `assembly.scad` = full-rig visual), STLs, `MEASUREMENTS.md` |
-| `print/` | Sliced `.bgcode` files, ready to print (0.4 nozzle, std + HF) |
+| `cad/blender/pod_v4/` | **The current design** — `build_v4.py`, 12 verified STLs, renders, print + assembly handoff |
+| `atlas/` | Interactive 3D part explorer for the pod (and the two hackathon headsets) |
+| `cad/blender/` | Pod v3 — superseded, kept for history. Does not build; do not print from `exports/` |
+| `cad/` | OpenSCAD sources for the original pan-handle linkage — superseded |
+| `print/` | Sliced `.bgcode` for the original linkage parts (0.4 nozzle, std + HF) |
 | `software/ball_tracker.py` | HSV ball tracker → serial angle commands |
-| `software/servo_pan/servo_pan.ino` | Arduino firmware: `A<angle>` protocol, slew-rate-limited motion |
-| `tripod-photos/` | Reference photos + video of the actual tripod |
-| `annotated/` | Photos annotated with the measurement callouts |
-| `viz/` | Assembly poster, pan-demo video (`final/final.mov`), and the edit plan to regenerate them |
-| `pitch/` | Pitch outline |
+| `software/servo_pod180/` | **Current firmware** — `A<angle>` protocol remapped across the pod's 180° |
+| `software/servo_pan/` | Original linkage firmware — superseded, do not flash onto the pod |
+| `tripod-photos/`, `annotated/` | Reference photos of the actual tripod, with measurement callouts |
+| `viz/` | Product poster (`make_pod_v4_poster.py` regenerates it), pan-demo video, edit plan |
+| `pitch/` | Pitch outline, stage script, deck |
 
 ## Hardware
 
-- Any pan-handle tripod (ours: 15 mm center column, 8.5 mm chrome handle shaft)
-- SG90 hobby servo (from the Elegoo Uno kit) — MG990/MG995/MG996R drop into
-  the same bracket for more torque (set the two servo dims in the SCAD;
-  power from external 5–6 V, common ground)
-- Arduino Uno/Nano, phone, two printed parts (25–35% infill, no supports)
+- A tripod with a removable head and a 1/4-20 screw (ours: MACTREM PT55). The pod
+  takes the head's place — it does not clamp to anything.
+- A standard-size hobby servo on the carrier plate, and an Arduino Uno R3 and its
+  battery in the leg case.
+- 12 printed parts. Print list, bed orientations, support notes and assembly order:
+  [`cad/blender/pod_v4/README.md`](cad/blender/pod_v4/README.md).
 
-## Blender product redesign
+**Two things to settle before you print part 05.** The CAD is cut for an **MG996R**
+(`03_servo_carrier_MG996R.stl`, and the drive dog is dimensioned to the servo's
+height), while the current firmware header specifies a **DS3218** 270° positional
+servo. The drive dog is the one part sized to the servo, so measure the servo you
+actually have — the pod README explains which of the two dogs to print. Likewise,
+the leg case carries a 4 × AA bay, but the firmware calls for a regulated 6 V / 3 A
+supply; AA alkalines sag hard under servo stall current, so bench-test the pack
+before trusting it to a match.
 
-The tripod-handle prototype now has a direct-drive, tripod-top product concept:
-an Uno R3 and MG996R inside a serviceable pod, a thrust-bearing-supported rotating
-platter, and separate full-wrap portrait and landscape phone cases. The editable
-Blender assembly, print STLs, renders, sourced MACTREM PT55 interface dimensions,
-and build notes are in [`cad/blender/`](cad/blender/README.md).
+Never power the servo from the Uno's 5 V pin. Use the external pack and common the
+grounds — see `hardware/WIRING.md`.
 
 ## Workflow (read this, Sammy 👋)
 
